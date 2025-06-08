@@ -1,70 +1,65 @@
-# This program simulates a drink ordering system. The user selects a drink,
-# specifies any additions (milk, sugar, lemon, honey), and receives a formatted order summary.
-
-# Step 1: Define available drinks and options.
-# This dictionary holds the possible drinks and whether they have add-ons available.
+-1: Define available drinks and options.
+-This dictionary holds the possible drinks and whether they have add-ons available.
 available_drinks = {
-    "coffee": ["milk", "sugar"],  # Coffee can have milk and sugar
-    "tea": ["lemon", "honey"],    # Tea can have lemon and honey
-    "water": []                  # Water doesn't have any add-ons
+    "coffee": ["milk", "sugar"],  - When choosing coffee it can have milk and sugar
+    "tea": ["lemon", "honey"],    - Choices for tea are lemon and honey
+    "water": []                  - Water doesn't have any add-ons
 }
 
-# Step 2: Greet the user and ask for their drink choice.
+-2: Asking the customer what drink they’d want.
 print("Welcome to the Drink Ordering System!")
 
-# Prompt the user to choose a drink from the available options.
-drink = input("Please choose a drink: Coffee, Tea, or Water: ").lower()  # `.lower()` ensures case-insensitivity.
+-Ask the customer to choose a drink
+drink = input("Please choose a drink: Coffee, Tea, or Water: ").lower()  - `.lower()` ensures that it doesn’t have to be case sensitive
 
-# Check if the user input is valid. If not, print an error message and exit.
+-Make sure that the customer’s input is valid. If it isn’t, it prints an error message and exits.
 if drink not in available_drinks:
     print("Invalid drink choice.")
-    exit()  # Exit the program if an invalid drink is selected.
+    exit()  - Exit the program if an invalid drink is selected.
 
-# Step 3: Ask for add-ons based on the selected drink.
-# For Coffee, the user can select Milk and/or Sugar.
-# For Tea, the user can select Lemon and/or Honey.
-# Water has no options for add-ons.
+-3: Ask for add-ons based on the selected drink.
+For Coffee, the user can select Milk and/or Sugar.
+For Tea, the user can select Lemon and/or Honey.
+Water has no options for add-ons.
 
-# Initialize an empty list to store add-ons.
+-Initialize an empty list to store add-ons.
 add_ons = []
 
-# Ask for add-ons if the user selected Coffee.
+-Ask for add-ons if the customer selected Coffee.
 if drink == "coffee":
-    # Prompt for milk.
+    - Prompt for milk.
     milk = input("Do you want milk? (yes/no): ").lower()
     if milk == "yes":
-        add_ons.append("milk")  # Add "milk" to the list of add-ons.
+        add_ons.append("milk")  - Adds "milk" to the list of add ons.
     
-    # Prompt for sugar.
+    - Prompt for sugar.
     sugar = input("Do you want sugar? (yes/no): ").lower()
     if sugar == "yes":
-        add_ons.append("sugar")  # Add "sugar" to the list of add-ons.
+        add_ons.append("sugar")  - Adds "sugar" to the list of add ons.
 
-# Ask for add-ons if the user selected Tea.
+-Ask for add-ons if the customer selected Tea.
 elif drink == "tea":
     # Prompt for lemon.
     lemon = input("Do you want lemon? (yes/no): ").lower()
     if lemon == "yes":
-        add_ons.append("lemon")  # Add "lemon" to the list of add-ons.
+        add_ons.append("lemon")  - Adds "lemon" to the list of add ons.
     
-    # Prompt for honey.
+    - Prompt for honey.
     honey = input("Do you want honey? (yes/no): ").lower()
     if honey == "yes":
-        add_ons.append("honey")  # Add "honey" to the list of add-ons.
+        add_ons.append("honey")  - Adds "honey" to the list of add ons.
 
-# No need for add-ons if the user selected Water, so skip this section.
+- No need for add-ons if the user selected Water, so this is skipped.
 
-# Step 4: Display the final order summary.
-# The program now constructs a summary of the user's order based on the selections.
+-4: Display the final order summary.
+-The program now constructs a summary of the customer’s order based on the selections.
 
-# Begin forming the order message.
-order_message = f"Your drink selection: {drink.capitalize()}"  # Capitalize the drink name for neatness.
+-Begin forming the order message.
+order_message = f"Your drink selection: {drink.capitalize()}"  - Capitalize the drink name for neatness.
 
-# Add add-ons to the order message.
+-Add add-ons to the order message.
 if add_ons:
-    order_message += " with " + " and ".join(add_ons)  # Join multiple add-ons with "and".
+    order_message += " with " + " and ".join(add_ons)  - Join multiple add-ons with "and".
 
-# Step 5: Display the completed order.
+-5: Display the completed order.
 print(order_message)
-
-# The program ends here.
