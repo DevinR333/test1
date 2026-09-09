@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Press the Bone</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  --paper:      #e8eae2;
+  --paper-deep: #dcdfd4;
+  --ink:        #20261f;
+  --ink-soft:   #5a6357;
+  --bone:       #fff6e3;
+  --bone-edge:  #cdbf9d;
+  --hydrant:    #d93f26;
+  --tennis:     #bbd94b;
+  --frame:      #fffdf7;
+  --hairline:   #20261f26;
+
+  --step-0: 1rem;
+  --step-1: 1.25rem;
+  --step-2: 1.75rem;
+  --step-3: clamp(2.4rem, 7vw, 3.9rem);
+
+  --display: "Bricolage Grotesque", "Trebuchet MS", system-ui, sans-serif;
+  --body: "Instrument Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "DM Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper:      #171a16;
+    --paper-deep: #10120f;
+    --ink:        #eef1e7;
+    --ink-soft:   #9aa393;
+    --bone:       #f6ecd6;
+    --bone-edge:  #7d7154;
+    --hydrant:    #f2664c;
+    --tennis:     #c6e25c;
+    --frame:      #21251e;
+    --hairline:   #eef1e733;
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper:      #171a16;
+  --paper-deep: #10120f;
+  --ink:        #eef1e7;
+  --ink-soft:   #9aa393;
+  --bone:       #f6ecd6;
+  --bone-edge:  #7d7154;
+  --hydrant:    #f2664c;
+  --tennis:     #c6e25c;
+  --frame:      #21251e;
+  --hairline:   #eef1e733;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: var(--step-0);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  width: min(100% - 2.5rem, 44rem);
+  margin-inline: auto;
+  padding-block: clamp(1.75rem, 5vw, 3rem) 3.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* ---- masthead ---- */
+.masthead { display: flex; flex-direction: column; gap: .4rem; }
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: .72rem;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+}
+.eyebrow::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--hairline);
+}
+
+h1 {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: var(--step-3);
+  line-height: .95;
+  letter-spacing: -.025em;
+  margin: 0;
+  text-wrap: balance;
+}
+h1 em {
+  font-style: normal;
+  color: var(--hydrant);
+}
+
+.lede {
+  margin: 0;
+  max-width: 34ch;
+  color: var(--ink-soft);
+}
+
+/* ---- the photo window ---- */
+.window {
+  background: var(--frame);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 1px 0 var(--hairline), 0 18px 34px -28px #00000080;
+}
+
+.plate {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      transparent 0 11px,
+      var(--hairline) 11px 12px
+    );
+  overflow: hidden;
+}
+
+.plate img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity .45s ease;
+}
+.plate img.shown { opacity: 1; }
+
+.status {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: .75rem;
+  justify-items: center;
+  background: var(--frame);
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: .78rem;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  text-align: center;
+  padding: 1.5rem;
+  transition: opacity .3s ease;
+}
+.status[hidden] { display: none; }
+.status.error { color: var(--hydrant); letter-spacing: .04em; text-transform: none; font-family: var(--body); font-size: .95rem; }
+.status.error .paw { display: none; }
+
+.paw {
+  width: 34px;
+  height: 34px;
+  color: var(--hydrant);
+  animation: trot 1s steps(4, end) infinite;
+}
+@keyframes trot {
+  0%   { transform: translateY(0)     rotate(-8deg); opacity: .35; }
+  50%  { transform: translateY(-6px)  rotate(6deg);  opacity: 1; }
+  100% { transform: translateY(0)     rotate(-8deg); opacity: .35; }
+}
+
+/* ---- nameplate ---- */
+.nameplate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .7rem .95rem;
+  background: var(--ink);
+  color: var(--paper);
+  border-top: 1px solid var(--hairline);
+}
+
+.breed {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: var(--step-1);
+  letter-spacing: -.01em;
+  line-height: 1.1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.fullsize {
+  flex: none;
+  font-family: var(--mono);
+  font-size: .72rem;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--tennis);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  padding-bottom: 1px;
+}
+.fullsize:hover, .fullsize:focus-visible { border-bottom-color: currentColor; }
+
+/* ---- the bone ---- */
+.dispenser {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .9rem;
+  padding-top: .5rem;
+}
+
+.bone {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  width: min(19rem, 78vw);
+  color: var(--bone);
+  filter: drop-shadow(0 7px 0 var(--bone-edge));
+  transition: transform .12s ease, filter .12s ease;
+}
+.bone svg { display: block; width: 100%; height: auto; }
+.bone .cap, .bone .shaft { fill: currentColor; }
+.bone .word {
+  fill: var(--ink);
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 40px;
+  letter-spacing: .1em;
+  text-anchor: middle;
+}
+.bone:hover { transform: rotate(-1.6deg) translateY(-2px); }
+.bone:active {
+  transform: translateY(5px) scaleY(.94);
+  filter: drop-shadow(0 2px 0 var(--bone-edge));
+}
+.bone:focus-visible {
+  outline: 3px solid var(--hydrant);
+  outline-offset: 8px;
+  border-radius: 999px;
+}
+.bone[disabled] { cursor: wait; opacity: .55; }
+
+.tags {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: .74rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.tag {
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: .3rem .7rem;
+  font-variant-numeric: tabular-nums;
+}
+.tag b { color: var(--ink); font-weight: 500; }
+
+kbd {
+  font-family: var(--mono);
+  font-size: .74rem;
+  border: 1px solid var(--hairline);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: .1rem .35rem;
+  color: var(--ink);
+}
+
+/* ---- history rail ---- */
+.rail { display: flex; flex-direction: column; gap: .6rem; }
+.rail h2 {
+  margin: 0;
+  font-family: var(--mono);
+  font-weight: 400;
+  font-size: .72rem;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.strip {
+  display: flex;
+  gap: .55rem;
+  overflow-x: auto;
+  padding-bottom: .35rem;
+  scrollbar-width: thin;
+}
+.strip:empty::after {
+  content: "Nothing yet — the bone fills this up.";
+  font-size: .85rem;
+  color: var(--ink-soft);
+}
+.strip button {
+  flex: none;
+  width: 74px;
+  height: 74px;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--paper-deep);
+  cursor: pointer;
+  transition: transform .15s ease;
+}
+.strip button:hover { transform: translateY(-3px); }
+.strip button:focus-visible { outline: 2px solid var(--hydrant); outline-offset: 2px; }
+.strip img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+footer {
+  font-size: .82rem;
+  color: var(--ink-soft);
+  border-top: 1px solid var(--hairline);
+  padding-top: .9rem;
+}
+footer a { color: inherit; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+  .bone:hover { transform: none; }
+}
+</style>
+</head>
+<body>
+<main class="page">
+
+  <header class="masthead">
+    <p class="eyebrow">Random dog dispenser</p>
+    <h1>Press the <em>bone</em>.</h1>
+    <p class="lede">One squeeze, one dog. Real photographs, pulled at random from a kennel of thousands.</p>
+  </header>
+
+  <figure class="window" style="margin:0">
+    <div class="plate">
+      <img id="photo" alt="">
+      <div class="status" id="status">
+        <svg class="paw" viewBox="0 0 24 24" aria-hidden="true">
+          <ellipse cx="12" cy="16" rx="6" ry="5" fill="currentColor"></ellipse>
+          <circle cx="5"  cy="10" r="2.5" fill="currentColor"></circle>
+          <circle cx="9.5" cy="6.5" r="2.6" fill="currentColor"></circle>
+          <circle cx="14.5" cy="6.5" r="2.6" fill="currentColor"></circle>
+          <circle cx="19" cy="10" r="2.5" fill="currentColor"></circle>
+        </svg>
+        <span id="statusText">Fetching…</span>
+      </div>
+    </div>
+    <figcaption class="nameplate">
+      <span class="breed" id="breed">—</span>
+      <a class="fullsize" id="fullsize" href="#" target="_blank" rel="noopener" hidden>Full size ↗</a>
+    </figcaption>
+  </figure>
+
+  <div class="dispenser">
+    <button class="bone" id="boneBtn" aria-label="Fetch a new dog">
+      <svg viewBox="0 0 340 140" role="presentation">
+        <circle class="cap" cx="62"  cy="48" r="34"></circle>
+        <circle class="cap" cx="62"  cy="92" r="34"></circle>
+        <circle class="cap" cx="278" cy="48" r="34"></circle>
+        <circle class="cap" cx="278" cy="92" r="34"></circle>
+        <rect class="shaft" x="50" y="44" width="240" height="52" rx="26"></rect>
+        <text class="word" x="170" y="70" dominant-baseline="central">FETCH</text>
+      </svg>
+    </button>
+    <p class="tags">
+      <span class="tag">Fetched <b id="count">000</b></span>
+      <span class="tag" id="sourceTag">Kennel: dog.ceo</span>
+      <span>or hit <kbd>space</kbd></span>
+    </p>
+  </div>
+
+  <section class="rail">
+    <h2>Today's walk</h2>
+    <div class="strip" id="strip"></div>
+  </section>
+
+  <footer>
+    Photographs come from the <a href="https://dog.ceo/dog-api/" target="_blank" rel="noopener">Dog API</a>, a public
+    collection of real dog photographs — so every fetch is a genuine photo, not a rendering.
+  </footer>
+
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var ENDPOINT = "https://dog.ceo/api/breeds/image/random";
+  var HISTORY_MAX = 12;
+
+  var photo = document.getElementById("photo");
+  var status = document.getElementById("status");
+  var statusText = document.getElementById("statusText");
+  var breedEl = document.getElementById("breed");
+  var fullsize = document.getElementById("fullsize");
+  var boneBtn = document.getElementById("boneBtn");
+  var countEl = document.getElementById("count");
+  var strip = document.getElementById("strip");
+
+  var count = 0;
+  var busy = false;
+  var queued = null; // a preloaded url, ready to show instantly
+
+  // "https://images.dog.ceo/breeds/hound-afghan/n02088094_1003.jpg" -> "Afghan Hound"
+  function breedFromUrl(url) {
+    var match = /breeds\/([^/]+)\//.exec(url);
+    if (!match) return "Mystery dog";
+    var parts = match[1].split("-").filter(Boolean);
+    if (parts.length > 1) parts = parts.slice(1).concat(parts[0]);
+    return parts
+      .map(function (p) { return p.charAt(0).toUpperCase() + p.slice(1); })
+      .join(" ");
+  }
+
+  function preload(url) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      img.onload = function () { resolve(url); };
+      img.onerror = function () { reject(new Error("image failed")); };
+      img.src = url;
+    });
+  }
+
+  function randomUrl() {
+    return fetch(ENDPOINT, { cache: "no-store" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        if (!data || data.status !== "success" || !data.message) throw new Error("bad payload");
+        return data.message;
+      })
+      .then(preload);
+  }
+
+  function show(url) {
+    photo.classList.remove("shown");
+    photo.src = url;
+    photo.alt = "A photograph of a " + breedFromUrl(url);
+    // the image is already in cache, so this paints immediately
+    requestAnimationFrame(function () { photo.classList.add("shown"); });
+    status.hidden = true;
+    breedEl.textContent = breedFromUrl(url);
+    fullsize.href = url;
+    fullsize.hidden = false;
+    count += 1;
+    countEl.textContent = String(count).padStart(3, "0");
+    remember(url);
+  }
+
+  function remember(url) {
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.title = breedFromUrl(url);
+    btn.setAttribute("aria-label", "Show the " + breedFromUrl(url) + " again");
+    var thumb = new Image();
+    thumb.src = url;
+    thumb.alt = "";
+    btn.appendChild(thumb);
+    btn.addEventListener("click", function () {
+      photo.classList.remove("shown");
+      photo.src = url;
+      requestAnimationFrame(function () { photo.classList.add("shown"); });
+      status.hidden = true;
+      breedEl.textContent = breedFromUrl(url);
+      fullsize.href = url;
+      fullsize.hidden = false;
+    });
+    strip.prepend(btn);
+    while (strip.children.length > HISTORY_MAX) strip.removeChild(strip.lastChild);
+  }
+
+  function fail(message) {
+    status.hidden = false;
+    status.classList.add("error");
+    statusText.textContent = message;
+  }
+
+  function waiting() {
+    status.hidden = false;
+    status.classList.remove("error");
+    statusText.textContent = "Fetching…";
+  }
+
+  // keep one dog warm in the background so the next press is instant
+  function queueNext() {
+    randomUrl().then(function (url) { queued = url; }, function () { queued = null; });
+  }
+
+  function fetchDog() {
+    if (busy) return;
+    busy = true;
+    boneBtn.disabled = true;
+
+    var ready = queued ? Promise.resolve(queued) : randomUrl();
+    queued = null;
+
+    ready
+      .then(show)
+      .then(queueNext)
+      .catch(function () {
+        fail("Couldn't reach the kennel. Check your connection and press the bone again.");
+      })
+      .then(function () {
+        busy = false;
+        boneBtn.disabled = false;
+      });
+  }
+
+  boneBtn.addEventListener("click", fetchDog);
+
+  document.addEventListener("keydown", function (event) {
+    if (event.code !== "Space" && event.key !== " ") return;
+    var tag = document.activeElement && document.activeElement.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    event.preventDefault();
+    if (document.activeElement !== boneBtn) fetchDog();
+  });
+
+  waiting();
+  fetchDog();
+})();
+</script>
+</body>
+</html>
