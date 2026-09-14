@@ -213,6 +213,20 @@ body {
 .hatch.error .paw { display: none; }
 .hatch.error .bar { display: none; }
 
+.fixit { display: flex; gap: .5rem; width: min(22rem, 100%); }
+.fixit[hidden] { display: none; }
+.fixit .ghost { background: var(--surface); text-decoration: none; }
+.detail {
+  font-family: var(--mono);
+  font-size: .64rem;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-soft);
+  max-width: 28ch;
+  overflow-wrap: anywhere;
+}
+.hatch:not(.error) .fixit, .hatch:not(.error) .detail { display: none; }
+
 .paw { width: 40px; height: 40px; color: var(--hydrant); animation: trot 1.05s ease-in-out infinite; }
 @keyframes trot {
   0%, 100% { transform: translateY(2px) rotate(-9deg); opacity: .4; }
@@ -596,6 +610,11 @@ kbd {
             </svg>
             <span id="hatchText">Warming up the machine…</span>
             <div class="bar"><i></i></div>
+            <div class="fixit" id="fixit" hidden>
+              <button class="ghost" type="button" id="retryBtn">Try again</button>
+              <a class="ghost" id="rawLink" target="_blank" rel="noopener">What the server says ↗</a>
+            </div>
+            <code class="detail" id="detail"></code>
           </div>
           <button class="heart" id="heartBtn" aria-pressed="false" aria-label="Adopt this dog">
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -697,12 +716,22 @@ kbd {
    * The generator. Swap this one function to use a different image model
    * — everything downstream only needs a URL that resolves to an image.
    * ------------------------------------------------------------------ */
-  function imageUrl(prompt, seed) {
-    return "https://image.pollinations.ai/prompt/" + encodeURIComponent(prompt) +
-           "?width=896&height=1120&seed=" + seed + "&model=flux&nologo=true&referrer=bonemachine";
+  var W = 768, H = 960;   // 4:5, and both multiples of 64 — some backends reject other sizes
+
+  function candidatesFor(prompt, seed) {
+    var p = encodeURIComponent(prompt);
+    var base = "https://image.pollinations.ai/prompt/" + p;
+    var size = "width=" + W + "&height=" + H + "&seed=" + seed;
+    // tried in order: if the service rejects one shape of request, the next is simpler
+    return [
+      base + "?" + size + "&model=flux&nologo=true&referrer=bonemachine",
+      base + "?" + size + "&nologo=true",
+      base + "?" + size,
+      base + "?seed=" + seed
+    ];
   }
 
-  var LOAD_TIMEOUT = 60000;
+  var LOAD_TIMEOUT = 45000;
   var STORE_KEY = "bonemachine.kennel.v1";
   var SOUND_KEY = "bonemachine.squeak";
 
@@ -775,6 +804,8 @@ kbd {
       (mix.extra ? ", " + mix.extra : "") +
       ", candid pet photography, sharp focus on the eyes, detailed fur, natural colours, no text, no watermark";
 
+    var urls = candidatesFor(prompt, seed);
+
     return {
       seed: seed,
       mix: mixKey,
@@ -788,7 +819,8 @@ kbd {
         ["Bark",    between(rand, 5, 100)],
         ["Snacks",  between(rand, 60, 100)]
       ],
-      url: imageUrl(prompt, seed)
+      url: urls[0],
+      candidates: urls
     };
   }
 
@@ -797,7 +829,7 @@ kbd {
   ["photo","hatch","hatchText","heartBtn","dogName","dogBreed","traits","seedTag","countTag",
    "saveBtn","linkBtn","recipeText","boneBtn","bonewrap","hint","toast","mix","soundBtn",
    "kennelGrid","kennelEmpty","kennelCount","tabStage","tabKennel","viewStage","viewKennel",
-   "waves","mute"].forEach(function (id) { el[id] = document.getElementById(id); });
+   "waves","mute","fixit","detail","rawLink","retryBtn"].forEach(function (id) { el[id] = document.getElementById(id); });
 
   var current = null;
   var queued = null;      // a dog already generated and waiting in the wings
@@ -869,6 +901,80 @@ kbd {
   function stopChatter() { clearInterval(chatterTimer); }
 
   /* ---------------------------- image loading ---------------------------- */
+  // Reads the response so a failure can name itself (429, 402, 500...).
+  // Where CORS hides that, ok comes back null and we just let <img> try.
+  function probe(url) {
+    if (!window.fetch) return Promise.resolve({ ok: null });
+    var controller = window.AbortController ? new AbortController() : null;
+    var timer = setTimeout(function () { if (controller) controller.abort(); }, LOAD_TIMEOUT);
+    return fetch(url, controller ? { signal: controller.signal } : undefined)
+      .then(function (res) {
+        clearTimeout(timer);
+        if (res.ok) return res.blob().then(function (blob) { return { ok: true, blob: blob }; },
+                                           function () { return { ok: null }; });
+        return res.text().then(function (body) {
+          return { ok: false, status: res.status, detail: (body || "").slice(0, 140) };
+        }, function () {
+          return { ok: false, status: res.status, detail: "" };
+        });
+      }, function () {
+        clearTimeout(timer);
+        return { ok: null };
+      });
+  }
+
+  function resolveImage(dog) {
+    var list = dog.candidates;
+    var trouble = [];
+
+    function attempt(i) {
+      if (i >= list.length) {
+        var err = new Error("exhausted");
+        err.trouble = trouble;
+        return Promise.reject(err);
+      }
+      var url = list[i];
+      return probe(url).then(function (result) {
+        if (result.ok === false) {
+          trouble.push("HTTP " + result.status + (result.detail ? " — " + result.detail : ""));
+          return attempt(i + 1);
+        }
+        if (result.ok === true) {
+          dog.url = url;
+          return { display: URL.createObjectURL(result.blob), blob: true };
+        }
+        return loadImage(url).then(function () {
+          dog.url = url;
+          return { display: url, blob: false };
+        }, function (err) {
+          trouble.push(err.message === "timeout" ? "timed out" : "the image didn't load");
+          return attempt(i + 1);
+        });
+      });
+    }
+    return attempt(0);
+  }
+
+  function explain(err) {
+    var notes = (err && err.trouble) || [];
+    var joined = notes.join(" ");
+    if (/HTTP 429/.test(joined)) {
+      return ["The generator is busy right now (429).", "Wait a few seconds and press the bone again.", notes[0]];
+    }
+    if (/HTTP 40[12358]/.test(joined)) {
+      return ["The generator turned the request down.", "It may now need an account or a key — see the note below.", notes[0]];
+    }
+    if (/HTTP 5/.test(joined)) {
+      return ["The generator hit an error of its own.", "Press the bone to try again.", notes[0]];
+    }
+    if (/timed out/.test(joined)) {
+      return ["That dog took too long to draw.", "Press the bone to try again.", notes[0]];
+    }
+    return ["Couldn't reach the generator.",
+            "Check your connection, or whether an ad blocker or network filter is blocking image.pollinations.ai.",
+            notes[0] || "no response"];
+  }
+
   function loadImage(url) {
     return new Promise(function (resolve, reject) {
       var img = new Image();
@@ -909,13 +1015,21 @@ kbd {
     el.heartBtn.setAttribute("aria-pressed", String(isAdopted(dog.seed)));
   }
 
-  function showDog(dog, countIt) {
+  var lastObjectUrl = null;
+  function releaseLater(url) {
+    if (url && url.indexOf("blob:") === 0) setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function showDog(dog, countIt, display) {
     current = dog;
+    current.display = display || dog.url;
     stopChatter();
     el.hatch.hidden = true;
     el.hatch.classList.remove("error");
     el.photo.classList.remove("shown");
-    el.photo.src = dog.url;
+    if (lastObjectUrl && lastObjectUrl !== current.display) releaseLater(lastObjectUrl);
+    lastObjectUrl = current.display.indexOf("blob:") === 0 ? current.display : null;
+    el.photo.src = current.display;
     el.photo.alt = dog.name + ", " + dog.breed + ". " + dog.blurb;
     requestAnimationFrame(function () { el.photo.classList.add("shown"); });
     renderIdent(dog);
@@ -926,6 +1040,9 @@ kbd {
   }
 
   function showWaiting(dog) {
+    current = dog;
+    el.fixit.hidden = true;
+    el.detail.textContent = "";
     el.photo.classList.remove("shown");
     el.hatch.hidden = false;
     el.hatch.classList.remove("error");
@@ -934,11 +1051,15 @@ kbd {
     el.heartBtn.setAttribute("aria-pressed", "false");
   }
 
-  function showError(message) {
+  function showError(err) {
+    var said = explain(err);
     stopChatter();
     el.hatch.hidden = false;
     el.hatch.classList.add("error");
-    el.hatchText.textContent = message;
+    el.hatchText.textContent = said[0] + " " + said[1];
+    el.detail.textContent = said[2] || "";
+    el.rawLink.href = (current && current.candidates ? current.candidates[0] : "#");
+    el.fixit.hidden = false;
   }
 
   /* ---------------------------- the main loop ---------------------------- */
@@ -946,8 +1067,12 @@ kbd {
 
   function warmNext() {
     var dog = invent(newSeed(), mixKey);
+    if (queued) releaseLater(queued.display);
     queued = null;
-    loadImage(dog.url).then(function () { queued = dog; }, function () { queued = null; });
+    resolveImage(dog).then(
+      function (res) { queued = { dog: dog, display: res.display }; },
+      function () { queued = null; }
+    );
   }
 
   function fetchDog() {
@@ -958,8 +1083,8 @@ kbd {
     squeak();
 
     // a dog waiting in the wings appears instantly; otherwise we generate now
-    if (queued && queued.mix === mixKey) {
-      showDog(queued, true);
+    if (queued && queued.dog.mix === mixKey) {
+      showDog(queued.dog, true, queued.display);
       queued = null;
       busy = false;
       el.boneBtn.disabled = false;
@@ -971,16 +1096,12 @@ kbd {
     var dog = invent(newSeed(), mixKey);
     showWaiting(dog);
 
-    loadImage(dog.url)
-      .then(function () {
-        showDog(dog, true);
+    resolveImage(dog)
+      .then(function (res) {
+        showDog(dog, true, res.display);
         warmNext();
       })
-      .catch(function (err) {
-        showError(err.message === "timeout"
-          ? "That one took too long to draw. Press the bone to try again."
-          : "The dog factory didn't answer. Check your connection and press the bone again.");
-      })
+      .catch(function (err) { showError(err); })
       .then(function () {
         busy = false;
         el.boneBtn.disabled = false;
@@ -1073,21 +1194,24 @@ kbd {
 
   /* ---------------------------- actions ---------------------------- */
   el.boneBtn.addEventListener("click", fetchDog);
+  el.retryBtn.addEventListener("click", fetchDog);
   el.heartBtn.addEventListener("click", toggleAdopt);
 
   el.saveBtn.addEventListener("click", function () {
     if (!current) return;
-    fetch(current.url)
-      .then(function (r) { return r.blob(); })
+    var have = current.display && current.display.indexOf("blob:") === 0
+      ? Promise.resolve(null)
+      : fetch(current.url).then(function (r) { return r.blob(); });
+    have
       .then(function (blob) {
-        var href = URL.createObjectURL(blob);
+        var href = blob ? URL.createObjectURL(blob) : current.display;
         var a = document.createElement("a");
         a.href = href;
         a.download = current.name.toLowerCase() + "-" + current.seed + ".jpg";
         document.body.appendChild(a);
         a.click();
         a.remove();
-        setTimeout(function () { URL.revokeObjectURL(href); }, 1000);
+        if (blob) setTimeout(function () { URL.revokeObjectURL(href); }, 1000);
         toast("Saved " + current.name);
       })
       .catch(function () {
@@ -1113,6 +1237,7 @@ kbd {
     Array.prototype.forEach.call(el.mix.querySelectorAll(".chip"), function (c) {
       c.setAttribute("aria-pressed", String(c === chip));
     });
+    if (queued) releaseLater(queued.display);
     queued = null;          // the waiting dog no longer matches the mix
     warmNext();
     toast(chip.textContent.trim() + " it is");
@@ -1154,9 +1279,9 @@ kbd {
   showWaiting(first);
   busy = true;
   el.boneBtn.disabled = true;
-  loadImage(first.url)
-    .then(function () { showDog(first, true); warmNext(); })
-    .catch(function () { showError("The dog factory didn't answer. Press the bone to try again."); })
+  resolveImage(first)
+    .then(function (res) { showDog(first, true, res.display); warmNext(); })
+    .catch(function (err) { showError(err); })
     .then(function () { busy = false; el.boneBtn.disabled = false; });
 })();
 </script>

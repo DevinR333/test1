@@ -33,11 +33,17 @@ Generation goes through [Pollinations](https://pollinations.ai), which serves im
 straight from a URL with no key. One function decides that:
 
 ```js
-function imageUrl(prompt, seed) {
-  return "https://image.pollinations.ai/prompt/" + encodeURIComponent(prompt) +
-         "?width=896&height=1120&seed=" + seed + "&model=flux&nologo=true";
+function candidatesFor(prompt, seed) {
+  var base = "https://image.pollinations.ai/prompt/" + encodeURIComponent(prompt);
+  var size = "width=768&height=960&seed=" + seed;
+  return [ base + "?" + size + "&model=flux&nologo=true", base + "?" + size, ... ];
 }
 ```
+
+The list is tried in order — if the service rejects one shape of request, the next,
+simpler one is attempted before the app gives up. When every candidate fails, the error
+panel names the HTTP status the service returned and links to the raw URL so you can read
+its reply yourself.
 
 Point it at any endpoint that resolves to an image and everything downstream — preloading,
 the kennel, the nameplate, the seed permalinks — keeps working unchanged. For a keyed API
