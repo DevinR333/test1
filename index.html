@@ -2,341 +2,537 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Press the Bone</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bone Machine</title>
+<meta name="description" content="Press the bone, invent a dog. Every dog is generated from scratch — none of them exist.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Bone Machine">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#e8eae2">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#171a16">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://image.pollinations.ai">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap">
 <style>
 :root {
-  --paper:      #e8eae2;
-  --paper-deep: #dcdfd4;
+  --app:        #e8eae2;
+  --surface:    #fffdf7;
+  --surface-2:  #dee1d6;
   --ink:        #20261f;
   --ink-soft:   #5a6357;
   --bone:       #fff6e3;
-  --bone-edge:  #cdbf9d;
+  --bone-edge:  #b9a87f;
   --hydrant:    #d93f26;
-  --tennis:     #bbd94b;
-  --frame:      #fffdf7;
-  --hairline:   #20261f26;
-
-  --step-0: 1rem;
-  --step-1: 1.25rem;
-  --step-2: 1.75rem;
-  --step-3: clamp(2.4rem, 7vw, 3.9rem);
+  --tennis:     #a8c92f;
+  --hairline:   #20261f24;
+  --shadow:     0 18px 40px -30px #000000a6;
 
   --display: "Bricolage Grotesque", "Trebuchet MS", system-ui, sans-serif;
   --body: "Instrument Sans", "Helvetica Neue", Arial, sans-serif;
   --mono: "DM Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --dock-h: 148px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper:      #171a16;
-    --paper-deep: #10120f;
-    --ink:        #eef1e7;
-    --ink-soft:   #9aa393;
-    --bone:       #f6ecd6;
-    --bone-edge:  #7d7154;
-    --hydrant:    #f2664c;
-    --tennis:     #c6e25c;
-    --frame:      #21251e;
-    --hairline:   #eef1e733;
+    --app:       #171a16;
+    --surface:   #21251e;
+    --surface-2: #2b3027;
+    --ink:       #eef1e7;
+    --ink-soft:  #9aa393;
+    --bone:      #f6ecd6;
+    --bone-edge: #6f6449;
+    --hydrant:   #f2664c;
+    --tennis:    #c6e25c;
+    --hairline:  #eef1e72e;
+    --shadow:    0 18px 40px -28px #000000d0;
   }
 }
-
 :root[data-theme="dark"] {
-  --paper:      #171a16;
-  --paper-deep: #10120f;
-  --ink:        #eef1e7;
-  --ink-soft:   #9aa393;
-  --bone:       #f6ecd6;
-  --bone-edge:  #7d7154;
-  --hydrant:    #f2664c;
-  --tennis:     #c6e25c;
-  --frame:      #21251e;
-  --hairline:   #eef1e733;
+  --app:       #171a16;
+  --surface:   #21251e;
+  --surface-2: #2b3027;
+  --ink:       #eef1e7;
+  --ink-soft:  #9aa393;
+  --bone:      #f6ecd6;
+  --bone-edge: #6f6449;
+  --hydrant:   #f2664c;
+  --tennis:    #c6e25c;
+  --hairline:  #eef1e72e;
+  --shadow:    0 18px 40px -28px #000000d0;
 }
 
 * { box-sizing: border-box; }
+html, body { height: 100%; }
 
 body {
   margin: 0;
-  background: var(--paper);
+  background: var(--app);
   color: var(--ink);
   font-family: var(--body);
-  font-size: var(--step-0);
-  line-height: 1.5;
+  line-height: 1.45;
   -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
 }
 
-.page {
-  width: min(100% - 2.5rem, 44rem);
+.app {
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  max-width: 34rem;
   margin-inline: auto;
-  padding-block: clamp(1.75rem, 5vw, 3rem) 3.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
+  border-inline: 1px solid var(--hairline);
+  min-width: 0;
+  overflow: hidden;
 }
+.app > * { min-width: 0; }
+@media (max-width: 36rem) { .app { border-inline: 0; } }
 
-/* ---- masthead ---- */
-.masthead { display: flex; flex-direction: column; gap: .4rem; }
-
-.eyebrow {
-  font-family: var(--mono);
-  font-size: .72rem;
-  letter-spacing: .18em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
+/* ============ top bar ============ */
+.topbar {
   display: flex;
   align-items: center;
-  gap: .55rem;
+  gap: .6rem;
+  padding: .7rem .9rem;
+  padding-top: max(.7rem, env(safe-area-inset-top));
+  border-bottom: 1px solid var(--hairline);
+  background: var(--app);
 }
-.eyebrow::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--hairline);
-}
-
-h1 {
+.wordmark {
   font-family: var(--display);
   font-weight: 800;
-  font-size: var(--step-3);
-  line-height: .95;
-  letter-spacing: -.025em;
-  margin: 0;
-  text-wrap: balance;
+  font-size: 1.05rem;
+  letter-spacing: -.02em;
+  margin-right: auto;
+  display: flex;
+  align-items: center;
+  gap: .45rem;
 }
-h1 em {
-  font-style: normal;
-  color: var(--hydrant);
-}
+.wordmark svg { width: 22px; height: 22px; color: var(--hydrant); }
 
-.lede {
-  margin: 0;
-  max-width: 34ch;
-  color: var(--ink-soft);
-}
-
-/* ---- the photo window ---- */
-.window {
-  background: var(--frame);
+.icon-btn {
+  appearance: none;
   border: 1px solid var(--hairline);
-  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  border-radius: 999px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background .15s ease, color .15s ease;
+}
+.icon-btn:hover { background: var(--surface-2); }
+.icon-btn svg { width: 17px; height: 17px; }
+.icon-btn[aria-pressed="false"] { color: var(--ink-soft); }
+.icon-btn:focus-visible, .chip:focus-visible, .tab:focus-visible { outline: 2px solid var(--hydrant); outline-offset: 2px; }
+
+/* ============ tabs ============ */
+.tabs {
+  display: flex;
+  gap: .25rem;
+  padding: .55rem .9rem 0;
+  background: var(--app);
+}
+.tab {
+  appearance: none;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-family: var(--mono);
+  font-size: .72rem;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  padding: .4rem .7rem;
+  border-radius: 999px 999px 0 0;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+.tab[aria-selected="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--hydrant);
+}
+
+/* ============ stage ============ */
+.view { overflow-y: auto; overflow-x: hidden; padding: .9rem; display: none; min-width: 0; }
+.view[data-active="true"] { display: block; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
   overflow: hidden;
-  box-shadow: 0 1px 0 var(--hairline), 0 18px 34px -28px #00000080;
+  box-shadow: var(--shadow);
 }
 
 .plate {
   position: relative;
-  aspect-ratio: 4 / 3;
-  background:
-    repeating-linear-gradient(
-      -45deg,
-      transparent 0 11px,
-      var(--hairline) 11px 12px
-    );
+  aspect-ratio: 1 / 1;
+  background: var(--surface-2);
   overflow: hidden;
 }
-
 .plate img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
   object-fit: cover;
   opacity: 0;
-  transition: opacity .45s ease;
+  transition: opacity .5s ease;
 }
 .plate img.shown { opacity: 1; }
 
-.status {
-  position: absolute;
-  inset: 0;
+.hatch {
+  position: absolute; inset: 0;
   display: grid;
   place-content: center;
-  gap: .75rem;
   justify-items: center;
-  background: var(--frame);
-  color: var(--ink-soft);
-  font-family: var(--mono);
-  font-size: .78rem;
-  letter-spacing: .12em;
-  text-transform: uppercase;
+  gap: .8rem;
   text-align: center;
   padding: 1.5rem;
-  transition: opacity .3s ease;
-}
-.status[hidden] { display: none; }
-.status.error { color: var(--hydrant); letter-spacing: .04em; text-transform: none; font-family: var(--body); font-size: .95rem; }
-.status.error .paw { display: none; }
-
-.paw {
-  width: 34px;
-  height: 34px;
-  color: var(--hydrant);
-  animation: trot 1s steps(4, end) infinite;
-}
-@keyframes trot {
-  0%   { transform: translateY(0)     rotate(-8deg); opacity: .35; }
-  50%  { transform: translateY(-6px)  rotate(6deg);  opacity: 1; }
-  100% { transform: translateY(0)     rotate(-8deg); opacity: .35; }
-}
-
-/* ---- nameplate ---- */
-.nameplate {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: .7rem .95rem;
-  background: var(--ink);
-  color: var(--paper);
-  border-top: 1px solid var(--hairline);
-}
-
-.breed {
-  font-family: var(--display);
-  font-weight: 700;
-  font-size: var(--step-1);
-  letter-spacing: -.01em;
-  line-height: 1.1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.fullsize {
-  flex: none;
+  background:
+    repeating-linear-gradient(-45deg, transparent 0 13px, var(--hairline) 13px 14px),
+    var(--surface-2);
+  color: var(--ink-soft);
   font-family: var(--mono);
-  font-size: .72rem;
+  font-size: .76rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.hatch[hidden] { display: none; }
+.hatch span { max-width: 24ch; }
+.hatch.error { text-transform: none; letter-spacing: 0; font-family: var(--body); font-size: .95rem; color: var(--ink); }
+.hatch.error .paw { display: none; }
+.hatch.error .bar { display: none; }
+
+.paw { width: 40px; height: 40px; color: var(--hydrant); animation: trot 1.05s ease-in-out infinite; }
+@keyframes trot {
+  0%, 100% { transform: translateY(2px) rotate(-9deg); opacity: .4; }
+  50%      { transform: translateY(-7px) rotate(7deg); opacity: 1; }
+}
+.bar {
+  width: min(190px, 60%);
+  height: 4px;
+  border-radius: 999px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+.bar i {
+  display: block;
+  height: 100%;
+  width: 38%;
+  border-radius: 999px;
+  background: var(--hydrant);
+  animation: slide 1.5s ease-in-out infinite;
+}
+@keyframes slide {
+  0%   { transform: translateX(-110%); }
+  100% { transform: translateX(370%); }
+}
+
+.heart {
+  position: absolute;
+  top: .6rem; right: .6rem;
+  width: 42px; height: 42px;
+  border-radius: 999px;
+  border: 0;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  background: #0f120e8c;
+  backdrop-filter: blur(6px);
+  color: #fff;
+  transition: transform .15s ease;
+}
+.heart svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 2; }
+.heart[aria-pressed="true"] { color: var(--hydrant); }
+.heart[aria-pressed="true"] svg { fill: currentColor; }
+.heart:active { transform: scale(.88); }
+.heart:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+/* nameplate — sits on the photo so it never falls below the fold */
+.ident {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 2.6rem .95rem .8rem;
+  background: linear-gradient(to top, #0b0d0ae8 12%, #0b0d0a00);
+  color: #fff9ec;
+  pointer-events: none;
+}
+.dogname {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 1.7rem;
+  line-height: 1.05;
+  letter-spacing: -.02em;
+  margin: 0;
+  text-wrap: balance;
+}
+.breed {
+  margin: .1rem 0 0;
+  color: #fff9ecc4;
+  font-size: .86rem;
+}
+
+/* trait meters */
+.traits {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .45rem .9rem;
+  padding: .7rem .95rem .2rem;
+}
+.trait { display: grid; grid-template-columns: 1fr auto; gap: .15rem .5rem; align-items: center; }
+.trait span {
+  font-family: var(--mono);
+  font-size: .64rem;
   letter-spacing: .12em;
   text-transform: uppercase;
-  color: var(--tennis);
-  text-decoration: none;
-  border-bottom: 1px solid transparent;
-  padding-bottom: 1px;
+  color: var(--ink-soft);
 }
-.fullsize:hover, .fullsize:focus-visible { border-bottom-color: currentColor; }
+.trait b {
+  font-family: var(--mono);
+  font-size: .64rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.meter {
+  grid-column: 1 / -1;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.meter i { display: block; height: 100%; border-radius: 999px; background: var(--tennis); transition: width .5s ease; }
 
-/* ---- the bone ---- */
-.dispenser {
+.papers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  padding: .75rem .95rem .95rem;
+}
+.stat {
+  font-family: var(--mono);
+  font-size: .66rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: .25rem .6rem;
+  font-variant-numeric: tabular-nums;
+}
+.stat b { color: var(--ink); font-weight: 500; }
+
+.rowactions {
+  display: flex;
+  gap: .5rem;
+  padding: 0 .95rem .95rem;
+}
+.ghost {
+  flex: 1;
+  appearance: none;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--ink);
+  border-radius: 10px;
+  padding: .55rem;
+  font: inherit;
+  font-size: .85rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  transition: background .15s ease;
+}
+.ghost:hover { background: var(--surface-2); }
+.ghost:focus-visible { outline: 2px solid var(--hydrant); outline-offset: 2px; }
+.ghost svg { width: 15px; height: 15px; }
+
+.recipe {
+  margin: .8rem 0 0;
+  padding: .7rem .8rem;
+  border: 1px dashed var(--hairline);
+  border-radius: 10px;
+  font-size: .82rem;
+  color: var(--ink-soft);
+}
+.recipe summary {
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: .68rem;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.recipe p { margin: .5rem 0 0; }
+
+/* ============ kennel ============ */
+.kennel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: .65rem;
+}
+.pup {
+  position: relative;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: transform .15s ease;
+}
+.pup:hover { transform: translateY(-3px); }
+.pup:focus-visible { outline: 2px solid var(--hydrant); outline-offset: 2px; }
+.pup img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; background: var(--surface-2); }
+.pup .who { padding: .45rem .55rem .6rem; }
+.pup .who strong { display: block; font-family: var(--display); font-size: .95rem; font-weight: 700; }
+.pup .who em { font-style: normal; font-size: .72rem; color: var(--ink-soft); }
+.pup .drop {
+  position: absolute; top: .35rem; right: .35rem;
+  width: 26px; height: 26px; border-radius: 999px;
+  border: 0; cursor: pointer;
+  background: #0f120eaa; color: #fff;
+  display: grid; place-items: center;
+  font-size: .8rem; line-height: 1;
+}
+.empty {
+  text-align: center;
+  color: var(--ink-soft);
+  padding: 3rem 1rem;
+  font-size: .95rem;
+}
+.empty svg { width: 46px; height: 46px; color: var(--bone-edge); margin-bottom: .6rem; }
+
+/* ============ dock ============ */
+.dock {
+  border-top: 1px solid var(--hairline);
+  background: var(--app);
+  padding: .55rem .9rem max(.7rem, env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: .9rem;
-  padding-top: .5rem;
+  gap: .5rem;
+}
+
+.mix {
+  display: flex;
+  min-width: 0;
+  gap: .35rem;
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: .1rem;
+}
+.mix::-webkit-scrollbar { display: none; }
+.chip {
+  flex: none;
+  appearance: none;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--ink-soft);
+  border-radius: 999px;
+  padding: .28rem .7rem;
+  font-family: var(--mono);
+  font-size: .68rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.chip[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--app);
+}
+
+.bonewrap { position: relative; display: grid; place-items: center; width: 100%; }
+.bonewrap::before {
+  content: "";
+  position: absolute;
+  width: 78%;
+  height: 74%;
+  border-radius: 999px;
+  background: var(--tennis);
+  opacity: .22;
+  filter: blur(18px);
+  animation: breathe 2.8s ease-in-out infinite;
+}
+.bonewrap.busy::before { animation: none; opacity: .1; }
+@keyframes breathe {
+  0%, 100% { transform: scale(.92); opacity: .16; }
+  50%      { transform: scale(1.05); opacity: .32; }
 }
 
 .bone {
+  position: relative;
   appearance: none;
   border: 0;
   background: none;
   padding: 0;
   cursor: pointer;
-  width: min(19rem, 78vw);
+  width: min(17.5rem, 74vw);
   color: var(--bone);
-  filter: drop-shadow(0 7px 0 var(--bone-edge));
+  filter: drop-shadow(0 6px 0 var(--bone-edge));
   transition: transform .12s ease, filter .12s ease;
 }
 .bone svg { display: block; width: 100%; height: auto; }
-.bone .cap, .bone .shaft { fill: currentColor; }
+.bone .outline { fill: var(--ink); }
+.bone .body { fill: currentColor; }
 .bone .word {
   fill: var(--ink);
   font-family: var(--display);
   font-weight: 800;
-  font-size: 40px;
-  letter-spacing: .1em;
+  font-size: 48px;
+  letter-spacing: .12em;
   text-anchor: middle;
 }
-.bone:hover { transform: rotate(-1.6deg) translateY(-2px); }
-.bone:active {
-  transform: translateY(5px) scaleY(.94);
-  filter: drop-shadow(0 2px 0 var(--bone-edge));
-}
-.bone:focus-visible {
-  outline: 3px solid var(--hydrant);
-  outline-offset: 8px;
-  border-radius: 999px;
-}
-.bone[disabled] { cursor: wait; opacity: .55; }
+.bone:hover { transform: translateY(-2px) rotate(-1.4deg); }
+.bone:active { transform: translateY(5px) scaleY(.93); filter: drop-shadow(0 1px 0 var(--bone-edge)); }
+.bone:focus-visible { outline: 3px solid var(--hydrant); outline-offset: 7px; border-radius: 999px; }
+.bone[disabled] { cursor: progress; opacity: .5; }
 
-.tags {
-  display: flex;
-  align-items: center;
-  gap: .5rem;
-  flex-wrap: wrap;
-  justify-content: center;
+.hint {
   font-family: var(--mono);
-  font-size: .74rem;
-  letter-spacing: .1em;
+  font-size: .66rem;
+  letter-spacing: .12em;
   text-transform: uppercase;
   color: var(--ink-soft);
 }
-.tag {
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  padding: .3rem .7rem;
-  font-variant-numeric: tabular-nums;
-}
-.tag b { color: var(--ink); font-weight: 500; }
-
 kbd {
   font-family: var(--mono);
-  font-size: .74rem;
   border: 1px solid var(--hairline);
   border-bottom-width: 2px;
   border-radius: 4px;
-  padding: .1rem .35rem;
+  padding: 0 .3rem;
   color: var(--ink);
 }
 
-/* ---- history rail ---- */
-.rail { display: flex; flex-direction: column; gap: .6rem; }
-.rail h2 {
-  margin: 0;
-  font-family: var(--mono);
-  font-weight: 400;
-  font-size: .72rem;
-  letter-spacing: .18em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-}
-.strip {
-  display: flex;
-  gap: .55rem;
-  overflow-x: auto;
-  padding-bottom: .35rem;
-  scrollbar-width: thin;
-}
-.strip:empty::after {
-  content: "Nothing yet — the bone fills this up.";
+/* ============ toast ============ */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--dock-h) + 1rem);
+  transform: translate(-50%, 12px);
+  background: var(--ink);
+  color: var(--app);
   font-size: .85rem;
-  color: var(--ink-soft);
+  padding: .5rem .9rem;
+  border-radius: 999px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .25s ease, transform .25s ease;
+  z-index: 10;
 }
-.strip button {
-  flex: none;
-  width: 74px;
-  height: 74px;
-  padding: 0;
-  border: 1px solid var(--hairline);
-  border-radius: 4px;
-  overflow: hidden;
-  background: var(--paper-deep);
-  cursor: pointer;
-  transition: transform .15s ease;
-}
-.strip button:hover { transform: translateY(-3px); }
-.strip button:focus-visible { outline: 2px solid var(--hydrant); outline-offset: 2px; }
-.strip img { width: 100%; height: 100%; object-fit: cover; display: block; }
-
-footer {
-  font-size: .82rem;
-  color: var(--ink-soft);
-  border-top: 1px solid var(--hairline);
-  padding-top: .9rem;
-}
-footer a { color: inherit; }
+.toast.up { opacity: 1; transform: translate(-50%, 0); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -344,208 +540,615 @@ footer a { color: inherit; }
     animation-iteration-count: 1 !important;
     transition-duration: .001ms !important;
   }
-  .bone:hover { transform: none; }
+  .bone:hover, .pup:hover { transform: none; }
 }
 </style>
 </head>
 <body>
-<main class="page">
+<div class="app">
 
-  <header class="masthead">
-    <p class="eyebrow">Random dog dispenser</p>
-    <h1>Press the <em>bone</em>.</h1>
-    <p class="lede">One squeeze, one dog. Real photographs, pulled at random from a kennel of thousands.</p>
-  </header>
-
-  <figure class="window" style="margin:0">
-    <div class="plate">
-      <img id="photo" alt="">
-      <div class="status" id="status">
-        <svg class="paw" viewBox="0 0 24 24" aria-hidden="true">
-          <ellipse cx="12" cy="16" rx="6" ry="5" fill="currentColor"></ellipse>
-          <circle cx="5"  cy="10" r="2.5" fill="currentColor"></circle>
-          <circle cx="9.5" cy="6.5" r="2.6" fill="currentColor"></circle>
-          <circle cx="14.5" cy="6.5" r="2.6" fill="currentColor"></circle>
-          <circle cx="19" cy="10" r="2.5" fill="currentColor"></circle>
-        </svg>
-        <span id="statusText">Fetching…</span>
-      </div>
+  <header class="topbar">
+    <div class="wordmark">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="5" cy="8" r="3.4" fill="currentColor"></circle>
+        <circle cx="5" cy="16" r="3.4" fill="currentColor"></circle>
+        <circle cx="19" cy="8" r="3.4" fill="currentColor"></circle>
+        <circle cx="19" cy="16" r="3.4" fill="currentColor"></circle>
+        <rect x="4" y="9" width="16" height="6" rx="3" fill="currentColor"></rect>
+      </svg>
+      Bone Machine
     </div>
-    <figcaption class="nameplate">
-      <span class="breed" id="breed">—</span>
-      <a class="fullsize" id="fullsize" href="#" target="_blank" rel="noopener" hidden>Full size ↗</a>
-    </figcaption>
-  </figure>
-
-  <div class="dispenser">
-    <button class="bone" id="boneBtn" aria-label="Fetch a new dog">
-      <svg viewBox="0 0 340 140" role="presentation">
-        <circle class="cap" cx="62"  cy="48" r="34"></circle>
-        <circle class="cap" cx="62"  cy="92" r="34"></circle>
-        <circle class="cap" cx="278" cy="48" r="34"></circle>
-        <circle class="cap" cx="278" cy="92" r="34"></circle>
-        <rect class="shaft" x="50" y="44" width="240" height="52" rx="26"></rect>
-        <text class="word" x="170" y="70" dominant-baseline="central">FETCH</text>
+    <button class="icon-btn" id="soundBtn" aria-pressed="true" title="Squeak on / off" aria-label="Squeak on or off">
+      <svg id="soundIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M11 5 6 9H3v6h3l5 4z"></path>
+        <path id="waves" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"></path>
+        <path id="mute" d="M16 9l5 6M21 9l-5 6" style="display:none"></path>
       </svg>
     </button>
-    <p class="tags">
-      <span class="tag">Fetched <b id="count">000</b></span>
-      <span class="tag" id="sourceTag">Kennel: dog.ceo</span>
-      <span>or hit <kbd>space</kbd></span>
-    </p>
-  </div>
+  </header>
 
-  <section class="rail">
-    <h2>Today's walk</h2>
-    <div class="strip" id="strip"></div>
-  </section>
+  <nav class="tabs" role="tablist">
+    <button class="tab" id="tabStage" role="tab" aria-selected="true" aria-controls="viewStage">The machine</button>
+    <button class="tab" id="tabKennel" role="tab" aria-selected="false" aria-controls="viewKennel">Kennel <span id="kennelCount">0</span></button>
+  </nav>
 
-  <footer>
-    Photographs come from the <a href="https://dog.ceo/dog-api/" target="_blank" rel="noopener">Dog API</a>, a public
-    collection of real dog photographs — so every fetch is a genuine photo, not a rendering.
+  <main style="overflow:hidden">
+    <section class="view" id="viewStage" role="tabpanel" aria-labelledby="tabStage" data-active="true" style="height:100%">
+      <article class="card">
+        <div class="plate">
+          <img id="photo" alt="">
+          <div class="hatch" id="hatch">
+            <svg class="paw" viewBox="0 0 24 24" aria-hidden="true">
+              <ellipse cx="12" cy="16.5" rx="6.2" ry="5" fill="currentColor"></ellipse>
+              <circle cx="4.8" cy="10.2" r="2.5" fill="currentColor"></circle>
+              <circle cx="9.4" cy="6.4" r="2.6" fill="currentColor"></circle>
+              <circle cx="14.6" cy="6.4" r="2.6" fill="currentColor"></circle>
+              <circle cx="19.2" cy="10.2" r="2.5" fill="currentColor"></circle>
+            </svg>
+            <span id="hatchText">Warming up the machine…</span>
+            <div class="bar"><i></i></div>
+          </div>
+          <button class="heart" id="heartBtn" aria-pressed="false" aria-label="Adopt this dog">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 20s-7-4.6-7-9.6A4.4 4.4 0 0 1 12 7.4a4.4 4.4 0 0 1 7 3C19 15.4 12 20 12 20z"></path>
+            </svg>
+          </button>
+
+        <div class="ident">
+          <h1 class="dogname" id="dogName">&nbsp;</h1>
+          <p class="breed" id="dogBreed">&nbsp;</p>
+        </div>
+        </div>
+
+        <div class="traits" id="traits"></div>
+
+        <div class="papers">
+          <span class="stat">Seed <b id="seedTag">—</b></span>
+          <span class="stat">Fetched <b id="countTag">000</b></span>
+          <span class="stat">Existence <b>0%</b></span>
+        </div>
+
+        <div class="rowactions">
+          <button class="ghost" id="saveBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"></path></svg>
+            Save photo
+          </button>
+          <button class="ghost" id="linkBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"></path><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"></path></svg>
+            Copy link
+          </button>
+        </div>
+      </article>
+
+      <details class="recipe">
+        <summary>The recipe</summary>
+        <p id="recipeText">Every dog starts as a sentence. This one hasn't been written yet.</p>
+      </details>
+    </section>
+
+    <section class="view" id="viewKennel" role="tabpanel" aria-labelledby="tabKennel" style="height:100%">
+      <div class="kennel-grid" id="kennelGrid"></div>
+      <div class="empty" id="kennelEmpty">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="5" cy="8" r="3.4" fill="currentColor"></circle>
+          <circle cx="5" cy="16" r="3.4" fill="currentColor"></circle>
+          <circle cx="19" cy="8" r="3.4" fill="currentColor"></circle>
+          <circle cx="19" cy="16" r="3.4" fill="currentColor"></circle>
+          <rect x="4" y="9" width="16" height="6" rx="3" fill="currentColor"></rect>
+        </svg>
+        <p>No dogs adopted yet.<br>Tap the heart on one you like and it lives here.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="dock">
+    <div class="mix" id="mix" role="group" aria-label="Steer the machine">
+      <button class="chip" data-mix="any" aria-pressed="true">Any dog</button>
+      <button class="chip" data-mix="puppy" aria-pressed="false">Puppy</button>
+      <button class="chip" data-mix="fluffy" aria-pressed="false">Extra fluff</button>
+      <button class="chip" data-mix="tiny" aria-pressed="false">Tiny</button>
+      <button class="chip" data-mix="giant" aria-pressed="false">Giant</button>
+      <button class="chip" data-mix="zoomies" aria-pressed="false">Zoomies</button>
+      <button class="chip" data-mix="wet" aria-pressed="false">Just bathed</button>
+    </div>
+
+    <div class="bonewrap" id="bonewrap">
+      <button class="bone" id="boneBtn" aria-label="Generate a new dog">
+        <svg viewBox="0 0 360 150" role="presentation">
+          <g class="outline">
+            <circle cx="66"  cy="52" r="39"></circle>
+            <circle cx="66"  cy="98" r="39"></circle>
+            <circle cx="294" cy="52" r="39"></circle>
+            <circle cx="294" cy="98" r="39"></circle>
+            <rect x="52" y="46" width="256" height="58" rx="29"></rect>
+          </g>
+          <g class="body">
+            <circle cx="66"  cy="52" r="34"></circle>
+            <circle cx="66"  cy="98" r="34"></circle>
+            <circle cx="294" cy="52" r="34"></circle>
+            <circle cx="294" cy="98" r="34"></circle>
+            <rect x="56" y="51" width="248" height="48" rx="24"></rect>
+          </g>
+          <text class="word" x="180" y="76" dominant-baseline="central">FETCH</text>
+        </svg>
+      </button>
+    </div>
+
+    <p class="hint" id="hint">Tap the bone &nbsp;·&nbsp; or press <kbd>space</kbd></p>
   </footer>
+</div>
 
-</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
 (function () {
   "use strict";
 
-  var ENDPOINT = "https://dog.ceo/api/breeds/image/random";
-  var HISTORY_MAX = 12;
-
-  var photo = document.getElementById("photo");
-  var status = document.getElementById("status");
-  var statusText = document.getElementById("statusText");
-  var breedEl = document.getElementById("breed");
-  var fullsize = document.getElementById("fullsize");
-  var boneBtn = document.getElementById("boneBtn");
-  var countEl = document.getElementById("count");
-  var strip = document.getElementById("strip");
-
-  var count = 0;
-  var busy = false;
-  var queued = null; // a preloaded url, ready to show instantly
-
-  // "https://images.dog.ceo/breeds/hound-afghan/n02088094_1003.jpg" -> "Afghan Hound"
-  function breedFromUrl(url) {
-    var match = /breeds\/([^/]+)\//.exec(url);
-    if (!match) return "Mystery dog";
-    var parts = match[1].split("-").filter(Boolean);
-    if (parts.length > 1) parts = parts.slice(1).concat(parts[0]);
-    return parts
-      .map(function (p) { return p.charAt(0).toUpperCase() + p.slice(1); })
-      .join(" ");
+  /* ------------------------------------------------------------------
+   * The generator. Swap this one function to use a different image model
+   * — everything downstream only needs a URL that resolves to an image.
+   * ------------------------------------------------------------------ */
+  function imageUrl(prompt, seed) {
+    return "https://image.pollinations.ai/prompt/" + encodeURIComponent(prompt) +
+           "?width=896&height=1120&seed=" + seed + "&model=flux&nologo=true&referrer=bonemachine";
   }
 
-  function preload(url) {
+  var LOAD_TIMEOUT = 60000;
+  var STORE_KEY = "bonemachine.kennel.v1";
+  var SOUND_KEY = "bonemachine.squeak";
+
+  /* ---------------------------- vocabulary ---------------------------- */
+  var NAMES = ["Biscuit","Marlow","Pepper","Juniper","Waffle","Tuck","Olive","Bramble","Ziggy","Miso",
+               "Clover","Rooster","Noodle","Pickle","Sable","Fig","Comet","Hazel","Dumpling","Rye",
+               "Moss","Tilly","Bandit","Maple","Gus","Poppy","Otto","Nimbus","Chowder","Wren"];
+  var BREED_A = ["Alpine","Coastal","Highland","Velvet","Dusty","Northern","Meadow","Harbor","Autumn",
+                 "Marbled","Copper","Midnight","Wandering","Royal","Little","Storm","Sunday"];
+  var BREED_B = ["Truffle","Cloud","Thistle","Biscuit","Lantern","Willow","Pebble","Moss","Ember",
+                 "Barley","Feather","Bramble","Comet","Honey","Kettle"];
+  var BREED_C = ["Hound","Retriever","Spaniel","Terrier","Shepherd","Collie","Setter","Corgi",
+                 "Mastiff","Whippet","Doodle","Pointer","Sheepdog"];
+
+  var COATS  = ["long shaggy fur","tight curls","a short velvety coat","a wiry scruffy coat",
+                "silky feathered fur","a dense double coat","wavy fleecy fur"];
+  var COLORS = ["caramel","silver-grey","inky black with a white blaze","ginger red","chocolate brown",
+                "cream and apricot","brindle","speckled blue merle","sandy gold","soot-and-snow patches"];
+  var EARS   = ["big floppy ears","perky triangular ears","one ear up and one ear flopped over",
+                "tufted feathery ears","small round ears"];
+  var SIZES  = ["a tiny lap-sized","a compact medium-sized","a big burly","a lanky long-legged","a stocky barrel-chested"];
+  var SCENES = ["sitting in tall summer grass","on a weathered wooden porch","in a sunlit kitchen",
+                "on a foggy beach","among fallen autumn leaves","on a quiet city sidewalk",
+                "in a field of fresh snow","curled on a wool blanket"];
+  var LIGHTS = ["golden hour backlight","soft overcast daylight","warm window light",
+                "crisp morning sun","moody blue-hour light"];
+  var SHOTS  = ["85mm portrait lens, shallow depth of field","35mm documentary shot",
+                "close-up of the face","low eye-level angle"];
+  var MOODS  = ["head tilted in curiosity","mid-yawn","tongue out, grinning",
+                "alert and serious","sleepy half-closed eyes","ears pricked at something offscreen"];
+
+  var MIXES = {
+    any:     {},
+    puppy:   { size: "a roly-poly puppy-sized", extra: "very young puppy, oversized paws" },
+    fluffy:  { coat: "enormously fluffy cloud-like fur", extra: "freshly groomed, fur catching the light" },
+    tiny:    { size: "a palm-sized teacup", extra: "comically small next to everyday objects" },
+    giant:   { size: "an enormous bear-sized", extra: "towering, heavy-boned, gentle giant" },
+    zoomies: { extra: "sprinting at full tilt, ears flying, motion blur in the background", mood: "wild-eyed with joy" },
+    wet:     { extra: "soaking wet after a bath, fur plastered down, wrapped in a striped towel", mood: "deeply unimpressed" }
+  };
+
+  /* ---------------------------- tiny helpers ---------------------------- */
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      var t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function pick(rand, list) { return list[Math.floor(rand() * list.length)]; }
+  function between(rand, lo, hi) { return lo + Math.floor(rand() * (hi - lo + 1)); }
+
+  /* ---------------------------- invent a dog ---------------------------- */
+  function invent(seed, mixKey) {
+    var rand = mulberry32(seed);
+    var mix = MIXES[mixKey] || {};
+
+    var size  = mix.size || pick(rand, SIZES);
+    var coat  = mix.coat || pick(rand, COATS);
+    var color = pick(rand, COLORS);
+    var ears  = pick(rand, EARS);
+    var mood  = mix.mood || pick(rand, MOODS);
+    var scene = pick(rand, SCENES);
+    var light = pick(rand, LIGHTS);
+    var shot  = pick(rand, SHOTS);
+
+    var prompt = "photorealistic photograph of " + size + " dog with " + coat + ", " + color +
+      ", " + ears + ", " + mood + ", " + scene + ", " + light + ", " + shot +
+      (mix.extra ? ", " + mix.extra : "") +
+      ", candid pet photography, sharp focus on the eyes, detailed fur, natural colours, no text, no watermark";
+
+    return {
+      seed: seed,
+      mix: mixKey,
+      name: pick(rand, NAMES),
+      breed: pick(rand, BREED_A) + " " + pick(rand, BREED_B) + " " + pick(rand, BREED_C),
+      prompt: prompt,
+      blurb: "One " + size.replace(/^an? /, "") + " dog, " + coat + " in " + color + ", " + mood + ", " + scene + ".",
+      traits: [
+        ["Fluff",   between(rand, 20, 100)],
+        ["Zoomies", between(rand, 10, 100)],
+        ["Bark",    between(rand, 5, 100)],
+        ["Snacks",  between(rand, 60, 100)]
+      ],
+      url: imageUrl(prompt, seed)
+    };
+  }
+
+  /* ---------------------------- elements ---------------------------- */
+  var el = {};
+  ["photo","hatch","hatchText","heartBtn","dogName","dogBreed","traits","seedTag","countTag",
+   "saveBtn","linkBtn","recipeText","boneBtn","bonewrap","hint","toast","mix","soundBtn",
+   "kennelGrid","kennelEmpty","kennelCount","tabStage","tabKennel","viewStage","viewKennel",
+   "waves","mute"].forEach(function (id) { el[id] = document.getElementById(id); });
+
+  var current = null;
+  var queued = null;      // a dog already generated and waiting in the wings
+  var busy = false;
+  var fetched = 0;
+  var mixKey = "any";
+  var squeakOn = true;
+  var kennel = [];
+
+  /* ---------------------------- storage ---------------------------- */
+  function loadKennel() {
+    try {
+      var raw = localStorage.getItem(STORE_KEY);
+      kennel = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(kennel)) kennel = [];
+    } catch (e) { kennel = []; }
+  }
+  function saveKennel() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(kennel.slice(0, 60))); } catch (e) {}
+  }
+
+  /* ---------------------------- squeak ---------------------------- */
+  var audio = null;
+  function squeak() {
+    if (!squeakOn) return;
+    try {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      audio = audio || new Ctx();
+      if (audio.state === "suspended") audio.resume();
+      var t = audio.currentTime;
+      var osc = audio.createOscillator();
+      var gain = audio.createGain();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(520, t);
+      osc.frequency.exponentialRampToValueAtTime(1180, t + 0.07);
+      osc.frequency.exponentialRampToValueAtTime(430, t + 0.2);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.16, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
+      osc.connect(gain).connect(audio.destination);
+      osc.start(t);
+      osc.stop(t + 0.26);
+    } catch (e) { /* a silent squeak is not worth an error */ }
+  }
+
+  /* ---------------------------- toast ---------------------------- */
+  var toastTimer = null;
+  function toast(message) {
+    el.toast.textContent = message;
+    el.toast.classList.add("up");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.toast.classList.remove("up"); }, 2200);
+  }
+
+  /* ---------------------------- loading chatter ---------------------------- */
+  var CHATTER = ["Choosing a snout…", "Growing fur…", "Attaching ears…", "Adding a wet nose…",
+                 "Teaching it to sit…", "Fluffing the tail…", "Adjusting the floof…", "Almost a dog…"];
+  var chatterTimer = null;
+  function startChatter() {
+    var i = 0;
+    el.hatchText.textContent = CHATTER[0];
+    clearInterval(chatterTimer);
+    chatterTimer = setInterval(function () {
+      i = (i + 1) % CHATTER.length;
+      el.hatchText.textContent = CHATTER[i];
+    }, 1900);
+  }
+  function stopChatter() { clearInterval(chatterTimer); }
+
+  /* ---------------------------- image loading ---------------------------- */
+  function loadImage(url) {
     return new Promise(function (resolve, reject) {
       var img = new Image();
-      img.onload = function () { resolve(url); };
-      img.onerror = function () { reject(new Error("image failed")); };
+      var timer = setTimeout(function () {
+        img.src = "";
+        reject(new Error("timeout"));
+      }, LOAD_TIMEOUT);
+      img.onload = function () { clearTimeout(timer); resolve(url); };
+      img.onerror = function () { clearTimeout(timer); reject(new Error("failed")); };
       img.src = url;
     });
   }
 
-  function randomUrl() {
-    return fetch(ENDPOINT, { cache: "no-store" })
-      .then(function (r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
-      })
-      .then(function (data) {
-        if (!data || data.status !== "success" || !data.message) throw new Error("bad payload");
-        return data.message;
-      })
-      .then(preload);
-  }
-
-  function show(url) {
-    photo.classList.remove("shown");
-    photo.src = url;
-    photo.alt = "A photograph of a " + breedFromUrl(url);
-    // the image is already in cache, so this paints immediately
-    requestAnimationFrame(function () { photo.classList.add("shown"); });
-    status.hidden = true;
-    breedEl.textContent = breedFromUrl(url);
-    fullsize.href = url;
-    fullsize.hidden = false;
-    count += 1;
-    countEl.textContent = String(count).padStart(3, "0");
-    remember(url);
-  }
-
-  function remember(url) {
-    var btn = document.createElement("button");
-    btn.type = "button";
-    btn.title = breedFromUrl(url);
-    btn.setAttribute("aria-label", "Show the " + breedFromUrl(url) + " again");
-    var thumb = new Image();
-    thumb.src = url;
-    thumb.alt = "";
-    btn.appendChild(thumb);
-    btn.addEventListener("click", function () {
-      photo.classList.remove("shown");
-      photo.src = url;
-      requestAnimationFrame(function () { photo.classList.add("shown"); });
-      status.hidden = true;
-      breedEl.textContent = breedFromUrl(url);
-      fullsize.href = url;
-      fullsize.hidden = false;
+  /* ---------------------------- rendering ---------------------------- */
+  function renderIdent(dog) {
+    el.dogName.textContent = dog.name;
+    el.dogBreed.textContent = dog.breed + " · one of a kind, literally";
+    el.seedTag.textContent = dog.seed;
+    el.recipeText.textContent = dog.blurb;
+    el.traits.innerHTML = "";
+    dog.traits.forEach(function (pair) {
+      var wrap = document.createElement("div");
+      wrap.className = "trait";
+      var label = document.createElement("span");
+      label.textContent = pair[0];
+      var value = document.createElement("b");
+      value.textContent = pair[1];
+      var meter = document.createElement("div");
+      meter.className = "meter";
+      var fill = document.createElement("i");
+      fill.style.width = pair[1] + "%";
+      meter.appendChild(fill);
+      wrap.appendChild(label);
+      wrap.appendChild(value);
+      wrap.appendChild(meter);
+      el.traits.appendChild(wrap);
     });
-    strip.prepend(btn);
-    while (strip.children.length > HISTORY_MAX) strip.removeChild(strip.lastChild);
+    el.heartBtn.setAttribute("aria-pressed", String(isAdopted(dog.seed)));
   }
 
-  function fail(message) {
-    status.hidden = false;
-    status.classList.add("error");
-    statusText.textContent = message;
+  function showDog(dog, countIt) {
+    current = dog;
+    stopChatter();
+    el.hatch.hidden = true;
+    el.hatch.classList.remove("error");
+    el.photo.classList.remove("shown");
+    el.photo.src = dog.url;
+    el.photo.alt = dog.name + ", " + dog.breed + ". " + dog.blurb;
+    requestAnimationFrame(function () { el.photo.classList.add("shown"); });
+    renderIdent(dog);
+    if (countIt) {
+      fetched += 1;
+      el.countTag.textContent = String(fetched).padStart(3, "0");
+    }
   }
 
-  function waiting() {
-    status.hidden = false;
-    status.classList.remove("error");
-    statusText.textContent = "Fetching…";
+  function showWaiting(dog) {
+    el.photo.classList.remove("shown");
+    el.hatch.hidden = false;
+    el.hatch.classList.remove("error");
+    startChatter();
+    renderIdent(dog);
+    el.heartBtn.setAttribute("aria-pressed", "false");
   }
 
-  // keep one dog warm in the background so the next press is instant
-  function queueNext() {
-    randomUrl().then(function (url) { queued = url; }, function () { queued = null; });
+  function showError(message) {
+    stopChatter();
+    el.hatch.hidden = false;
+    el.hatch.classList.add("error");
+    el.hatchText.textContent = message;
+  }
+
+  /* ---------------------------- the main loop ---------------------------- */
+  function newSeed() { return Math.floor(Math.random() * 1e9); }
+
+  function warmNext() {
+    var dog = invent(newSeed(), mixKey);
+    queued = null;
+    loadImage(dog.url).then(function () { queued = dog; }, function () { queued = null; });
   }
 
   function fetchDog() {
     if (busy) return;
     busy = true;
-    boneBtn.disabled = true;
+    el.boneBtn.disabled = true;
+    el.bonewrap.classList.add("busy");
+    squeak();
 
-    var ready = queued ? Promise.resolve(queued) : randomUrl();
-    queued = null;
+    // a dog waiting in the wings appears instantly; otherwise we generate now
+    if (queued && queued.mix === mixKey) {
+      showDog(queued, true);
+      queued = null;
+      busy = false;
+      el.boneBtn.disabled = false;
+      el.bonewrap.classList.remove("busy");
+      warmNext();
+      return;
+    }
 
-    ready
-      .then(show)
-      .then(queueNext)
-      .catch(function () {
-        fail("Couldn't reach the kennel. Check your connection and press the bone again.");
+    var dog = invent(newSeed(), mixKey);
+    showWaiting(dog);
+
+    loadImage(dog.url)
+      .then(function () {
+        showDog(dog, true);
+        warmNext();
+      })
+      .catch(function (err) {
+        showError(err.message === "timeout"
+          ? "That one took too long to draw. Press the bone to try again."
+          : "The dog factory didn't answer. Check your connection and press the bone again.");
       })
       .then(function () {
         busy = false;
-        boneBtn.disabled = false;
+        el.boneBtn.disabled = false;
+        el.bonewrap.classList.remove("busy");
       });
   }
 
-  boneBtn.addEventListener("click", fetchDog);
+  /* ---------------------------- adopting ---------------------------- */
+  function isAdopted(seed) {
+    return kennel.some(function (d) { return d.seed === seed; });
+  }
+  function toggleAdopt() {
+    if (!current) return;
+    if (isAdopted(current.seed)) {
+      kennel = kennel.filter(function (d) { return d.seed !== current.seed; });
+      el.heartBtn.setAttribute("aria-pressed", "false");
+      toast(current.name + " left the kennel");
+    } else {
+      kennel.unshift({
+        seed: current.seed, name: current.name, breed: current.breed,
+        url: current.url, blurb: current.blurb, traits: current.traits, mix: current.mix
+      });
+      el.heartBtn.setAttribute("aria-pressed", "true");
+      toast(current.name + " adopted");
+    }
+    saveKennel();
+    renderKennel();
+  }
 
-  document.addEventListener("keydown", function (event) {
-    if (event.code !== "Space" && event.key !== " ") return;
-    var tag = document.activeElement && document.activeElement.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA") return;
-    event.preventDefault();
-    if (document.activeElement !== boneBtn) fetchDog();
+  function renderKennel() {
+    el.kennelCount.textContent = kennel.length;
+    el.kennelGrid.innerHTML = "";
+    el.kennelEmpty.style.display = kennel.length ? "none" : "block";
+
+    kennel.forEach(function (dog) {
+      var card = document.createElement("button");
+      card.className = "pup";
+      card.type = "button";
+      card.setAttribute("aria-label", "Show " + dog.name + " on the machine");
+
+      var img = new Image();
+      img.src = dog.url;
+      img.alt = "";
+      img.loading = "lazy";
+
+      var who = document.createElement("div");
+      who.className = "who";
+      var strong = document.createElement("strong");
+      strong.textContent = dog.name;
+      var em = document.createElement("em");
+      em.textContent = dog.breed;
+      who.appendChild(strong);
+      who.appendChild(em);
+
+      var drop = document.createElement("button");
+      drop.className = "drop";
+      drop.type = "button";
+      drop.textContent = "×";
+      drop.setAttribute("aria-label", "Remove " + dog.name + " from the kennel");
+      drop.addEventListener("click", function (event) {
+        event.stopPropagation();
+        kennel = kennel.filter(function (d) { return d.seed !== dog.seed; });
+        saveKennel();
+        renderKennel();
+        if (current && current.seed === dog.seed) el.heartBtn.setAttribute("aria-pressed", "false");
+        toast(dog.name + " left the kennel");
+      });
+
+      card.appendChild(img);
+      card.appendChild(who);
+      card.appendChild(drop);
+      card.addEventListener("click", function () {
+        showDog(dog, false);
+        selectTab("stage");
+      });
+      el.kennelGrid.appendChild(card);
+    });
+  }
+
+  /* ---------------------------- tabs ---------------------------- */
+  function selectTab(which) {
+    var stage = which === "stage";
+    el.tabStage.setAttribute("aria-selected", String(stage));
+    el.tabKennel.setAttribute("aria-selected", String(!stage));
+    el.viewStage.dataset.active = String(stage);
+    el.viewKennel.dataset.active = String(!stage);
+  }
+  el.tabStage.addEventListener("click", function () { selectTab("stage"); });
+  el.tabKennel.addEventListener("click", function () { selectTab("kennel"); });
+
+  /* ---------------------------- actions ---------------------------- */
+  el.boneBtn.addEventListener("click", fetchDog);
+  el.heartBtn.addEventListener("click", toggleAdopt);
+
+  el.saveBtn.addEventListener("click", function () {
+    if (!current) return;
+    fetch(current.url)
+      .then(function (r) { return r.blob(); })
+      .then(function (blob) {
+        var href = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = href;
+        a.download = current.name.toLowerCase() + "-" + current.seed + ".jpg";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () { URL.revokeObjectURL(href); }, 1000);
+        toast("Saved " + current.name);
+      })
+      .catch(function () {
+        window.open(current.url, "_blank", "noopener");
+      });
   });
 
-  waiting();
-  fetchDog();
+  el.linkBtn.addEventListener("click", function () {
+    if (!current) return;
+    var write = navigator.clipboard && navigator.clipboard.writeText
+      ? navigator.clipboard.writeText(current.url)
+      : Promise.reject();
+    write.then(
+      function () { toast("Link copied — same seed, same dog"); },
+      function () { window.open(current.url, "_blank", "noopener"); }
+    );
+  });
+
+  el.mix.addEventListener("click", function (event) {
+    var chip = event.target.closest(".chip");
+    if (!chip) return;
+    mixKey = chip.dataset.mix;
+    Array.prototype.forEach.call(el.mix.querySelectorAll(".chip"), function (c) {
+      c.setAttribute("aria-pressed", String(c === chip));
+    });
+    queued = null;          // the waiting dog no longer matches the mix
+    warmNext();
+    toast(chip.textContent.trim() + " it is");
+  });
+
+  el.soundBtn.addEventListener("click", function () {
+    squeakOn = !squeakOn;
+    el.soundBtn.setAttribute("aria-pressed", String(squeakOn));
+    el.waves.style.display = squeakOn ? "" : "none";
+    el.mute.style.display = squeakOn ? "none" : "";
+    try { localStorage.setItem(SOUND_KEY, squeakOn ? "1" : "0"); } catch (e) {}
+    if (squeakOn) squeak();
+  });
+
+  document.addEventListener("keydown", function (event) {
+    var tag = document.activeElement && document.activeElement.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+
+    if (event.code === "Space" || event.key === " ") {
+      event.preventDefault();
+      if (document.activeElement !== el.boneBtn) fetchDog();
+    } else if (event.key === "f" || event.key === "F") {
+      toggleAdopt();
+    }
+  });
+
+  /* ---------------------------- start ---------------------------- */
+  try {
+    squeakOn = localStorage.getItem(SOUND_KEY) !== "0";
+  } catch (e) {}
+  el.soundBtn.setAttribute("aria-pressed", String(squeakOn));
+  el.waves.style.display = squeakOn ? "" : "none";
+  el.mute.style.display = squeakOn ? "none" : "";
+
+  loadKennel();
+  renderKennel();
+
+  var first = invent(newSeed(), mixKey);
+  showWaiting(first);
+  busy = true;
+  el.boneBtn.disabled = true;
+  loadImage(first.url)
+    .then(function () { showDog(first, true); warmNext(); })
+    .catch(function () { showError("The dog factory didn't answer. Press the bone to try again."); })
+    .then(function () { busy = false; el.boneBtn.disabled = false; });
 })();
 </script>
 </body>

@@ -1,0 +1,13 @@
+{
+  "name": "Bone Machine",
+  "short_name": "Bone",
+  "description": "Press the bone, invent a dog. Every dog is generated from scratch.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#e8eae2",
+  "theme_color": "#e8eae2",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
