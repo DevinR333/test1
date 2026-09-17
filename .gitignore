@@ -5,3 +5,4 @@ tests/*.gb
 tests/*.gbc
 tests/*.sym
 *.sav
+external/

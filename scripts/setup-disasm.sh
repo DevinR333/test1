@@ -83,7 +83,9 @@ esac
 if [ "$PLATFORM" = "msys" ]; then
     # Installed here regardless of which shell shortcut was used.
     for d in /mingw64/bin /ucrt64/bin /usr/bin; do
-        [ -d "$d" ] && case ":$PATH:" in *":$d:"*) ;; *) PATH="$d:$PATH" ;; esac
+        if [ -d "$d" ]; then
+            case ":$PATH:" in *":$d:"*) ;; *) PATH="$d:$PATH" ;; esac
+        fi
     done
     export PATH
 
@@ -137,29 +139,76 @@ if ! command -v python3 >/dev/null; then
 fi
 
 # --- WLA-DX ---------------------------------------------------------------
-# The disassembly needs v10.6 specifically. A distro package is usually older,
-# so build it from source and install to /usr/local.
-if command -v wla-gb >/dev/null && wla-gb -v 2>&1 | grep -q "$WLA_VERSION"; then
-    say "WLA-DX $WLA_VERSION already installed"
+# The disassembly needs v10.6 specifically, and distro packages lag it, so it
+# is built from source.
+#
+# Everything goes under the project directory rather than a system location:
+# installing to /usr/local or C:\Program Files needs privileges the user may
+# not have, and failing at the install step after a long compile is a bad way
+# to find that out. The source and build tree are kept too, so a re-run never
+# recompiles what already built.
+mkdir -p "$TARGET_DIR"
+TARGET_DIR=$(cd "$TARGET_DIR" && pwd)          # absolute, for PATH and cmake
+PREFIX="$TARGET_DIR/toolchain"
+WLA_SRC="$TARGET_DIR/build/wla-dx"
+WLA_BUILD="$TARGET_DIR/build/wla-dx-build"
+
+# Put the local toolchain ahead of anything system-wide.
+case ":$PATH:" in *":$PREFIX/bin:"*) ;; *) PATH="$PREFIX/bin:$PATH" ;; esac
+export PATH
+
+have_wla() {
+    command -v wla-gb >/dev/null 2>&1 \
+        && wla-gb -v 2>&1 | grep -q "$WLA_VERSION"
+}
+
+if have_wla; then
+    say "WLA-DX $WLA_VERSION already available at $(command -v wla-gb)"
 else
-    say "building WLA-DX $WLA_VERSION from source"
-    BUILD_TMP=$(mktemp -d)
-    trap 'rm -rf "$BUILD_TMP"' EXIT
-    git clone --depth 1 --branch "v$WLA_VERSION" "$WLA_REPO" "$BUILD_TMP/wla-dx"
+    say "building WLA-DX $WLA_VERSION (this is the slow step, 15-30 minutes)"
+
+    if [ -d "$WLA_SRC/.git" ]; then
+        echo "  reusing the existing source checkout"
+    else
+        rm -rf "$WLA_SRC"
+        mkdir -p "$(dirname "$WLA_SRC")"
+        git clone --depth 1 --branch "v$WLA_VERSION" "$WLA_REPO" "$WLA_SRC"
+    fi
+
     # WLA-DX 10.6 declares a cmake_minimum_required below 3.5, which CMake 4
     # refuses outright. This flag restores the old policy behaviour; on CMake 3
     # it is simply an unused cache variable.
-    cmake -S "$BUILD_TMP/wla-dx" -B "$BUILD_TMP/build" \
+    cmake -S "$WLA_SRC" -B "$WLA_BUILD" \
         -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-    cmake --build "$BUILD_TMP/build" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
-    $SUDO cmake --install "$BUILD_TMP/build"
-    command -v wla-gb >/dev/null || die "wla-gb not on PATH after install"
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+        -DCMAKE_INSTALL_PREFIX="$PREFIX"
+
+    cmake --build "$WLA_BUILD" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
+
+    if ! cmake --install "$WLA_BUILD" --prefix "$PREFIX" 2>/dev/null; then
+        # Some WLA-DX versions have no install rules. The binaries are built
+        # either way, so place them directly.
+        warn "cmake install step did not run; copying the built binaries instead"
+        mkdir -p "$PREFIX/bin"
+        found=$(find "$WLA_BUILD" -type f \( -name 'wla-*' -o -name 'wlalink*' \) \
+                    -perm -u+x ! -name '*.o' ! -name '*.cmake' 2>/dev/null || true)
+        [ -n "$found" ] || die "no WLA binaries found under $WLA_BUILD"
+        echo "$found" | while read -r f; do cp -f "$f" "$PREFIX/bin/"; done
+    fi
+
+    have_wla || die "WLA-DX built but wla-gb $WLA_VERSION is not runnable from $PREFIX/bin"
 fi
-wla-gb -v 2>&1 | head -1
+wla-gb -v 2>&1 | head -1 || true
+
+# Record the environment so later shells and build steps find the toolchain
+# without re-running this script.
+cat > "$TARGET_DIR/env.sh" <<ENVEOF
+# Source this to put the local toolchain on PATH:  . external/env.sh
+export PATH="$PREFIX/bin:\$PATH"
+ENVEOF
+echo "  toolchain on PATH via $TARGET_DIR/env.sh"
 
 # --- disassembly ----------------------------------------------------------
-mkdir -p "$TARGET_DIR"
 DISASM="$TARGET_DIR/oracles-disasm"
 if [ -d "$DISASM/.git" ]; then
     say "oracles-disasm already cloned at $DISASM"
@@ -186,17 +235,23 @@ fi
 
 # --- build ----------------------------------------------------------------
 say "building Oracle of Seasons"
-( cd "$DISASM" && make seasons -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)" )
+JOBS=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
+if ! ( cd "$DISASM" && make seasons -j"$JOBS" ); then
+    warn "parallel build failed; retrying serially, which is slower but more reliable"
+    ( cd "$DISASM" && make seasons ) \
+        || die "the disassembly failed to build. Send the last 20 lines above."
+fi
 
 say "looking for build output"
 find "$DISASM" -maxdepth 2 \( -name '*.gbc' -o -name '*.gb' -o -name '*.sym' \) \
-    -newermt '-10 minutes' -print 2>/dev/null | sed 's/^/  /' || true
+    -print 2>/dev/null | sed 's/^/  /' || true
 
 cat <<NOTE
 
 Done.
 
   disassembly:  $DISASM
+  toolchain:    $PREFIX/bin
   built ROM:    look for seasons.gbc above
 
 Note on verification: the project documents that WLA does not produce a
