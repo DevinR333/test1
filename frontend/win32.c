@@ -31,6 +31,7 @@ static struct {
     BITMAPINFO    bmi;
     volatile LONG running;
     volatile LONG keys;
+    volatile LONG want_diag;
     gb_fit_mode_t fit;
     int           integer_scale;
 } app;
@@ -52,6 +53,11 @@ static int key_to_button(WPARAM vk)
     }
 }
 
+/* Declared ahead of use: the frame callback and the crash handler both need
+ * these, and both appear before their definitions. */
+static void write_log(const gb_t *gb, const char *note);
+static void beside_exe(char *out, size_t n, const char *name);
+
 /* Called from the game thread each time the PPU finishes a frame. */
 static void on_frame(gb_t *gb, void *user)
 {
@@ -62,6 +68,15 @@ static void on_frame(gb_t *gb, void *user)
     LeaveCriticalSection(&app.lock);
 
     gb->joypad = (uint8_t)InterlockedCompareExchange(&app.keys, 0, 0);
+
+    /* Snapshot the machine once the game has had a few seconds to get
+     * somewhere. One run then explains a blank screen without needing another
+     * build to ask a different question. */
+    if (gb->frames == 180 || InterlockedCompareExchange(&app.want_diag, 0, 1)) {
+        char path[MAX_PATH];
+        beside_exe(path, sizeof(path), "oracle-diag.txt");
+        gb_write_diagnostics(gb, path);
+    }
 
     if (app.hwnd)
         InvalidateRect(app.hwnd, NULL, FALSE);
@@ -76,8 +91,6 @@ static void on_frame(gb_t *gb, void *user)
     if (app.timer)
         WaitForSingleObject(app.timer, 100);
 }
-
-static void write_log(const gb_t *gb, const char *note);
 
 /* A fault inside recompiled code would otherwise close the window with no
  * indication of what happened, which is the least useful failure possible. */
@@ -161,22 +174,29 @@ static const char *stop_reason_text(const gb_t *gb, char *buf, size_t n)
 /* Written beside the executable on every exit. A dialog cannot be shown for
  * every kind of failure - a stack overflow in particular often cannot run any
  * handler at all - so the same detail goes to a file that survives. */
+/* Build a path beside the executable, so files land where the dialog says
+ * they will even when launched from Explorer. */
+static void beside_exe(char *out, size_t n, const char *name)
+{
+    char path[MAX_PATH];
+    DWORD len = GetModuleFileName(NULL, path, MAX_PATH);
+    if (len == 0 || len >= MAX_PATH) {
+        snprintf(out, n, "%s", name);
+        return;
+    }
+    char *slash = strrchr(path, '\\');
+    if (!slash) {
+        snprintf(out, n, "%s", name);
+        return;
+    }
+    *slash = 0;
+    snprintf(out, n, "%s\\%s", path, name);
+}
+
 static void write_log(const gb_t *gb, const char *note)
 {
-    /* Next to the executable, not the working directory: that is what the
-     * dialog tells the user, and it is where they will look after launching
-     * it from Explorer rather than a shell. */
     char path[MAX_PATH];
-    DWORD n = GetModuleFileName(NULL, path, MAX_PATH);
-    if (n == 0 || n >= MAX_PATH) {
-        strcpy(path, "oracle-log.txt");
-    } else {
-        char *slash = strrchr(path, '\\');
-        if (slash && (size_t)(slash - path) + sizeof("\\oracle-log.txt") < MAX_PATH)
-            strcpy(slash + 1, "oracle-log.txt");
-        else
-            strcpy(path, "oracle-log.txt");
-    }
+    beside_exe(path, sizeof(path), "oracle-log.txt");
 
     FILE *fh = fopen(path, "w");
     if (!fh) return;
@@ -286,6 +306,10 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_KEYUP: {
         if (msg == WM_KEYDOWN && wp == VK_ESCAPE) {
             PostMessage(hwnd, WM_CLOSE, 0, 0);
+            return 0;
+        }
+        if (msg == WM_KEYDOWN && wp == VK_F2) {
+            InterlockedExchange(&app.want_diag, 1);
             return 0;
         }
         if (msg == WM_KEYDOWN && wp == VK_F1) {

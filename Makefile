@@ -38,7 +38,7 @@ test-present: | $(OUT)
 	$(OUT)/test_present
 
 RUNTIME = runtime/alu.c runtime/memory.c runtime/ppu.c runtime/machine.c \
-          runtime/interp.c runtime/interp_gen.c runtime/io_masks.c
+          runtime/interp.c runtime/interp_gen.c runtime/io_masks.c runtime/diag.c
 
 # The interpreter fallback is generated from the recompiler's own opcode
 # tables, so the two paths cannot disagree about an operand or a flag.

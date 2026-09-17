@@ -213,6 +213,7 @@ void gb_reset(gb_t *gb);
 void gb_run(gb_t *gb);            /* runs the game's own loop; returns on stop */
 void gb_on_frame(gb_t *gb);
 void gb_free(gb_t *gb);
+void gb_write_diagnostics(const gb_t *gb, const char *path);
 
 extern const gb_bank_fn gb_bank_table[GB_MAX_BANKS];
 extern const uint8_t gb_io_read_mask[128];
