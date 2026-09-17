@@ -1,17 +1,48 @@
-# gbrecomp
+# Oracle of Seasons — native Android port
 
-A static recompiler for Game Boy / Game Boy Color ROMs: it reads a ROM you
-supply, finds the executable code in it, and emits native C that a host
-compiler turns into ARM64 (or x86-64) machine code.
+Working toward a native Android build of Zelda: Oracle of Seasons with a real
+camera (free zoom), correct-speed high-refresh rendering, and live sprite
+editing.
 
-This is not an emulator. There is no interpreter dispatch loop in the output —
-the game's control flow becomes real branches in a real binary. What it is
-*not* is a decompilation: the output is machine-generated C, not readable
-source, and it does not recover names, types or structure.
+The game is exceptionally well disassembled — `oracles-disasm` is a complete,
+documented, *relocatable* disassembly of both Oracle games, stress-tested for
+years by the randomizer community. That is the specification this port is
+built against. You supply your own cartridge dump; no ROM or game asset is
+stored here.
+
+## Two routes, and which one this is
+
+**Route A — static recompilation.** Lift SM83 to C, compile to ARM64. No
+interpreter loop. Accurate and mechanical, but it inherits the hardware's
+160x144 window, so it *cannot* zoom out: the console never rendered anything
+outside that rectangle, and the off-screen tile margin is stale while
+off-viewport objects are not in OAM at all.
+
+**Route B — reimplementation.** Rewrite the game against a modern renderer,
+using the disassembly as the behavioural spec. The world lives in memory, so
+the camera is free and zoom-out is trivial. This is the larger effort and it
+is the main line of this repo.
+
+Route A is kept because it stays useful: a recompiled build is a reference to
+diff behaviour against while porting logic, and its ROM and symbol handling is
+shared with asset extraction.
 
 ## Status
 
-Working:
+
+
+Shared foundation:
+
+- **`tools/rom.py`** — cartridge header parsing, mapper detection
+  (MBC1/2/3/5), bank windowing, checksum validation.
+- **`tools/symbols.py`** — `.sym` import, so `oracles-disasm` labels become
+  known addresses.
+- **`tools/tiles.py`** — 2bpp tile codec, CGB BGR555 palettes, and a
+  dependency-free PNG writer. Used by both asset extraction and the sprite
+  editor.
+- **`runtime/present.{h,c}`** — screen fitting and zoom viewport maths.
+
+Route A (complete front half):
 
 - **`tools/sm83.py`** — complete SM83 instruction tables (256 base + 256
   CB-prefixed opcodes), with lengths, M-cycle costs and control-flow classes.
@@ -25,11 +56,15 @@ Working:
   everything else goes through a dispatcher.
 - **`runtime/gb.h`** — the ABI the generated code targets.
 
-Not written yet:
+- **`runtime/alu.c`**, **`runtime/memory.c`** — flag-accurate ALU, full
+  address decoding, MBC1/2/3/5 mapper writes.
 
-- The runtime implementation behind `gb.h`: PPU, APU, timers, MBC write
-  handling, interrupt dispatch, and the interpreter fallback.
-- The Android shell (NDK build, surface, touch controls, audio out).
+Not written yet (route B main line):
+
+- Asset extraction: tilesets, palettes, room layouts, object placements.
+- Renderer with a free camera.
+- Entity system, collision, and the game logic itself.
+- The Android shell (NDK build, surface, touch controls, audio).
 
 ## Usage
 

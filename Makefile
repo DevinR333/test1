@@ -9,7 +9,7 @@ ifneq ($(SYMBOLS),)
 RECOMP_ARGS += --symbols $(SYMBOLS)
 endif
 
-.PHONY: all fixture recompile report check test-present clean
+.PHONY: all fixture recompile report check test-present test-tiles clean
 
 all: check
 
@@ -23,11 +23,14 @@ report:
 	$(PYTHON) tools/gbrecomp.py $(ROM) --report-only
 
 # Verifies the emitter produces C that actually compiles.
-check: fixture recompile test-present
+check: fixture recompile test-present test-tiles
 	cp runtime/gb.h $(OUT)/
 	$(CC) -fsyntax-only $(CFLAGS) $(OUT)/*.c
 	$(CC) -fsyntax-only $(CFLAGS) runtime/alu.c runtime/memory.c
 	@echo "generated C and runtime compile clean"
+
+test-tiles:
+	SCRATCH=$(OUT) $(PYTHON) tests/test_tiles.py
 
 test-present: | $(OUT)
 	$(CC) -O2 -Wall -Wextra -Iruntime -o $(OUT)/test_present \
