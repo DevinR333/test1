@@ -108,6 +108,31 @@ does not reproduce a byte-exact Seasons ROM, because it handles empty space
 differently. `identify.py` checks whether every difference falls in padding
 and tells you so — if it does, the build is good. (Ages does match exactly.)
 
+## Finding the graphics
+
+Start here once a symbol file exists:
+
+```sh
+python3 tools/extract.py external/oracles-disasm/seasons.gbc \
+    --symbols external/oracles-disasm/seasons.sym find-gfx
+```
+
+This ranks labels by two independent signals. The naming convention says
+whether a label points at data or a routine; an entropy measure says whether
+its bytes look like uncompressed 2bpp tiles. Neither is sufficient alone —
+names only suggest, and entropy cannot separate uncompressed graphics from
+dense machine code — but a label that satisfies both is graphics.
+
+Then decode one:
+
+```sh
+python3 tools/extract.py seasons.gbc --symbols seasons.sym \
+    gfx --symbol SOME_LABEL --tiles 128 -o sheet.png
+```
+
+`scan` searches for tile-like regions without symbols, and `palettes` decodes
+CGB colour data.
+
 ## Usage
 
 ```sh

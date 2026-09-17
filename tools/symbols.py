@@ -14,11 +14,27 @@ import re
 
 SYM_LINE = re.compile(r"^\s*([0-9A-Fa-f]{1,3}):([0-9A-Fa-f]{4})\s+(\S+)")
 
-# Labels that name data rather than code. Feeding these to the recompiler as
-# entry points would make it disassemble graphics, so they are filtered out.
-DATA_HINTS = ("gfx", "tiles", "tileset", "palette", "pal_", "data", "table",
-              "map", "text", "string", "sprite", "song", "music", "sound_data",
-              "collision", "layout", "room", "area", "dungeon_layout")
+# Distinguishing data labels from code labels is done by naming convention.
+# oracles-disasm uses camelCase with a descriptive suffix, so the suffix is a
+# far better signal than a substring match anywhere in the name: a plain
+# substring test classifies updateSpriteAnimation and loadRoomLayout as data
+# because they contain "sprite" and "room".
+DATA_SUFFIXES = (
+    "data", "table", "tables", "header", "headers", "gfx", "graphics",
+    "tiles", "tileset", "tilesets", "palette", "palettes", "map", "mapping",
+    "mappings", "layout", "layouts", "list", "lists", "index", "indices",
+    "pointer", "pointers", "ptr", "ptrs", "string", "strings", "text",
+    "script", "scripts", "frames", "attributes", "collisions", "positions",
+)
+
+# A label beginning with a verb names a routine, whatever nouns follow it.
+CODE_PREFIXES = ("load", "update", "draw", "get", "set", "init", "check",
+                 "handle", "run", "do", "apply", "clear", "reset", "write",
+                 "read", "copy", "make", "create", "delete", "find", "calc",
+                 "compute", "process", "parse", "render", "start", "stop",
+                 "enable", "disable", "toggle", "push", "pop", "call", "jump",
+                 "func", "sub_", "routine", "animate", "add", "remove",
+                 "inc", "dec", "show", "hide", "open", "close", "play")
 
 
 def load(path, skip_data=True):
@@ -45,22 +61,28 @@ def load(path, skip_data=True):
     return out
 
 
-# A label starting with a verb names a routine, whatever nouns follow it.
-# Without this, UpdateSpriteAnimation and LoadRoomLayout are filtered out as
-# data because they contain "sprite" and "room".
-CODE_PREFIXES = ("load", "update", "draw", "get", "set", "init", "check",
-                 "handle", "run", "do", "apply", "clear", "reset", "write",
-                 "read", "copy", "make", "create", "delete", "find", "calc",
-                 "compute", "process", "parse", "render", "start", "stop",
-                 "enable", "disable", "toggle", "push", "pop", "call", "jump",
-                 "func", "sub_", "routine")
-
-
 def _looks_like_data(label: str) -> bool:
-    low = label.lower().lstrip(".@_")
-    if low.startswith(CODE_PREFIXES):
+    """True when the name suggests the label points at data, not instructions."""
+    # A local label inside a routine (wla writes these as parent@child) is
+    # part of that routine's code, whatever the parent is called.
+    if "@" in label:
         return False
-    return any(h in low for h in DATA_HINTS)
+
+    stripped = label.lstrip(".@_")
+
+    # Names are often namespaced with an underscore, and the routine name is
+    # the part after it: paletteThread_calculateFadingPalettes is code even
+    # though the whole string ends in a data-ish word. Test every segment.
+    for segment in stripped.split("_"):
+        if segment.lower().startswith(CODE_PREFIXES):
+            return False
+
+    # Otherwise decide on the trailing word of the camelCase name, so
+    # animationGfxHeaders is data while addIndexToLoadedObjectGfx is not.
+    words = re.findall(r"[a-z]+|[A-Z][a-z]*|\d+", stripped)
+    if words and words[-1].lower() in DATA_SUFFIXES:
+        return True
+    return False
 
 
 def entry_points(symbols):
