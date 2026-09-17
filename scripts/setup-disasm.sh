@@ -67,19 +67,42 @@ case "$PLATFORM" in
     macos)
         command -v brew >/dev/null || die "Homebrew required. Install from https://brew.sh then re-run."
         brew install cmake git python3
-        python3 -m pip install --quiet --user pyyaml
+        python3 -m pip install --quiet --user pyyaml || true
         ;;
     msys)
         pacman -S --needed --noconfirm base-devel git \
-            mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake \
-            mingw-w64-x86_64-python mingw-w64-x86_64-python-yaml
+            python python-yaml \
+            mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake
         ;;
 esac
 
-python3 -c 'import yaml' 2>/dev/null || {
-    warn "python yaml module still missing; trying pip"
-    python3 -m pip install --quiet --user pyyaml || die "could not install pyyaml"
-}
+# The interpreter is `python3` on most systems but `python` under some MSYS2
+# environments, so resolve it once instead of assuming.
+PY=""
+for candidate in python3 python; do
+    if command -v "$candidate" >/dev/null && "$candidate" -c 'import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)' 2>/dev/null; then
+        PY="$candidate"
+        break
+    fi
+done
+[ -n "$PY" ] || die "no Python 3 found on PATH. Install it and re-run."
+say "using $PY ($("$PY" --version 2>&1))"
+
+if ! "$PY" -c 'import yaml' 2>/dev/null; then
+    warn "the python yaml module is missing; installing it"
+    "$PY" -m pip install --quiet --user pyyaml \
+        || die "could not install pyyaml. Try: pacman -S python-yaml"
+fi
+
+# oracles-disasm's build scripts call python3 by name. If only `python` exists,
+# put a python3 alongside it on PATH for the duration of the build.
+if ! command -v python3 >/dev/null; then
+    SHIM_DIR="$(mktemp -d)"
+    printf '#!/bin/sh\nexec %s "$@"\n' "$(command -v "$PY")" > "$SHIM_DIR/python3"
+    chmod +x "$SHIM_DIR/python3"
+    export PATH="$SHIM_DIR:$PATH"
+    warn "no python3 on PATH; shimming it to $PY for this build"
+fi
 
 # --- WLA-DX ---------------------------------------------------------------
 # The disassembly needs v10.6 specifically. A distro package is usually older,
@@ -136,6 +159,6 @@ against your own dump is expected here and does not affect how the game runs.
 Ages does match.
 
 Next:
-  python3 tools/identify.py <your-dump.gbc>
-  python3 tools/identify.py $DISASM/seasons.gbc
+  $PY tools/identify.py <your-dump.gbc>
+  $PY tools/identify.py $DISASM/seasons.gbc
 NOTE
