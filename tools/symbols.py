@@ -45,8 +45,21 @@ def load(path, skip_data=True):
     return out
 
 
+# A label starting with a verb names a routine, whatever nouns follow it.
+# Without this, UpdateSpriteAnimation and LoadRoomLayout are filtered out as
+# data because they contain "sprite" and "room".
+CODE_PREFIXES = ("load", "update", "draw", "get", "set", "init", "check",
+                 "handle", "run", "do", "apply", "clear", "reset", "write",
+                 "read", "copy", "make", "create", "delete", "find", "calc",
+                 "compute", "process", "parse", "render", "start", "stop",
+                 "enable", "disable", "toggle", "push", "pop", "call", "jump",
+                 "func", "sub_", "routine")
+
+
 def _looks_like_data(label: str) -> bool:
     low = label.lower().lstrip(".@_")
+    if low.startswith(CODE_PREFIXES):
+        return False
     return any(h in low for h in DATA_HINTS)
 
 
