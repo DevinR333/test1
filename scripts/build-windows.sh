@@ -88,10 +88,62 @@ if [ -z "$CC_WIN" ]; then
 fi
 echo "  compiler: $CC_WIN ($("$CC_WIN" --version 2>/dev/null | head -1))"
 
+# Static discovery alone cannot follow a real game's bank switching, so
+# coverage without symbols is a small fraction of the ROM. A symbol file names
+# every routine outright.
+#
+# It must belong to the same build as the ROM: a disassembly's own output and
+# an original cartridge dump have entirely different addresses. Only a .sym
+# sitting beside the ROM under the same name is treated as a match.
+if [ -z "$SYMBOLS" ]; then
+    candidate="${ROM%.*}.sym"
+    [ -f "$candidate" ] && SYMBOLS="$candidate"
+fi
+
+if [ -n "$SYMBOLS" ]; then
+    echo "  symbols: $SYMBOLS"
+else
+    cat <<'WARN'
+
+  No symbol file found beside the ROM.
+
+  Discovery will only find code it can reach by following branches from the
+  hardware entry points, which on a real game is a small part of the ROM.
+  Everything else falls back to the interpreter, so it will run, but far less
+  of it will be native.
+
+  For full coverage, build from the disassembly's own output, which has a
+  matching .sym beside it:
+
+      ./scripts/build-windows.sh external/oracles-disasm/seasons.gbc
+
+WARN
+fi
+
 say "recompiling $(basename "$ROM")"
 RECOMP_ARGS=("$ROM" -o "$SRC_DIR")
 [ -n "$SYMBOLS" ] && RECOMP_ARGS+=(--symbols "$SYMBOLS")
 "$PY" tools/gbrecomp.py "${RECOMP_ARGS[@]}"
+
+# A goto may only target a label in the same generated file. Checking here
+# turns a class of emitter bug into a clear message instead of a compiler
+# error about an undefined label several hundred lines into generated code.
+"$PY" - "$SRC_DIR" <<'CHECK'
+import glob, os, re, sys
+bad = []
+for path in glob.glob(os.path.join(sys.argv[1], "bank_*.c")):
+    text = open(path).read()
+    labels = set(re.findall(r"^(L_[0-9A-F]{4}):", text, re.M))
+    for used in sorted(set(re.findall(r"goto (L_[0-9A-F]{4});", text))):
+        if used not in labels:
+            bad.append((os.path.basename(path), used))
+if bad:
+    print(f"  internal error: {len(bad)} goto(s) target a label in another file:")
+    for f, l in bad[:10]:
+        print(f"    {f}: {l}")
+    sys.exit(1)
+print("  generated code is internally consistent")
+CHECK
 
 say "generating the interpreter fallback"
 "$PY" tools/gen_interp.py runtime/interp_gen.c

@@ -78,6 +78,13 @@ def discover(rom: Rom, extra_entries=()) -> Program:
 
     while worklist:
         bank, addr = worklist.pop()
+        # Addresses below 0x4000 always live in the fixed bank, whichever bank
+        # was mapped when we got here. Normalising now keeps the dictionary key
+        # and Block.bank in agreement; when they disagreed, the emitter placed
+        # a block in one bank's function while judging its jumps against
+        # another, and emitted a goto to a label in a different function.
+        if addr < BANK_SIZE:
+            bank = 0
         if (bank, addr) in seen or not _in_rom(addr):
             continue
         seen.add((bank, addr))

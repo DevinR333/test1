@@ -209,8 +209,12 @@ class Emitter:
 
     def terminator(self, insn, blk) -> list:
         op, tgt = insn.op, insn.target
-        local = tgt >= 0 and (blk.bank, tgt) in self.prog.blocks and \
-            _same_window(tgt, blk.bank)
+        # A goto may only name a label emitted into this same function, which
+        # means the target block must be stored under this block's own bank.
+        local = (tgt >= 0
+                 and (blk.bank, tgt) in self.prog.blocks
+                 and self.prog.blocks[(blk.bank, tgt)].bank == blk.bank
+                 and _same_window(tgt, blk.bank))
 
         # A target at or before this instruction closes a loop.
         backward = tgt >= 0 and tgt <= insn.addr
