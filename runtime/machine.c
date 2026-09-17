@@ -46,6 +46,8 @@ static const uint16_t TIMER_PERIOD[4] = { 256, 4, 16, 64 };
 void gb_io_write(gb_t *gb, uint16_t addr, uint8_t value)
 {
     int r = addr - 0xFF00;
+    if (r >= 0 && r < 128 && gb->io_writes[r] < 0xFFFFFFFFu)
+        gb->io_writes[r]++;
 
     switch (r) {
     case R_DIV:
@@ -106,8 +108,10 @@ void gb_io_write(gb_t *gb, uint16_t addr, uint8_t value)
         return;
 
     case R_KEY1:
+        /* Only the arming bit is writable; bit 7 reports the current speed and
+         * the unused bits in between read as one. */
         if (gb->cgb)
-            gb->io[R_KEY1] = (gb->double_speed ? 0x80 : 0x00) | (value & 0x01);
+            gb->io[R_KEY1] = (gb->double_speed ? 0x80 : 0x00) | 0x7E | (value & 0x01);
         return;
 
     case R_HDMA5: {
@@ -214,6 +218,8 @@ void gb_sync(gb_t *gb)
     if (gb->frame_ready) {
         gb->frame_ready = 0;
         gb->last_frame_cycle = gb->cycles;
+        memset(gb->io_reads, 0, sizeof(gb->io_reads));
+        memset(gb->io_writes, 0, sizeof(gb->io_writes));
         gb_on_frame(gb);
     }
 
@@ -338,7 +344,7 @@ void gb_stop(gb_t *gb)
      * CGB title does. */
     if (gb->cgb && (gb->io[R_KEY1] & 0x01)) {
         gb->double_speed = !gb->double_speed;
-        gb->io[R_KEY1] = gb->double_speed ? 0x80 : 0x00;   /* bit 0 clears */
+        gb->io[R_KEY1] = (gb->double_speed ? 0x80 : 0x00) | 0x7E;  /* bit 0 clears */
         /* The switch resets the divider. */
         gb->io[R_DIV] = 0;
         gb->div_cycles = 0;

@@ -119,15 +119,37 @@ static const char *stop_reason_text(const gb_t *gb, char *buf, size_t n)
     case GB_STOP_INTERP_RUNAWAY:
         return "Interpreted code ran for two million instructions without "
                "returning, so it was stopped rather than left to hang.";
-    case GB_STOP_NO_PROGRESS:
+    case GB_STOP_NO_PROGRESS: {
+        /* Name the busiest registers since the last frame: whatever the game
+         * is waiting on will be at the top by a wide margin. */
+        char top[256] = "";
+        for (int rank = 0; rank < 4; rank++) {
+            int best = -1;
+            uint32_t most = 0;
+            for (int r = 0; r < 128; r++) {
+                uint32_t hits = gb->io_reads[r] + gb->io_writes[r];
+                if (hits > most) {
+                    char seen[8];
+                    snprintf(seen, sizeof(seen), "FF%02X", r);
+                    if (strstr(top, seen)) continue;
+                    most = hits; best = r;
+                }
+            }
+            if (best < 0 || most == 0) break;
+            char line[64];
+            snprintf(line, sizeof(line), "  FF%02X  %u reads, %u writes\n",
+                     best, gb->io_reads[best], gb->io_writes[best]);
+            strncat(top, line, sizeof(top) - strlen(top) - 1);
+        }
         snprintf(buf, n,
                  "The game ran for two seconds without drawing a frame.\n\n"
-                 "It read register FF%02X %u times in a row, so it is very "
-                 "likely waiting on that.\n\nLCDC is %02X, so the display is "
-                 "%s.",
-                 gb->poll_reg, gb->poll_count, gb->io[0x40],
-                 (gb->io[0x40] & 0x80) ? "on" : "off");
+                 "Busiest registers since the last frame:\n%s\n"
+                 "LCDC is %02X, so the display is %s. Speed is %s.",
+                 top[0] ? top : "  (none)\n", gb->io[0x40],
+                 (gb->io[0x40] & 0x80) ? "on" : "off",
+                 gb->double_speed ? "double" : "normal");
         return buf;
+    }
     case GB_STOP_USER:
         return NULL;                         /* closing the window is not a fault */
     default:
@@ -170,7 +192,11 @@ static void write_log(const gb_t *gb, const char *note)
     fprintf(fh, "LCDC          %02X\n", gb->io[0x40]);
     fprintf(fh, "LY            %02X\n", gb->io[0x44]);
     fprintf(fh, "IE / IF       %02X / %02X\n", gb->io[0x7F], gb->io[0x0F]);
-    fprintf(fh, "polling       FF%02X x%u\n", gb->poll_reg, gb->poll_count);
+    fprintf(fh, "busiest io registers since the last frame:\n");
+    for (int r = 0; r < 128; r++) {
+        if (gb->io_reads[r] || gb->io_writes[r])
+            fprintf(fh, "  FF%02X  r=%u w=%u\n", r, gb->io_reads[r], gb->io_writes[r]);
+    }
     fprintf(fh, "hdma          %s, %u blocks left\n",
             gb->hdma_active ? "active" : "idle", gb->hdma_left);
     fprintf(fh, "double speed  %s\n", gb->double_speed ? "yes" : "no");

@@ -84,11 +84,15 @@ struct gb_s {
     uint8_t  hdma_active;    /* an HBlank transfer is in progress */
 
     /* Progress watchdog. A game that stops producing frames is usually
-     * polling a register that never changes, so the register being read is
-     * far more useful than the fact that it stalled. */
+     * polling a register that never changes, so which registers it touches
+     * matters far more than the fact that it stalled.
+     *
+     * Counting only consecutive reads of one register was useless: a loop
+     * that reads two registers resets the count every time round. These are
+     * totals since the last completed frame. */
     uint64_t last_frame_cycle;
-    uint8_t  poll_reg;       /* IO register being read repeatedly */
-    uint32_t poll_count;
+    uint32_t io_reads[128];
+    uint32_t io_writes[128];
 
     /* Return-address stack for recompiled calls. Recompiled code returns via
      * the C stack, but the game can also manipulate its own SP directly, so
