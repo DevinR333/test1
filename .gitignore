@@ -1,0 +1,7 @@
+build/
+*.pyc
+__pycache__/
+tests/*.gb
+tests/*.gbc
+tests/*.sym
+*.sav
