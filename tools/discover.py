@@ -12,6 +12,8 @@ dispatches instead of direct branches.
 
 from dataclasses import dataclass, field
 
+import math
+
 import sm83
 from rom import BANK_SIZE, Rom
 
@@ -48,6 +50,7 @@ class Program:
     call_targets: set = field(default_factory=set)
     indirect_sites: list = field(default_factory=list)  # (bank, addr) of jp hl
     bank_switches: list = field(default_factory=list)   # (bank, addr, new_bank)
+    graphics_banks: set = field(default_factory=set)
 
     @property
     def coverage(self) -> dict:
@@ -62,14 +65,72 @@ def _in_rom(addr: int) -> bool:
     return addr < 0x8000
 
 
-def discover(rom: Rom, extra_entries=()) -> Program:
+def _entropy(data) -> float:
+    """Bits per byte, 0.0 (uniform) to 8.0 (random)."""
+    if not data:
+        return 0.0
+    counts = [0] * 256
+    for b in data:
+        counts[b] += 1
+    n = float(len(data))
+    total = 0.0
+    for c in counts:
+        if c:
+            pr = c / n
+            total -= pr * math.log2(pr)
+    return total
+
+
+def graphics_banks(rom: Rom) -> set:
+    """Banks that hold uncompressed graphics rather than code.
+
+    Tile data decodes as perfectly valid SM83 instructions, so recursive
+    descent that wanders into a graphics bank will disassemble the whole thing
+    and emit tens of thousands of lines of nonsense per bank. Nothing in the
+    instruction stream reveals the mistake, so the banks are identified up
+    front and left alone.
+
+    Two signals, both required. Real code calls things: it is dense with the
+    call, jump and return opcodes, while tile data contains them only by
+    coincidence. Graphics also sit in a middle band of entropy, below packed
+    data and above padding.
+    """
+    out = set()
+    for bank in range(rom.bank_count):
+        data = rom.bank(bank)
+        if not data:
+            continue
+
+        e = _entropy(data)
+        if e < 1.0:
+            continue                      # padding: harmless, discovery stops
+
+        # Density of the opcodes that structure real code.
+        structural = sum(data.count(op) for op in (
+            0xC3,   # jp
+            0xCD,   # call
+            0xC9,   # ret
+            0x18,   # jr
+            0x20, 0x28, 0x30, 0x38,       # conditional jr
+        ))
+        density = structural / len(data)
+
+        # Code is typically several percent structural opcodes. Tile data
+        # lands far below that, and its entropy stays in the graphics band.
+        if density < 0.012 and 1.0 <= e <= 7.0:
+            out.add(bank)
+    return out
+
+
+def discover(rom: Rom, extra_entries=(), skip_graphics=True) -> Program:
     """Walk every statically reachable instruction in `rom`."""
     prog = Program(rom=rom)
+    prog.graphics_banks = graphics_banks(rom) if skip_graphics else set()
 
     # Seed with the vectors, then any caller-supplied addresses (a symbol file,
     # or targets recovered from a jump table by hand).
     seeds = [(0, a) for a in RST_VECTORS + INTERRUPT_VECTORS + [ENTRY_POINT]]
-    seeds += list(extra_entries)
+    seeds += [e for e in extra_entries if e[0] not in prog.graphics_banks]
     # The header's entry point is almost always a jump into the real start.
     prog.entry_points.update(seeds)
 
@@ -88,6 +149,9 @@ def discover(rom: Rom, extra_entries=()) -> Program:
         if (bank, addr) in seen or not _in_rom(addr):
             continue
         seen.add((bank, addr))
+
+        if bank in prog.graphics_banks:
+            continue
 
         block = _trace_block(rom, prog, bank, addr)
         if block is None:
@@ -189,6 +253,7 @@ def report(prog: Program) -> str:
         f"({100.0 * total_code / total_rom:.1f}% of ROM)",
         f"  bank switches  {len(prog.bank_switches)} detected statically",
         f"  indirect jumps {len(prog.indirect_sites)} unresolved (jp hl)",
+        f"  graphics banks {len(prog.graphics_banks)} excluded as data",
     ]
     cold = [b for b in range(rom.bank_count) if cov.get(b, 0) == 0]
     if cold:
