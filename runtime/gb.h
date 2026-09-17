@@ -99,6 +99,7 @@ static inline void gb_set_hl(gb_t *gb, uint16_t v) { gb->h = v >> 8; gb->l = v; 
 uint8_t  gb_read(gb_t *gb, uint16_t addr);
 void     gb_write(gb_t *gb, uint16_t addr, uint8_t value);
 uint16_t gb_read16(gb_t *gb, uint16_t addr);
+void     gb_io_write(gb_t *gb, uint16_t addr, uint8_t value);
 void     gb_write16(gb_t *gb, uint16_t addr, uint16_t value);
 
 /* Stack. */
