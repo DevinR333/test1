@@ -119,6 +119,15 @@ static const char *stop_reason_text(const gb_t *gb, char *buf, size_t n)
     case GB_STOP_INTERP_RUNAWAY:
         return "Interpreted code ran for two million instructions without "
                "returning, so it was stopped rather than left to hang.";
+    case GB_STOP_NO_PROGRESS:
+        snprintf(buf, n,
+                 "The game ran for two seconds without drawing a frame.\n\n"
+                 "It read register FF%02X %u times in a row, so it is very "
+                 "likely waiting on that.\n\nLCDC is %02X, so the display is "
+                 "%s.",
+                 gb->poll_reg, gb->poll_count, gb->io[0x40],
+                 (gb->io[0x40] & 0x80) ? "on" : "off");
+        return buf;
     case GB_STOP_USER:
         return NULL;                         /* closing the window is not a fault */
     default:
@@ -161,6 +170,10 @@ static void write_log(const gb_t *gb, const char *note)
     fprintf(fh, "LCDC          %02X\n", gb->io[0x40]);
     fprintf(fh, "LY            %02X\n", gb->io[0x44]);
     fprintf(fh, "IE / IF       %02X / %02X\n", gb->io[0x7F], gb->io[0x0F]);
+    fprintf(fh, "polling       FF%02X x%u\n", gb->poll_reg, gb->poll_count);
+    fprintf(fh, "hdma          %s, %u blocks left\n",
+            gb->hdma_active ? "active" : "idle", gb->hdma_left);
+    fprintf(fh, "double speed  %s\n", gb->double_speed ? "yes" : "no");
     fclose(fh);
 }
 

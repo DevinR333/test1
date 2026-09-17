@@ -25,6 +25,8 @@
 #define R_OCPS 0x6A
 #define R_OCPD 0x6B
 #define R_KEY1 0x4D
+#define R_HDMA1 0x51
+#define R_HDMA5 0x55
 #define R_SVBK 0x70
 #define R_IE   0x7F          /* stored at the end of the IO block */
 
@@ -108,6 +110,41 @@ void gb_io_write(gb_t *gb, uint16_t addr, uint8_t value)
             gb->io[R_KEY1] = (gb->double_speed ? 0x80 : 0x00) | (value & 0x01);
         return;
 
+    case R_HDMA5: {
+        if (!gb->cgb) { gb->io[R_HDMA5] = value; return; }
+
+        /* Writing with bit 7 clear while an HBlank transfer runs cancels it. */
+        if (gb->hdma_active && !(value & 0x80)) {
+            gb->hdma_active = 0;
+            gb->io[R_HDMA5] = 0x80 | ((gb->hdma_left - 1) & 0x7F);
+            return;
+        }
+
+        /* Source ignores its low four bits; the destination is always in VRAM
+         * and ignores everything above the bank. */
+        gb->hdma_src = ((uint16_t)gb->io[R_HDMA1] << 8 | gb->io[R_HDMA1 + 1]) & 0xFFF0;
+        gb->hdma_dst = (((uint16_t)gb->io[R_HDMA1 + 2] << 8 | gb->io[R_HDMA1 + 3]) & 0x1FF0)
+                       + 0x8000;
+        gb->hdma_left = (value & 0x7F) + 1;
+
+        if (value & 0x80) {
+            gb->hdma_active = 1;                  /* per-HBlank from here on */
+            gb->io[R_HDMA5] = (value & 0x7F);     /* bit 7 clear: in progress */
+        } else {
+            /* General purpose: the whole transfer happens now. */
+            while (gb->hdma_left) {
+                for (int i = 0; i < 16; i++) {
+                    gb_write(gb, gb->hdma_dst++, gb_read(gb, gb->hdma_src++));
+                }
+                gb->hdma_left--;
+                gb->cycles += gb->double_speed ? 16 : 8;
+            }
+            gb->hdma_active = 0;
+            gb->io[R_HDMA5] = 0xFF;               /* complete */
+        }
+        return;
+    }
+
     case R_JOYP:
         /* Only the two select bits are writable; the rest reads the buttons. */
         gb->io[R_JOYP] = (gb->io[R_JOYP] & 0x0F) | (value & 0x30);
@@ -176,7 +213,17 @@ void gb_sync(gb_t *gb)
 
     if (gb->frame_ready) {
         gb->frame_ready = 0;
+        gb->last_frame_cycle = gb->cycles;
         gb_on_frame(gb);
+    }
+
+    /* Roughly two seconds of cycles with no frame means it is not coming.
+     * Stopping with the register it is polling beats hanging silently. */
+    if (gb->cycles - gb->last_frame_cycle > 2000000ULL) {
+        gb->stopped = 1;
+        gb->stop_reason = GB_STOP_NO_PROGRESS;
+        gb->stop_pc = gb->pc;
+        gb->stop_bank = gb->rom_bank;
     }
 
     /* EI takes effect after the instruction following it. */
@@ -364,6 +411,7 @@ void gb_reset(gb_t *gb)
     gb->ime = 0;
     gb->cycles = 0;
     gb->last_sync = 0;
+    gb->last_frame_cycle = 0;
 
     memset(gb->io, 0, sizeof(gb->io));
     gb->io[R_LCDC] = 0x91;
@@ -394,6 +442,25 @@ void gb_run(gb_t *gb)
         else
             gb_dispatch(gb, gb->rom_bank, gb->pc);
         gb_sync(gb);
+    }
+}
+
+/* One 16-byte block per HBlank, which is all the hardware has time for. */
+void gb_hdma_hblank(gb_t *gb)
+{
+    if (!gb->hdma_active || !gb->hdma_left)
+        return;
+
+    for (int i = 0; i < 16; i++)
+        gb_write(gb, gb->hdma_dst++, gb_read(gb, gb->hdma_src++));
+
+    gb->cycles += gb->double_speed ? 16 : 8;
+
+    if (--gb->hdma_left == 0) {
+        gb->hdma_active = 0;
+        gb->io[R_HDMA5] = 0xFF;                   /* complete */
+    } else {
+        gb->io[R_HDMA5] = (gb->hdma_left - 1) & 0x7F;
     }
 }
 

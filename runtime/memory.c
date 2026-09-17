@@ -36,7 +36,18 @@ uint8_t gb_read(gb_t *gb, uint16_t addr)
         }
         if (addr < 0xFEA0) return gb->oam[addr - 0xFE00];
         if (addr < 0xFF00) return 0x00;                     /* unusable */
-        if (addr < 0xFF80) return gb->io[addr - 0xFF00];
+        if (addr < 0xFF80) {
+            /* Note repeated reads of one register, so a stall can name what
+             * the game is waiting on. */
+            uint8_t reg = (uint8_t)(addr - 0xFF00);
+            if (reg == gb->poll_reg) {
+                if (gb->poll_count < 0xFFFFFFFFu) gb->poll_count++;
+            } else {
+                gb->poll_reg = reg;
+                gb->poll_count = 1;
+            }
+            return gb->io[reg];
+        }
         if (addr < 0xFFFF) return gb->hram[addr - 0xFF80];
         return gb->io[0x7F];                                /* IE */
     }

@@ -276,6 +276,11 @@ void gb_ppu_step(gb_t *gb, uint32_t cycles)
         if (ly < LINES_VISIBLE)
             render_line(gb, ly);
 
+        /* An HBlank transfer moves one block at the end of each visible
+         * line. */
+        if (ly < LINES_VISIBLE)
+            gb_hdma_hblank(gb);
+
         ly++;
         if (ly == LINES_VISIBLE) {
             gb->io[R_IF] |= INT_VBLANK;

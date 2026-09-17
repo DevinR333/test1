@@ -76,6 +76,20 @@ struct gb_s {
     uint8_t  cgb;
     uint8_t  double_speed;   /* CGB runs the CPU at twice the PPU's rate */
 
+    /* CGB block transfer into VRAM. A general-purpose transfer completes at
+     * once; an HBlank transfer moves sixteen bytes per scanline. */
+    uint16_t hdma_src;
+    uint16_t hdma_dst;
+    uint8_t  hdma_left;      /* blocks of 16 bytes remaining */
+    uint8_t  hdma_active;    /* an HBlank transfer is in progress */
+
+    /* Progress watchdog. A game that stops producing frames is usually
+     * polling a register that never changes, so the register being read is
+     * far more useful than the fact that it stalled. */
+    uint64_t last_frame_cycle;
+    uint8_t  poll_reg;       /* IO register being read repeatedly */
+    uint32_t poll_count;
+
     /* Return-address stack for recompiled calls. Recompiled code returns via
      * the C stack, but the game can also manipulate its own SP directly, so
      * both are kept coherent. */
@@ -108,6 +122,7 @@ enum {
     GB_STOP_OPCODE,          /* the STOP instruction */
     GB_STOP_NO_ENTRY,        /* dispatched to an address with no code at all */
     GB_STOP_INTERP_RUNAWAY,  /* the interpreter ran without ever returning */
+    GB_STOP_NO_PROGRESS,     /* ran a long time without completing a frame */
 };
 
 /* Register accessors used verbatim by generated code. */
@@ -185,6 +200,7 @@ void     alu_bit(gb_t *gb, uint8_t v, uint8_t bit);
 void gb_sync(gb_t *gb);
 void gb_ppu_step(gb_t *gb, uint32_t cycles);
 void gb_ppu_reset(gb_t *gb);
+void gb_hdma_hblank(gb_t *gb);   /* one block, called when the PPU enters HBlank */
 
 /* Lifecycle. */
 int  gb_init(gb_t *gb, const uint8_t *rom, size_t size);
