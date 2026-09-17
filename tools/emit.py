@@ -192,7 +192,8 @@ class Emitter:
 
     # -- per-block ----------------------------------------------------------
     def block(self, blk) -> list:
-        out = [f"{_label(blk.start)}:;"]
+        out = [f"{_label(blk.start)}:;",
+               f"    GB_TRACE_BLOCK(gb, {blk.bank}, 0x{blk.start:04X});"]
         for insn in blk.insns:
             op = insn.op
             if op.mnem == "prefix_cb":

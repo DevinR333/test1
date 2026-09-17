@@ -68,6 +68,7 @@ struct gb_s {
     uint8_t  oam[0xA0];
     uint8_t  hram[0x7F];
     uint8_t  io[0x80];
+    uint8_t  ie;             /* 0xFFFF; its own byte, not aliased onto FF7F */
     uint8_t *cart_ram;
     size_t   cart_ram_size;
 
@@ -100,6 +101,13 @@ struct gb_s {
      * both are kept coherent. */
     uint16_t call_depth;
     uint16_t ret_expect;     /* address the innermost call pushed */
+
+    /* Ring of recently entered blocks. A game that stalls is looping
+     * somewhere, and the addresses say where far more directly than any
+     * amount of reasoning about what it might be waiting for. */
+    uint16_t trace_addr[4096];
+    uint16_t trace_bank[4096];
+    uint32_t trace_pos;
 
     /* PPU state. */
     uint32_t ppu_cycles;     /* M-cycles into the current scanline */
@@ -219,5 +227,19 @@ void gb_write_diagnostics(const gb_t *gb, const char *path);
 
 extern const gb_bank_fn gb_bank_table[GB_MAX_BANKS];
 extern const uint8_t gb_io_read_mask[128];
+
+/* Block-entry tracing. Compiled in only when GB_TRACE is defined, so a release
+ * build pays nothing. */
+#ifdef GB_TRACE
+static inline void gb_trace(gb_t *gb, uint16_t bank, uint16_t addr)
+{
+    uint32_t i = gb->trace_pos++ & 4095;
+    gb->trace_bank[i] = bank;
+    gb->trace_addr[i] = addr;
+}
+#define GB_TRACE_BLOCK(gb, bank, addr) gb_trace((gb), (bank), (addr))
+#else
+#define GB_TRACE_BLOCK(gb, bank, addr) ((void)0)
+#endif
 
 #endif /* GB_H */

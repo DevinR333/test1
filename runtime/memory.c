@@ -44,7 +44,7 @@ uint8_t gb_read(gb_t *gb, uint16_t addr)
             return gb->io[reg] | gb_io_read_mask[reg];
         }
         if (addr < 0xFFFF) return gb->hram[addr - 0xFF80];
-        return gb->io[0x7F];                                /* IE */
+        return gb->ie;
     }
 }
 
@@ -124,7 +124,7 @@ void gb_write(gb_t *gb, uint16_t addr, uint8_t value)
         } else if (addr < 0xFFFF) {
             gb->hram[addr - 0xFF80] = value;
         } else {
-            gb->io[0x7F] = value;
+            gb->ie = value;
         }
         return;
     }

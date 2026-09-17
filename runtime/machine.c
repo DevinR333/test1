@@ -285,7 +285,7 @@ void gb_sync(gb_t *gb)
  * vector taken, or zero. */
 static uint16_t take_interrupt(gb_t *gb)
 {
-    uint8_t pending = gb->io[R_IF] & gb->io[R_IE] & 0x1F;
+    uint8_t pending = gb->io[R_IF] & gb->ie & 0x1F;
     if (!pending)
         return 0;
 

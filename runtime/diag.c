@@ -103,6 +103,35 @@ void gb_write_diagnostics(const gb_t *gb, const char *path)
         if (gb->framebuffer[i] != first) { varied = 1; break; }
     fprintf(fh, "framebuffer   %s\n", varied ? "varied" : "ONE FLAT COLOUR");
 
+#ifdef GB_TRACE
+    /* The last blocks entered, most recent first, with runs collapsed. A loop
+     * shows up as a short cycle repeated thousands of times. */
+    fprintf(fh, "\nlast blocks entered (most recent first)\n");
+    {
+        uint32_t total = gb->trace_pos < 4096 ? gb->trace_pos : 4096;
+        int shown = 0;
+        uint32_t i = 0;
+        while (i < total && shown < 60) {
+            uint32_t idx = (gb->trace_pos - 1 - i) & 4095;
+            uint16_t b = gb->trace_bank[idx], a = gb->trace_addr[idx];
+            uint32_t run = 1;
+            while (i + run < total) {
+                uint32_t j = (gb->trace_pos - 1 - i - run) & 4095;
+                if (gb->trace_bank[j] != b || gb->trace_addr[j] != a) break;
+                run++;
+            }
+            if (run > 1)
+                fprintf(fh, "  %02X:%04X  x%u\n", b, a, run);
+            else
+                fprintf(fh, "  %02X:%04X\n", b, a);
+            i += run;
+            shown++;
+        }
+        fprintf(fh, "  (%u entries recorded in total)\n",
+                (unsigned)gb->trace_pos);
+    }
+#endif
+
     fprintf(fh, "\nio registers touched since the last frame\n");
     for (int r = 0; r < 128; r++)
         if (gb->io_reads[r] || gb->io_writes[r])

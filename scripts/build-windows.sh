@@ -182,7 +182,7 @@ for src in "$SRC_DIR"/bank_*.c "$SRC_DIR"/dispatch.c; do
 
     # A partial object from an interrupted build must not be mistaken for a
     # finished one, so compile to a temporary name and move it into place.
-    ( "$CC_WIN" -O1 -Iruntime -I"$SRC_DIR" -c "$src" -o "$obj.tmp" \
+    ( "$CC_WIN" -O1 -DGB_TRACE -Iruntime -I"$SRC_DIR" -c "$src" -o "$obj.tmp" \
         && mv -f "$obj.tmp" "$obj" ) &
 
     while [ "$(jobs -rp | wc -l)" -ge "$JOBS" ]; do
@@ -204,7 +204,7 @@ BUILD_STAMP="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 BUILD_REV="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 # -mwindows suppresses the console window. Static linking means the exe runs
 # on a machine with no toolchain installed.
-"$CC_WIN" -O2 -Wall -Iruntime -I"$SRC_DIR" \
+"$CC_WIN" -O2 -Wall -DGB_TRACE -Iruntime -I"$SRC_DIR" \
     -DGB_BUILD_STAMP="\"$BUILD_STAMP\"" \
     -DGB_BUILD_REV="\"$BUILD_REV\"" \
     -o "$EXE" \
