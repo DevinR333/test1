@@ -18,6 +18,14 @@ CB_CALL = {"rlc": "alu_rlc", "rrc": "alu_rrc", "rl": "alu_rl", "rr": "alu_rr",
            "sla": "alu_sla", "sra": "alu_sra", "swap": "alu_swap", "srl": "alu_srl"}
 COND_EXPR = {"nz": "!FLAG_Z", "z": "FLAG_Z", "nc": "!FLAG_C", "c": "FLAG_C"}
 
+# Emitted at every loop back-edge. Recompiled code does not leave the bank
+# function while looping, so without the sync the hardware never advances and
+# a game waiting on a register spins forever. The stop check is what lets the
+# frontend halt a running game at all: nothing else in a loop ever unwinds.
+# gb_sync returns immediately when no cycles have elapsed, so a tight loop
+# pays one comparison.
+GB_LOOP_SYNC = "gb_sync(gb); if (gb->stopped) return;"
+
 # Flow classes whose entire effect is the branch itself.
 CONTROL_ONLY = frozenset({
     sm83.JUMP, sm83.CJUMP, sm83.CALL, sm83.CCALL, sm83.RST,
@@ -204,11 +212,17 @@ class Emitter:
         local = tgt >= 0 and (blk.bank, tgt) in self.prog.blocks and \
             _same_window(tgt, blk.bank)
 
+        # A target at or before this instruction closes a loop.
+        backward = tgt >= 0 and tgt <= insn.addr
+
         if op.flow == sm83.JUMP:
-            return [f"goto {_label(tgt)};"] if local else [
-                f"gb_dispatch(gb, {blk.bank}, 0x{tgt:04X}); return;"]
+            if local:
+                return ([GB_LOOP_SYNC, f"goto {_label(tgt)};"] if backward
+                        else [f"goto {_label(tgt)};"])
+            return [f"gb_dispatch(gb, {blk.bank}, 0x{tgt:04X}); return;"]
         if op.flow == sm83.CJUMP:
-            inner = (f"goto {_label(tgt)};" if local
+            sync = (GB_LOOP_SYNC + " ") if backward else ""
+            inner = (f"{sync}goto {_label(tgt)};" if local
                      else f"{{ gb_dispatch(gb, {blk.bank}, 0x{tgt:04X}); return; }}")
             return [f"if ({COND_EXPR[op.cond]}) {{ gb->cycles += "
                     f"{op.cycles_taken - op.cycles}; {inner} }}"]

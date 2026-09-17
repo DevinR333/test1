@@ -24,6 +24,7 @@
 
 typedef struct gb_s gb_t;
 typedef void (*gb_bank_fn)(gb_t *gb, uint16_t entry);
+typedef void (*gb_frame_fn)(gb_t *gb, void *user);
 
 struct gb_s {
     /* CPU registers. Kept as separate bytes because recompiled code touches
@@ -37,7 +38,10 @@ struct gb_s {
     uint8_t  stopped;
 
     uint64_t cycles;         /* M-cycles since reset */
-    uint64_t sync_deadline;  /* next point the hardware must catch up */
+    uint64_t last_sync;      /* cycle count at the last hardware catch-up */
+    uint32_t div_cycles;     /* divider counter */
+    uint32_t tima_cycles;    /* timer counter */
+    uint8_t  illegal_opcode; /* set if the game executed an invalid opcode */
 
     /* Memory map. */
     const uint8_t *rom;
@@ -64,8 +68,19 @@ struct gb_s {
      * both are kept coherent. */
     uint16_t call_depth;
 
+    /* PPU state. */
+    uint32_t ppu_cycles;     /* M-cycles into the current scanline */
+    uint8_t  window_line;    /* the window has its own line counter */
+    uint8_t  stat_line;      /* previous STAT interrupt condition, for edges */
+    uint8_t  frame_ready;    /* set at VBlank, cleared by the frontend */
+    uint8_t  bg_palette[64];   /* CGB: 8 palettes x 4 colours x 2 bytes */
+    uint8_t  obj_palette[64];
+
     uint32_t framebuffer[GB_SCREEN_W * GB_SCREEN_H];
     uint8_t  joypad;         /* bit per button, 1 = pressed */
+    uint64_t frames;         /* completed frames since reset */
+    gb_frame_fn frame_cb;    /* called at VBlank with a complete framebuffer */
+    void       *frame_cb_user;
 };
 
 enum { GB_MAPPER_NONE, GB_MAPPER_MBC1, GB_MAPPER_MBC2,
@@ -111,7 +126,8 @@ void     gb_pop_af(gb_t *gb);
 void gb_call(gb_t *gb, uint16_t bank, uint16_t target, uint16_t ret_addr);
 void gb_dispatch(gb_t *gb, uint16_t bank, uint16_t target);
 void gb_no_entry(gb_t *gb, uint16_t bank, uint16_t entry);
-void gb_interp(gb_t *gb, uint16_t addr);   /* interpreter fallback, one insn */
+void gb_interp(gb_t *gb, uint16_t addr);   /* interpreter fallback */
+uint32_t gb_interp_step(gb_t *gb);
 void gb_illegal(gb_t *gb, uint8_t opcode);
 void gb_halt(gb_t *gb);
 void gb_stop(gb_t *gb);
@@ -142,11 +158,14 @@ void     alu_bit(gb_t *gb, uint8_t v, uint8_t bit);
 /* Hardware catch-up. Generated code accumulates cycles and calls this at
  * block boundaries; the PPU, timers and APU advance to meet it. */
 void gb_sync(gb_t *gb);
+void gb_ppu_step(gb_t *gb, uint32_t cycles);
+void gb_ppu_reset(gb_t *gb);
 
 /* Lifecycle. */
 int  gb_init(gb_t *gb, const uint8_t *rom, size_t size);
 void gb_reset(gb_t *gb);
-void gb_run_frame(gb_t *gb);
+void gb_run(gb_t *gb);            /* runs the game's own loop; returns on stop */
+void gb_on_frame(gb_t *gb);
 void gb_free(gb_t *gb);
 
 extern const gb_bank_fn gb_bank_table[GB_MAX_BANKS];
