@@ -136,3 +136,133 @@ def write_png(path, pixels, palette=None):
         fh.write(chunk(b"IDAT", zlib.compress(bytes(raw), 9)))
         fh.write(chunk(b"IEND", b""))
     return width, height
+
+
+# --- indexed PNG read/write ----------------------------------------------
+# The disassembly stores graphics as 2-bit indexed PNGs. Saving one back as
+# RGB would still open in an image viewer but would no longer assemble, so
+# both directions preserve the indexed format.
+
+def _unfilter(raw, width, height, bpp, stride):
+    """Undo PNG per-scanline filtering. Returns the raw bytes per row."""
+    out = bytearray()
+    prev = bytearray(stride)
+    pos = 0
+    for _ in range(height):
+        ftype = raw[pos]; pos += 1
+        line = bytearray(raw[pos:pos + stride]); pos += stride
+        if ftype == 1:      # Sub
+            for i in range(bpp, stride):
+                line[i] = (line[i] + line[i - bpp]) & 0xFF
+        elif ftype == 2:    # Up
+            for i in range(stride):
+                line[i] = (line[i] + prev[i]) & 0xFF
+        elif ftype == 3:    # Average
+            for i in range(stride):
+                a = line[i - bpp] if i >= bpp else 0
+                line[i] = (line[i] + ((a + prev[i]) >> 1)) & 0xFF
+        elif ftype == 4:    # Paeth
+            for i in range(stride):
+                a = line[i - bpp] if i >= bpp else 0
+                b = prev[i]
+                c = prev[i - bpp] if i >= bpp else 0
+                pp = a + b - c
+                pa, pb, pc = abs(pp - a), abs(pp - b), abs(pp - c)
+                pred = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                line[i] = (line[i] + pred) & 0xFF
+        elif ftype != 0:
+            raise ValueError(f"unknown PNG filter type {ftype}")
+        out += line
+        prev = line
+    return bytes(out)
+
+
+def read_png(path):
+    """Read an indexed or greyscale PNG.
+
+    Returns (pixels, palette, depth) where pixels is a 2D array of palette
+    indices. Only the colour types the disassembly uses are supported.
+    """
+    with open(path, "rb") as fh:
+        data = fh.read()
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError(f"{path}: not a PNG")
+
+    pos, idat, palette, hdr = 8, bytearray(), None, None
+    while pos < len(data):
+        length = struct.unpack(">I", data[pos:pos + 4])[0]
+        tag = data[pos + 4:pos + 8]
+        payload = data[pos + 8:pos + 8 + length]
+        if tag == b"IHDR":
+            hdr = struct.unpack(">IIBBBBB", payload)
+        elif tag == b"PLTE":
+            palette = [tuple(payload[i:i + 3]) for i in range(0, len(payload), 3)]
+        elif tag == b"IDAT":
+            idat += payload
+        elif tag == b"IEND":
+            break
+        pos += 12 + length
+
+    if hdr is None:
+        raise ValueError(f"{path}: no IHDR")
+    width, height, depth, ctype, _, _, interlace = hdr
+    if interlace:
+        raise ValueError(f"{path}: interlaced PNGs are not supported")
+    if ctype not in (0, 3):
+        raise ValueError(f"{path}: colour type {ctype} is not indexed or greyscale")
+
+    stride = (width * depth + 7) // 8
+    raw = _unfilter(zlib.decompress(bytes(idat)), width, height,
+                    max(1, depth // 8), stride)
+
+    pixels, mask = [], (1 << depth) - 1
+    per_byte = 8 // depth
+    for y in range(height):
+        row, base = [], y * stride
+        for x in range(width):
+            byte = raw[base + x // per_byte]
+            shift = 8 - depth * (x % per_byte + 1)
+            row.append((byte >> shift) & mask)
+        pixels.append(row)
+
+    if palette is None:                      # greyscale: synthesise a ramp
+        levels = (1 << depth) - 1
+        palette = [(v * 255 // levels,) * 3 for v in range(levels + 1)]
+    return pixels, palette, depth
+
+
+def write_png_indexed(path, pixels, palette, depth=2):
+    """Write a 2D array of palette indices as an indexed PNG."""
+    height = len(pixels)
+    width = len(pixels[0]) if height else 0
+    per_byte = 8 // depth
+    stride = (width * depth + 7) // 8
+    limit = (1 << depth) - 1
+
+    raw = bytearray()
+    for row in pixels:
+        raw.append(0)                        # filter: none
+        packed = bytearray(stride)
+        for x, px in enumerate(row):
+            if not 0 <= px <= limit:
+                raise ValueError(f"index {px} does not fit in {depth} bits")
+            shift = 8 - depth * (x % per_byte + 1)
+            packed[x // per_byte] |= px << shift
+        raw += packed
+
+    plte = bytearray()
+    for c in palette[:1 << depth]:
+        plte += bytes(c[:3])
+
+    def chunk(tag, payload):
+        body = tag + payload
+        return (struct.pack(">I", len(payload)) + body
+                + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF))
+
+    with open(path, "wb") as fh:
+        fh.write(b"\x89PNG\r\n\x1a\n")
+        fh.write(chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, depth, 3, 0, 0, 0)))
+        fh.write(chunk(b"PLTE", bytes(plte)))
+        fh.write(chunk(b"IDAT", zlib.compress(bytes(raw), 9)))
+        fh.write(chunk(b"IEND", b""))
+    return width, height

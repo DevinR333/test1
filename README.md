@@ -108,6 +108,20 @@ does not reproduce a byte-exact Seasons ROM, because it handles empty space
 differently. `identify.py` checks whether every difference falls in padding
 and tells you so — if it does, the build is good. (Ages does match exactly.)
 
+## Sprite editor
+
+```sh
+python3 tools/spritelab.py
+```
+
+Finds the disassembly, opens in your browser, and lists every sprite sheet.
+Edit tiles with the hardware's four-colour palette, save, then `make seasons`.
+Saving preserves the 2-bit indexed PNG format the build requires, writes via a
+temporary file, and verifies the result reloads before replacing the original.
+
+The server binds to localhost and refuses any path outside the graphics
+directories. Nothing leaves the machine.
+
 ## Finding the graphics
 
 Start here once a symbol file exists:
