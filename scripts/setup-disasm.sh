@@ -102,7 +102,11 @@ for tool in cmake git make; do
   If you are on Windows, close this window and open \"MSYS2 MINGW64\" from the
   Start menu (not \"MSYS2 MSYS\"), then re-run this script."
 done
-say "toolchain: cmake $(cmake --version 2>/dev/null | head -1 | awk '{print $3}'), $(gcc --version 2>/dev/null | head -1)"
+CMAKE_VER=$(cmake --version 2>/dev/null | head -1 | awk '{print $3}')
+say "toolchain: cmake ${CMAKE_VER:-unknown}, $(gcc --version 2>/dev/null | head -1)"
+case "$CMAKE_VER" in
+    4.*|[5-9].*) echo "  cmake 4+ detected; applying the policy-compatibility flag for WLA-DX" ;;
+esac
 
 # The interpreter is `python3` on most systems but `python` under some MSYS2
 # environments, so resolve it once instead of assuming.
@@ -142,7 +146,12 @@ else
     BUILD_TMP=$(mktemp -d)
     trap 'rm -rf "$BUILD_TMP"' EXIT
     git clone --depth 1 --branch "v$WLA_VERSION" "$WLA_REPO" "$BUILD_TMP/wla-dx"
-    cmake -S "$BUILD_TMP/wla-dx" -B "$BUILD_TMP/build" -DCMAKE_BUILD_TYPE=Release
+    # WLA-DX 10.6 declares a cmake_minimum_required below 3.5, which CMake 4
+    # refuses outright. This flag restores the old policy behaviour; on CMake 3
+    # it is simply an unused cache variable.
+    cmake -S "$BUILD_TMP/wla-dx" -B "$BUILD_TMP/build" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     cmake --build "$BUILD_TMP/build" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
     $SUDO cmake --install "$BUILD_TMP/build"
     command -v wla-gb >/dev/null || die "wla-gb not on PATH after install"
