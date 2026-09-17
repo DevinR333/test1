@@ -99,6 +99,7 @@ struct gb_s {
      * the C stack, but the game can also manipulate its own SP directly, so
      * both are kept coherent. */
     uint16_t call_depth;
+    uint16_t ret_expect;     /* address the innermost call pushed */
 
     /* PPU state. */
     uint32_t ppu_cycles;     /* M-cycles into the current scanline */
@@ -168,6 +169,7 @@ void     gb_pop_af(gb_t *gb);
 
 /* Control flow out of recompiled code. */
 void gb_call(gb_t *gb, uint16_t bank, uint16_t target, uint16_t ret_addr);
+void gb_ret(gb_t *gb);            /* pops; a mismatched address is a jump */
 void gb_dispatch(gb_t *gb, uint16_t bank, uint16_t target);
 void gb_jump(gb_t *gb, uint16_t bank, uint16_t target);   /* tail jump, no nesting */
 void gb_no_entry(gb_t *gb, uint16_t bank, uint16_t entry);

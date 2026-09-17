@@ -242,12 +242,12 @@ class Emitter:
         if op.flow == sm83.RST:
             return [f"gb_call(gb, 0, 0x{op.bit:04X}, 0x{insn.end:04X});"]
         if op.flow == sm83.RET:
-            return ["return;"]
+            return ["gb_ret(gb); return;"]
         if op.flow == sm83.CRET:
             return [f"if ({COND_EXPR[op.cond]}) {{ gb->cycles += "
-                    f"{op.cycles_taken - op.cycles}; return; }}"]
+                    f"{op.cycles_taken - op.cycles}; gb_ret(gb); return; }}"]
         if op.flow == sm83.RETI:
-            return ["gb->ime = 1; return;"]
+            return ["gb->ime = 1; gb_ret(gb); return;"]
         if op.flow == sm83.IJUMP:
             # Target is in HL and only known now. The dispatcher will find a
             # recompiled entry or fall back to interpreting.

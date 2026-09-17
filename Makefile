@@ -9,7 +9,7 @@ ifneq ($(SYMBOLS),)
 RECOMP_ARGS += --symbols $(SYMBOLS)
 endif
 
-.PHONY: all fixture recompile report check test-present test-tiles interp run clean
+.PHONY: all fixture recompile report check test-present test-tiles test-jump interp run clean
 
 all: check
 
@@ -23,7 +23,7 @@ report:
 	$(PYTHON) tools/gbrecomp.py $(ROM) --report-only
 
 # Verifies the emitter produces C that actually compiles.
-check: fixture recompile interp test-present test-tiles run
+check: fixture recompile interp test-present test-tiles test-jump run
 	cp runtime/gb.h $(OUT)/
 	$(CC) -fsyntax-only $(CFLAGS) $(OUT)/*.c
 	$(CC) -fsyntax-only $(CFLAGS) runtime/alu.c runtime/memory.c
@@ -52,8 +52,18 @@ run: recompile interp
 		tests/harness.c $(RUNTIME) $(OUT)/bank_*.c $(OUT)/dispatch.c
 	$(OUT)/harness tests/fixture.gb 60
 
+# Both meanings of RET: an ordinary return, and the push-and-ret idiom games
+# use for computed jumps. Treating the second as a return loops forever.
+test-jump: interp | $(OUT)
+	$(PYTHON) tests/make_jumptest.py tests/jumptest.gb
+	$(PYTHON) tools/gbrecomp.py tests/jumptest.gb -o $(OUT)/jump >/dev/null
+	cp runtime/gb.h $(OUT)/jump/
+	$(CC) -O1 -Iruntime -I$(OUT)/jump -o $(OUT)/check_jump \
+		tests/check_jump.c $(RUNTIME) $(OUT)/jump/bank_*.c $(OUT)/jump/dispatch.c
+	$(OUT)/check_jump
+
 $(OUT):
 	mkdir -p $(OUT)
 
 clean:
-	rm -rf build tests/fixture.gb
+	rm -rf build tests/fixture.gb tests/jumptest.gb

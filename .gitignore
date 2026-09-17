@@ -7,3 +7,4 @@ tests/*.sym
 *.sav
 external/
 runtime/interp_gen.c
+tests/jumptest.gb

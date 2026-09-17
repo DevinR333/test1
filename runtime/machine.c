@@ -308,12 +308,40 @@ static uint16_t take_interrupt(gb_t *gb)
 void gb_call(gb_t *gb, uint16_t bank, uint16_t target, uint16_t ret_addr)
 {
     /* The return address goes on the game's own stack, because the game can
-     * and does inspect and modify it. The native return path is the C stack. */
+     * and does inspect and modify it. */
+    uint16_t saved_expect = gb->ret_expect;
+
     gb_push(gb, ret_addr);
+    uint16_t sp_after_push = gb->sp;
+    gb->ret_expect = ret_addr;
     gb->call_depth++;
+
     gb_dispatch(gb, bank, target);
+
     gb->call_depth--;
-    gb->sp += 2;                             /* balance the pushed address */
+    gb->ret_expect = saved_expect;
+
+    /* A normal return pops what was pushed. A callee that jumped away instead
+     * leaves the stack where it was, so square it up rather than letting the
+     * imbalance accumulate. */
+    if (gb->sp < (uint16_t)(sp_after_push + 2))
+        gb->sp = sp_after_push + 2;
+}
+
+/* RET pops an address off the game's stack. Usually that is the address the
+ * matching call pushed, and returning through C is equivalent and faster.
+ *
+ * It is not always. Pushing an address and executing RET is how Game Boy code
+ * performs a computed jump, and jump tables are built on it. Treating that as
+ * an ordinary return sends control back to the caller instead of to the
+ * computed target, which reads as the game looping forever while touching no
+ * hardware at all. So the popped address is checked, and anything unexpected
+ * is dispatched as the jump it is. */
+void gb_ret(gb_t *gb)
+{
+    uint16_t addr = gb_pop(gb);
+    if (addr != gb->ret_expect)
+        gb_jump(gb, gb->rom_bank, addr);
 }
 
 /* Record a tail jump and return. The caller returns immediately afterwards,
