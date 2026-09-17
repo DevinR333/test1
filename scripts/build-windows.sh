@@ -120,6 +120,11 @@ else
 WARN
 fi
 
+# Remove the previous executable before anything else. If a later step fails,
+# there must be nothing left to run by mistake - an old binary producing old
+# results is worse than no binary at all.
+rm -f "$EXE"
+
 say "recompiling $(basename "$ROM")"
 RECOMP_ARGS=("$ROM" -o "$SRC_DIR")
 [ -n "$SYMBOLS" ] && RECOMP_ARGS+=(--symbols "$SYMBOLS")
@@ -161,30 +166,47 @@ JOBS=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 # frontend are ordinary code and still get -O2.
 echo "  $(ls "$SRC_DIR"/bank_*.c | wc -l) generated files at -O1, $JOBS at a time"
 
-pids=()
-fail=0
+# Throttle to JOBS concurrent compilers, then confirm success by checking the
+# object files themselves. Tracking individual process ids does not work here:
+# the throttle reaps them, and waiting on an already-reaped id reports failure
+# for a compile that actually succeeded.
+expected=0
 for src in "$SRC_DIR"/bank_*.c "$SRC_DIR"/dispatch.c; do
+    expected=$((expected + 1))
     obj="$OUT_DIR/obj/$(basename "${src%.c}").o"
-    # Skip anything already built from an unchanged source.
+
+    # Reuse an object already built from an unchanged source.
     if [ -f "$obj" ] && [ "$obj" -nt "$src" ]; then
         continue
     fi
-    "$CC_WIN" -O1 -Iruntime -I"$SRC_DIR" -c "$src" -o "$obj" &
-    pids+=($!)
-    # Keep at most JOBS compilers running.
+
+    # A partial object from an interrupted build must not be mistaken for a
+    # finished one, so compile to a temporary name and move it into place.
+    ( "$CC_WIN" -O1 -Iruntime -I"$SRC_DIR" -c "$src" -o "$obj.tmp" \
+        && mv -f "$obj.tmp" "$obj" ) &
+
     while [ "$(jobs -rp | wc -l)" -ge "$JOBS" ]; do
         wait -n 2>/dev/null || true
     done
 done
-for pid in "${pids[@]}"; do
-    wait "$pid" || fail=1
-done
-[ "$fail" -eq 0 ] || die "a generated file failed to compile"
+wait
+
+built=$(ls -1 "$OUT_DIR"/obj/*.o 2>/dev/null | wc -l)
+if [ "$built" -ne "$expected" ]; then
+    rm -f "$OUT_DIR"/obj/*.tmp
+    die "only $built of $expected generated files compiled.
+  Re-run to retry; objects that succeeded are kept."
+fi
+echo "  $built objects ready"
 
 echo "  runtime and frontend at -O2"
+BUILD_STAMP="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+BUILD_REV="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 # -mwindows suppresses the console window. Static linking means the exe runs
 # on a machine with no toolchain installed.
 "$CC_WIN" -O2 -Wall -Iruntime -I"$SRC_DIR" \
+    -DGB_BUILD_STAMP="\"$BUILD_STAMP\"" \
+    -DGB_BUILD_REV="\"$BUILD_REV\"" \
     -o "$EXE" \
     frontend/win32.c \
     runtime/alu.c runtime/memory.c runtime/ppu.c runtime/machine.c \
@@ -193,8 +215,11 @@ echo "  runtime and frontend at -O2"
     "$OUT_DIR"/obj/*.o \
     -lgdi32 -luser32 -lm -static -mwindows
 
+[ -f "$EXE" ] || die "the link step produced no executable"
+
 say "done"
 SIZE=$(( $(wc -c < "$EXE") / 1024 ))
+echo "  built $BUILD_STAMP from $BUILD_REV"
 cat <<NOTE
   $EXE  (${SIZE} KiB)
 

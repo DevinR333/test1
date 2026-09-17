@@ -15,6 +15,16 @@
 #include "gb.h"
 #include "present.h"
 
+/* Stamped in by the build so any report names the build that produced it.
+ * Identical numbers from what should have been different code means a stale
+ * binary, and that is worth being able to see at a glance. */
+#ifndef GB_BUILD_STAMP
+#define GB_BUILD_STAMP "unstamped"
+#endif
+#ifndef GB_BUILD_REV
+#define GB_BUILD_REV "unknown"
+#endif
+
 #define WINDOW_CLASS "GbRecompWindow"
 #define DEFAULT_SCALE 4
 
@@ -200,6 +210,7 @@ static void write_log(const gb_t *gb, const char *note)
 
     FILE *fh = fopen(path, "w");
     if (!fh) return;
+    fprintf(fh, "build         %s (%s)\n", GB_BUILD_STAMP, GB_BUILD_REV);
     fprintf(fh, "log           %s\n", path);
     fprintf(fh, "stop reason   %d\n", gb->stop_reason);
     fprintf(fh, "note          %s\n", note ? note : "(none)");
@@ -240,12 +251,14 @@ static DWORD WINAPI game_thread(LPVOID param)
                  "Stopped at:  %02X:%04X\n"
                  "Frames run:  %llu\n"
                  "Cycles:      %llu\n"
-                 "Interpreter fallbacks: %llu\n\n"
+                 "Interpreter fallbacks: %llu\n"
+                 "Build:       %s (%s)\n\n"
                  "Written to oracle-log.txt beside the executable.",
                  why, gb->stop_bank, gb->stop_pc,
                  (unsigned long long)gb->frames,
                  (unsigned long long)gb->cycles,
-                 (unsigned long long)gb->no_entry_count);
+                 (unsigned long long)gb->no_entry_count,
+                 GB_BUILD_STAMP, GB_BUILD_REV);
         MessageBox(NULL, msg, "Oracle of Seasons - stopped", MB_ICONWARNING);
     }
 

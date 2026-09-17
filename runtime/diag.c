@@ -35,6 +35,9 @@ void gb_write_diagnostics(const gb_t *gb, const char *path)
     if (!fh) return;
 
     uint8_t lcdc = gb->io[0x40];
+#ifdef GB_BUILD_STAMP
+    fprintf(fh, "build         %s (%s)\n", GB_BUILD_STAMP, GB_BUILD_REV);
+#endif
     fprintf(fh, "frames        %llu\n", (unsigned long long)gb->frames);
     fprintf(fh, "cycles        %llu\n", (unsigned long long)gb->cycles);
     fprintf(fh, "speed         %s\n", gb->double_speed ? "double" : "normal");
