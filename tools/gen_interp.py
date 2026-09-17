@@ -47,8 +47,10 @@ def body(op):
     if m == "nop":        return ["/* nop */"]
     if m == "di":         return ["gb->ime = 0;"]
     if m == "ei":         return ["gb->ime_pending = 1;"]
+    # The interpreter loop handles waking from HALT itself.
     if m == "halt":       return ["gb->halted = 1;"]
-    if m == "stop":       return ["gb->stopped = 1;", "gb->pc++;"]
+    # Must go through gb_stop: on CGB this is a speed switch, not a halt.
+    if m == "stop":       return ["gb->pc++;", "gb_stop(gb);"]
 
     # Immediates are read from the instruction stream as the PC advances.
     fetch = {

@@ -24,6 +24,7 @@
 #define R_BCPD 0x69
 #define R_OCPS 0x6A
 #define R_OCPD 0x6B
+#define R_KEY1 0x4D
 #define R_SVBK 0x70
 #define R_IE   0x7F          /* stored at the end of the IO block */
 
@@ -102,6 +103,11 @@ void gb_io_write(gb_t *gb, uint16_t addr, uint8_t value)
         gb->io[R_OCPD] = value;
         return;
 
+    case R_KEY1:
+        if (gb->cgb)
+            gb->io[R_KEY1] = (gb->double_speed ? 0x80 : 0x00) | (value & 0x01);
+        return;
+
     case R_JOYP:
         /* Only the two select bits are writable; the rest reads the buttons. */
         gb->io[R_JOYP] = (gb->io[R_JOYP] & 0x0F) | (value & 0x30);
@@ -162,7 +168,11 @@ void gb_sync(gb_t *gb)
     gb->last_sync = gb->cycles;
 
     step_timers(gb, (uint32_t)elapsed);
-    gb_ppu_step(gb, (uint32_t)elapsed);
+
+    /* In double-speed mode the CPU and timers run twice as fast while the PPU
+     * and audio keep their original rate, so the display advances by half the
+     * CPU cycles counted. */
+    gb_ppu_step(gb, (uint32_t)elapsed >> (gb->double_speed ? 1 : 0));
 
     if (gb->frame_ready) {
         gb->frame_ready = 0;
@@ -274,6 +284,21 @@ void gb_halt(gb_t *gb)
 
 void gb_stop(gb_t *gb)
 {
+    /* On Game Boy Color, STOP is how a game changes CPU speed. It sets bit 0
+     * of KEY1 to arm the switch, then executes STOP; the hardware toggles
+     * speed and carries on. Treating that as a halt kills the game one frame
+     * into boot, since switching to double speed is among the first things a
+     * CGB title does. */
+    if (gb->cgb && (gb->io[R_KEY1] & 0x01)) {
+        gb->double_speed = !gb->double_speed;
+        gb->io[R_KEY1] = gb->double_speed ? 0x80 : 0x00;   /* bit 0 clears */
+        /* The switch resets the divider. */
+        gb->io[R_DIV] = 0;
+        gb->div_cycles = 0;
+        return;
+    }
+
+    /* A genuine STOP halts until a button is pressed. */
     gb->stopped = 1;
     gb->stop_reason = GB_STOP_OPCODE;
     gb->stop_pc = gb->pc;

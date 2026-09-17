@@ -76,7 +76,9 @@ class Emitter:
         if m == "halt":
             return ["gb_halt(gb);"]
         if m == "stop":
-            return ["gb_stop(gb);"]
+            # Recompiled code does not track PC, so set it here: this is one of
+            # the few places the address is worth reporting.
+            return [f"gb->pc = 0x{insn.addr:04X};", "gb_stop(gb);"]
         if m == "prefix_cb":
             return []
 
@@ -182,7 +184,8 @@ class Emitter:
             return [_set8(r, expr)]
 
         if op.flow == sm83.ILLEGAL:
-            return [f"gb_illegal(gb, 0x{insn.raw[0]:02X});"]
+            return [f"gb->pc = 0x{insn.addr:04X};",
+                    f"gb_illegal(gb, 0x{insn.raw[0]:02X});"]
 
         self.unhandled[m] = self.unhandled.get(m, 0) + 1
         return []

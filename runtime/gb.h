@@ -74,6 +74,7 @@ struct gb_s {
     uint8_t  mapper;         /* GB_MAPPER_* */
     uint8_t  ram_enabled;
     uint8_t  cgb;
+    uint8_t  double_speed;   /* CGB runs the CPU at twice the PPU's rate */
 
     /* Return-address stack for recompiled calls. Recompiled code returns via
      * the C stack, but the game can also manipulate its own SP directly, so
