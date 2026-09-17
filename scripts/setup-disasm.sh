@@ -40,8 +40,14 @@ case "$(uname -s)" in
 esac
 say "platform: $PLATFORM"
 
-need_sudo() { [ "$(id -u)" -eq 0 ] && echo "" || echo "sudo"; }
-SUDO=$(need_sudo)
+# MSYS2 has no sudo, and pacman there does not need it.
+if [ "$PLATFORM" = "msys" ] || [ "$(id -u)" -eq 0 ]; then
+    SUDO=""
+elif command -v sudo >/dev/null; then
+    SUDO="sudo"
+else
+    die "sudo not found and not running as root; install sudo or re-run as root"
+fi
 
 # --- dependencies ---------------------------------------------------------
 say "installing build dependencies"
@@ -64,8 +70,9 @@ case "$PLATFORM" in
         python3 -m pip install --quiet --user pyyaml
         ;;
     msys)
-        pacman -S --needed --noconfirm base-devel mingw-w64-x86_64-toolchain \
-            mingw-w64-x86_64-cmake git python python-yaml
+        pacman -S --needed --noconfirm base-devel git \
+            mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake \
+            mingw-w64-x86_64-python mingw-w64-x86_64-python-yaml
         ;;
 esac
 

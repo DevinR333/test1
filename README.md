@@ -69,7 +69,22 @@ Not written yet (route B main line):
 ## Getting set up
 
 You need a local build of `oracles-disasm` to get symbols and a reference ROM.
-One command does the whole thing — toolchain, clone, and build:
+
+### Windows
+
+The build needs a Unix-like environment, so it cannot run in CMD or
+PowerShell. Install [MSYS2](https://www.msys2.org) (normal installer, accept
+the defaults), then double-click:
+
+```
+scripts\setup-windows.cmd
+```
+
+That finds MSYS2, enters it, and runs the setup for you. If MSYS2 is installed
+somewhere unusual, open the **MSYS2 MINGW64** shell from the Start menu and run
+the Linux command below instead.
+
+### Linux, macOS, or inside MSYS2
 
 ```sh
 ./scripts/setup-disasm.sh
