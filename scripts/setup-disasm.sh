@@ -38,7 +38,11 @@ case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*) PLATFORM=msys ;;
     *) die "unsupported platform: $(uname -s). On Windows, install MSYS2 and run this inside it." ;;
 esac
-say "platform: $PLATFORM"
+if [ "$PLATFORM" = "msys" ]; then
+    say "platform: MSYS2 (${MSYSTEM:-unknown} environment)"
+else
+    say "platform: $PLATFORM"
+fi
 
 # MSYS2 has no sudo, and pacman there does not need it.
 if [ "$PLATFORM" = "msys" ] || [ "$(id -u)" -eq 0 ]; then
@@ -75,6 +79,30 @@ case "$PLATFORM" in
             mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake
         ;;
 esac
+
+if [ "$PLATFORM" = "msys" ]; then
+    # Installed here regardless of which shell shortcut was used.
+    for d in /mingw64/bin /ucrt64/bin /usr/bin; do
+        [ -d "$d" ] && case ":$PATH:" in *":$d:"*) ;; *) PATH="$d:$PATH" ;; esac
+    done
+    export PATH
+
+    if ! command -v cmake >/dev/null; then
+        warn "cmake still not on PATH; installing the MSYS build as a fallback"
+        pacman -S --needed --noconfirm cmake || true
+    fi
+    if ! command -v gcc >/dev/null; then
+        warn "gcc still not on PATH; installing the MSYS toolchain as a fallback"
+        pacman -S --needed --noconfirm gcc make || true
+    fi
+fi
+
+for tool in cmake git make; do
+    command -v "$tool" >/dev/null || die "$tool is not on PATH after installation.
+  If you are on Windows, close this window and open \"MSYS2 MINGW64\" from the
+  Start menu (not \"MSYS2 MSYS\"), then re-run this script."
+done
+say "toolchain: cmake $(cmake --version 2>/dev/null | head -1 | awk '{print $3}'), $(gcc --version 2>/dev/null | head -1)"
 
 # The interpreter is `python3` on most systems but `python` under some MSYS2
 # environments, so resolve it once instead of assuming.
@@ -133,9 +161,18 @@ fi
 
 if [ "$HACK_BASE" -eq 1 ]; then
     say "switching to the modifiable build (editable text, graphics and assets)"
-    ( cd "$DISASM" && git checkout hack-base 2>/dev/null \
+    ( cd "$DISASM"
+      git checkout hack-base 2>/dev/null \
         || { [ -x ./swapbuild.sh ] && ./swapbuild.sh; } \
-        || warn "could not switch to a modifiable build; staying on the default branch" )
+        || warn "could not switch to a modifiable build; staying on the default branch"
+      # Say plainly where we ended up. A detached HEAD is harmless for building
+      # but means the checkout is not on the branch you might expect.
+      current=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
+      if [ "$current" = "HEAD" ]; then
+          warn "checkout is in detached HEAD at $(git rev-parse --short HEAD). Fine for building."
+      else
+          echo "  on branch: $current"
+      fi )
 fi
 
 # --- build ----------------------------------------------------------------
