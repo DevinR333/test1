@@ -66,6 +66,33 @@ Not written yet (route B main line):
 - Entity system, collision, and the game logic itself.
 - The Android shell (NDK build, surface, touch controls, audio).
 
+## Getting set up
+
+You need a local build of `oracles-disasm` to get symbols and a reference ROM.
+One command does the whole thing — toolchain, clone, and build:
+
+```sh
+./scripts/setup-disasm.sh
+```
+
+It installs WLA-DX v10.6 from source (the version the disassembly requires;
+distro packages are usually older), pulls the disassembly into `external/`,
+and runs `make seasons`. Re-running it is safe. Add `--hack-base` for the
+modifiable build, which is the one you want if you intend to edit graphics.
+
+Then check what you have:
+
+```sh
+python3 tools/identify.py your-dump.gbc
+python3 tools/identify.py external/oracles-disasm/seasons.gbc
+python3 tools/identify.py your-dump.gbc external/oracles-disasm/seasons.gbc
+```
+
+**Expect the Seasons comparison to differ.** The project documents that WLA
+does not reproduce a byte-exact Seasons ROM, because it handles empty space
+differently. `identify.py` checks whether every difference falls in padding
+and tells you so — if it does, the build is good. (Ages does match exactly.)
+
 ## Usage
 
 ```sh
