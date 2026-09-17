@@ -9,6 +9,13 @@
 #include <string.h>
 #include "gb.h"
 
+#ifdef GB_TRACE
+/* Optional hook for recording every block entry to a file, used when
+ * comparing a recompiled run against an interpreted one. Defined here so
+ * every frontend links without having to supply it. */
+void (*gb_trace_sink)(uint16_t bank, uint16_t addr) = 0;
+#endif
+
 static int count_nonzero(const uint8_t *p, size_t n)
 {
     int c = 0;

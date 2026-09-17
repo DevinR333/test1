@@ -13,7 +13,6 @@ uint32_t gb_interp_step(gb_t *gb);
 void gb_interp(gb_t *gb, uint16_t addr)
 {
     gb->pc = addr;
-    uint16_t entry_sp = gb->sp;
     int guard = 0;
 
     for (;;) {
@@ -21,11 +20,23 @@ void gb_interp(gb_t *gb, uint16_t addr)
         gb->cycles += cycles;
         gb_sync(gb);
 
-        if (gb->stopped || gb->frame_ready)
+        if (gb->stopped)
             return;
-        /* A RET past where we came in means the routine finished. */
-        if (gb->sp > entry_sp)
-            return;
+
+        /* Hand back as soon as the program counter reaches code that was
+         * compiled, so the fast path resumes.
+         *
+         * Only ROM is ever compiled. Checking the bank table for an address
+         * outside ROM matched on the current bank and handed back an address
+         * that had no block, which dispatched straight back here: the two
+         * bounced off each other one instruction at a time. */
+        if (gb->pc < 0x8000) {
+            uint16_t b = (gb->pc < 0x4000) ? 0 : gb->rom_bank;
+            if (b < GB_MAX_BANKS && gb_bank_table[b]) {
+                gb_jump(gb, b, gb->pc);
+                return;
+            }
+        }
         if (++guard > 2000000) {
             /* Not returning after two million instructions means it is not
              * going to. Stopping with a reason beats hanging. */

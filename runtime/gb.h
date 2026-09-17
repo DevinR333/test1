@@ -100,7 +100,10 @@ struct gb_s {
      * the C stack, but the game can also manipulate its own SP directly, so
      * both are kept coherent. */
     uint16_t call_depth;
-    uint16_t ret_expect;     /* address the innermost call pushed */
+    /* Stack pointer each active call expects to see again when its callee
+     * returns. A RET is a genuine return exactly when the stack is back at
+     * that frame; anything else is the game jumping through the stack. */
+    uint16_t call_sp[256];
 
     /* Ring of recently entered blocks. A game that stalls is looping
      * somewhere, and the addresses say where far more directly than any
@@ -108,6 +111,14 @@ struct gb_s {
     uint16_t trace_addr[4096];
     uint16_t trace_bank[4096];
     uint32_t trace_pos;
+
+    /* Control-flow events, for working out how execution reached somewhere it
+     * should not have. Kind: 1 a RET whose popped address was not what the
+     * call pushed, 2 a dispatch with no compiled block, 3 a stack fixup. */
+    uint8_t  ev_kind[64];
+    uint16_t ev_a[64];
+    uint16_t ev_b[64];
+    uint32_t ev_pos;
 
     /* PPU state. */
     uint32_t ppu_cycles;     /* M-cycles into the current scanline */
@@ -231,11 +242,16 @@ extern const uint8_t gb_io_read_mask[128];
 /* Block-entry tracing. Compiled in only when GB_TRACE is defined, so a release
  * build pays nothing. */
 #ifdef GB_TRACE
+/* Optional file log, for comparing a recompiled run against an interpreted
+ * one instruction by instruction. */
+extern void (*gb_trace_sink)(uint16_t bank, uint16_t addr);
+
 static inline void gb_trace(gb_t *gb, uint16_t bank, uint16_t addr)
 {
     uint32_t i = gb->trace_pos++ & 4095;
     gb->trace_bank[i] = bank;
     gb->trace_addr[i] = addr;
+    if (gb_trace_sink) gb_trace_sink(bank, addr);
 }
 #define GB_TRACE_BLOCK(gb, bank, addr) gb_trace((gb), (bank), (addr))
 #else

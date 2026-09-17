@@ -22,6 +22,18 @@ RST_VECTORS = [0x00, 0x08, 0x10, 0x18, 0x20, 0x28, 0x30, 0x38]
 INTERRUPT_VECTORS = [0x40, 0x48, 0x50, 0x58, 0x60]
 ENTRY_POINT = 0x100
 
+# The cartridge header. Every Game Boy ROM reserves 0x0104 to 0x014F for the
+# boot logo, title, cartridge type and checksums, and none of it is code. It
+# decodes into plausible-looking instructions all the same, so recursive
+# descent that reaches it disassembles the lot and eventually emits an illegal
+# opcode that the game then executes.
+#
+# Reaching it is easy: a ROM that leaves its RST vectors empty leaves them full
+# of zeroes, which decode as NOP, so a walk from the first vector runs straight
+# through every vector and on into the header.
+HEADER_START = 0x0104
+HEADER_END = 0x0150
+
 # MBC control registers. A write into these ranges reconfigures the mapper, so
 # the bank tracker watches for them.
 BANK_SELECT_LO = 0x2000
@@ -63,6 +75,10 @@ class Program:
 
 def _in_rom(addr: int) -> bool:
     return addr < 0x8000
+
+
+def _is_header(addr: int) -> bool:
+    return HEADER_START <= addr < HEADER_END
 
 
 def _entropy(data) -> float:
@@ -148,6 +164,9 @@ def discover(rom: Rom, extra_entries=(), skip_graphics=True) -> Program:
             bank = 0
         if (bank, addr) in seen or not _in_rom(addr):
             continue
+        # The header is data on every cartridge, whatever led here.
+        if bank == 0 and _is_header(addr):
+            continue
         seen.add((bank, addr))
 
         if bank in prog.graphics_banks:
@@ -181,6 +200,8 @@ def _trace_block(rom: Rom, prog: Program, bank: int, addr: int):
     pending_a = None
 
     while True:
+        if bank == 0 and _is_header(pc):
+            break                       # ran into the header; it is not code
         offset = pc - base
         if offset < 0 or offset >= len(data):
             break
@@ -227,10 +248,14 @@ def _trace_block(rom: Rom, prog: Program, bank: int, addr: int):
             block.successors.add((bank, insn.end))
         elif flow == sm83.IJUMP:
             prog.indirect_sites.append((bank, pc))
-        elif flow == sm83.HALT:
-            # halt resumes on interrupt; execution continues after it.
+        elif flow in (sm83.HALT, sm83.STOP):
+            # Neither ends execution. HALT resumes when an interrupt arrives,
+            # and on Game Boy Color STOP performs the CPU speed switch and
+            # carries straight on - the instruction after it is where the game
+            # waits for the switch to complete. Treating STOP as terminal left
+            # that code unreachable.
             block.successors.add((bank, insn.end))
-        # RET, RETI, STOP and ILLEGAL end the block with no static successor.
+        # RET, RETI and ILLEGAL end the block with no static successor.
         break
 
     return block
@@ -254,6 +279,7 @@ def report(prog: Program) -> str:
         f"  bank switches  {len(prog.bank_switches)} detected statically",
         f"  indirect jumps {len(prog.indirect_sites)} unresolved (jp hl)",
         f"  graphics banks {len(prog.graphics_banks)} excluded as data",
+        f"  header         0x{HEADER_START:04X}-0x{HEADER_END - 1:04X} excluded as data",
     ]
     cold = [b for b in range(rom.bank_count) if cov.get(b, 0) == 0]
     if cold:

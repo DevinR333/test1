@@ -209,6 +209,18 @@ class Emitter:
             out.append(f"    gb->cycles += {op.cycles};")
             if op.flow != sm83.NEXT:
                 out += [f"    {line}" for line in self.terminator(insn, blk)]
+
+        # A block can end simply because the next address begins another one,
+        # with no control-flow instruction involved. That is ordinary
+        # fall-through and must continue there - but say so explicitly rather
+        # than relying on the next label happening to be emitted next, which
+        # is what let execution skip whole routines.
+        if not out[-1].strip().startswith(("return;", "goto ")):
+            nxt = blk.end
+            if (blk.bank, nxt) in self.prog.blocks and _same_window(nxt, blk.bank):
+                out.append(f"    goto {_label(nxt)};")
+            else:
+                out.append(f"    gb_jump(gb, {blk.bank}, 0x{nxt:04X}); return;")
         return out
 
     def terminator(self, insn, blk) -> list:
@@ -235,26 +247,38 @@ class Emitter:
             return [f"if ({COND_EXPR[op.cond]}) {{ gb->cycles += "
                     f"{op.cycles_taken - op.cycles}; {inner} }}"]
         if op.flow == sm83.CALL:
-            return [f"gb_call(gb, {blk.bank}, 0x{tgt:04X}, 0x{insn.end:04X});"]
+            return [f"gb_call(gb, {blk.bank}, 0x{tgt:04X}, 0x{insn.end:04X});",
+                    "return;"]
         if op.flow == sm83.CCALL:
+            # Not taken, execution simply continues into the next instruction.
             return [f"if ({COND_EXPR[op.cond]}) {{ gb->cycles += "
                     f"{op.cycles_taken - op.cycles}; "
-                    f"gb_call(gb, {blk.bank}, 0x{tgt:04X}, 0x{insn.end:04X}); }}"]
+                    f"gb_call(gb, {blk.bank}, 0x{tgt:04X}, 0x{insn.end:04X}); "
+                    f"return; }}"]
         if op.flow == sm83.RST:
-            return [f"gb_call(gb, 0, 0x{op.bit:04X}, 0x{insn.end:04X});"]
+            return [f"gb_call(gb, 0, 0x{op.bit:04X}, 0x{insn.end:04X});",
+                    "return;"]
         if op.flow == sm83.RET:
             return ["gb_ret(gb); return;"]
         if op.flow == sm83.CRET:
             return [f"if ({COND_EXPR[op.cond]}) {{ gb->cycles += "
                     f"{op.cycles_taken - op.cycles}; gb_ret(gb); return; }}"]
         if op.flow == sm83.RETI:
-            return ["gb->ime = 1; gb_ret(gb); return;"]
+            return ["gb->ime = 1;", "gb_ret(gb); return;"]
         if op.flow == sm83.IJUMP:
             # Target is in HL and only known now. The dispatcher will find a
             # recompiled entry or fall back to interpreting.
             return [f"gb_jump(gb, {blk.bank}, HL); return;"]
         if op.flow in (sm83.HALT, sm83.STOP):
-            return []
+            # Both continue at the following instruction. Falling through to
+            # whichever block the emitter happened to place next is not the
+            # same thing: when the next block was somewhere else entirely,
+            # execution silently skipped the code in between.
+            nxt = insn.end
+            if (blk.bank, nxt) in self.prog.blocks and _same_window(nxt, blk.bank):
+                return ["if (gb->stopped) return;", f"goto {_label(nxt)};"]
+            return ["if (gb->stopped) return;",
+                    f"gb_jump(gb, {blk.bank}, 0x{nxt:04X}); return;"]
         return ["return;"]
 
     # -- whole program ------------------------------------------------------

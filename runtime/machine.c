@@ -46,6 +46,17 @@ enum { BTN_A, BTN_B, BTN_SELECT, BTN_START,
 /* TAC's low two bits pick the timer's divisor, in M-cycles per tick. */
 static const uint16_t TIMER_PERIOD[4] = { 256, 4, 16, 64 };
 
+/* Records how control reached somewhere unexpected. Kind: 1 a RET whose
+ * popped address was not what the call pushed, 2 a dispatch with no compiled
+ * block, 3 a stack fixup after a callee that did not return. */
+static void note_event(gb_t *gb, uint8_t kind, uint16_t a, uint16_t b)
+{
+    uint32_t i = gb->ev_pos++ & 63;
+    gb->ev_kind[i] = kind;
+    gb->ev_a[i] = a;
+    gb->ev_b[i] = b;
+}
+
 void gb_io_write(gb_t *gb, uint16_t addr, uint8_t value)
 {
     int r = addr - 0xFF00;
@@ -305,47 +316,30 @@ static uint16_t take_interrupt(gb_t *gb)
 
 /* --- control flow out of recompiled code ------------------------------ */
 
+/* Control flow out of recompiled code.
+ *
+ * The game has one stack and the hardware follows it. An earlier design mapped
+ * the game's CALL and RET onto the C call stack, which only works while every
+ * path has a matching C frame - and several do not. A routine entered by a
+ * jump, a tail call, or an interrupt has no frame to return to, so its RET had
+ * nothing to match and was dispatched to whatever happened to be on the stack.
+ *
+ * So the C stack is no longer used for the game's control flow at all. Every
+ * transfer records where to go next and returns, and one loop follows it,
+ * exactly as the hardware follows the program counter. Calls cost no C stack,
+ * and deep recursion in the game cannot overflow anything.
+ */
 void gb_call(gb_t *gb, uint16_t bank, uint16_t target, uint16_t ret_addr)
 {
-    /* The return address goes on the game's own stack, because the game can
-     * and does inspect and modify it. */
-    uint16_t saved_expect = gb->ret_expect;
-
     gb_push(gb, ret_addr);
-    uint16_t sp_after_push = gb->sp;
-    gb->ret_expect = ret_addr;
-    gb->call_depth++;
-
-    gb_dispatch(gb, bank, target);
-
-    gb->call_depth--;
-    gb->ret_expect = saved_expect;
-
-    /* A normal return pops what was pushed. A callee that jumped away instead
-     * leaves the stack where it was, so square it up rather than letting the
-     * imbalance accumulate. */
-    if (gb->sp < (uint16_t)(sp_after_push + 2))
-        gb->sp = sp_after_push + 2;
+    gb_jump(gb, bank, target);
 }
 
-/* RET pops an address off the game's stack. Usually that is the address the
- * matching call pushed, and returning through C is equivalent and faster.
- *
- * It is not always. Pushing an address and executing RET is how Game Boy code
- * performs a computed jump, and jump tables are built on it. Treating that as
- * an ordinary return sends control back to the caller instead of to the
- * computed target, which reads as the game looping forever while touching no
- * hardware at all. So the popped address is checked, and anything unexpected
- * is dispatched as the jump it is. */
 void gb_ret(gb_t *gb)
 {
-    uint16_t addr = gb_pop(gb);
-    if (addr != gb->ret_expect)
-        gb_jump(gb, gb->rom_bank, addr);
+    gb_jump(gb, gb->rom_bank, gb_pop(gb));
 }
 
-/* Record a tail jump and return. The caller returns immediately afterwards,
- * and the dispatch loop below picks it up, so the C stack does not grow. */
 void gb_jump(gb_t *gb, uint16_t bank, uint16_t target)
 {
     gb->jump_bank = bank;
@@ -353,38 +347,41 @@ void gb_jump(gb_t *gb, uint16_t bank, uint16_t target)
     gb->jump_pending = 1;
 }
 
+/* Runs recompiled code until it stops asking to go somewhere else. */
 void gb_dispatch(gb_t *gb, uint16_t bank, uint16_t target)
 {
-    uint16_t next_bank = bank, next_pc = target;
+    gb_jump(gb, bank, target);
 
-    for (;;) {
+    while (gb->jump_pending && !gb->stopped) {
+        gb->jump_pending = 0;
+
+        uint16_t pc = gb->jump_pc;
+        uint16_t b = (pc < 0x4000) ? 0
+                   : (gb->jump_bank ? gb->jump_bank : gb->rom_bank);
+
         gb_sync(gb);
         if (gb->stopped)
             return;
 
-        /* Bank 0 is fixed; anything above 0x4000 comes from the mapped bank. */
-        uint16_t b = (next_pc < 0x4000) ? 0 : (next_bank ? next_bank : gb->rom_bank);
-
-        gb->jump_pending = 0;
+        gb->pc = pc;
         if (b < GB_MAX_BANKS && gb_bank_table[b])
-            gb_bank_table[b](gb, next_pc);
+            gb_bank_table[b](gb, pc);
         else
-            gb_no_entry(gb, b, next_pc);
-
-        /* A jump asked for another target; loop rather than recurse. */
-        if (!gb->jump_pending)
-            return;
-        next_bank = gb->jump_bank;
-        next_pc = gb->jump_pc;
+            gb_no_entry(gb, b, pc);
     }
 }
 
 void gb_no_entry(gb_t *gb, uint16_t bank, uint16_t entry)
 {
+    (void)bank;
+    /* Interpreting from here; nothing is pending until the interpreter says
+     * so, or the two would bounce off each other. */
+    gb->jump_pending = 0;
     /* Interpreting is correct here, but reaching an address with no block at
      * all in a bank that was recompiled usually means a bad dispatch rather
      * than a genuine jump table, so it is worth recording. */
     gb->no_entry_count++;
+    note_event(gb, 2, entry, bank);
 
     /* Code the discovery pass never reached: a jump table the analysis could
      * not resolve, or a routine copied into RAM. Hand it to the interpreter
@@ -511,12 +508,22 @@ void gb_reset(gb_t *gb)
 void gb_run(gb_t *gb)
 {
     gb->pc = 0x0100;
+    gb_jump(gb, 0, 0x0100);
+
     while (!gb->stopped) {
         uint16_t vector = take_interrupt(gb);
-        if (vector)
-            gb_call(gb, 0, vector, gb->pc);
-        else
-            gb_dispatch(gb, gb->rom_bank, gb->pc);
+        if (vector) {
+            /* The hardware pushes the current address and jumps to the
+             * vector, which is exactly a call. */
+            gb_push(gb, gb->pc);
+            gb_jump(gb, 0, vector);
+        } else if (!gb->jump_pending) {
+            gb_jump(gb, gb->rom_bank, gb->pc);
+        }
+
+        uint16_t pc = gb->jump_pc, bank = gb->jump_bank;
+        gb->jump_pending = 0;
+        gb_dispatch(gb, bank, pc);
         gb_sync(gb);
     }
 }

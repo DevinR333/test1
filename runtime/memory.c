@@ -51,6 +51,8 @@ uint8_t gb_read(gb_t *gb, uint16_t addr)
 /* Writes below 0x8000 do not reach ROM; they configure the mapper. */
 static void mapper_write(gb_t *gb, uint16_t addr, uint8_t value)
 {
+    uint16_t before = gb->rom_bank;
+
     switch (gb->mapper) {
     case GB_MAPPER_MBC1:
         if (addr < 0x2000)      gb->ram_enabled = (value & 0x0F) == 0x0A;
@@ -85,6 +87,17 @@ static void mapper_write(gb_t *gb, uint16_t addr, uint8_t value)
 
     default:
         break;
+    }
+
+    /* A cartridge has a fixed number of banks and the mapper wraps a larger
+     * number round rather than addressing nothing. Storing the raw value made
+     * dispatch look up a bank that was never compiled, so every call into it
+     * fell back to the interpreter. */
+    if (gb->rom_bank != before && gb->rom_size >= GB_BANK_SIZE) {
+        uint16_t banks = (uint16_t)(gb->rom_size / GB_BANK_SIZE);
+        gb->rom_bank = (banks & (banks - 1)) == 0
+                     ? (uint16_t)(gb->rom_bank & (banks - 1))
+                     : (uint16_t)(gb->rom_bank % banks);
     }
 }
 
