@@ -178,7 +178,7 @@ static const char *stop_reason_text(const gb_t *gb, char *buf, size_t n)
  * they will even when launched from Explorer. */
 static void beside_exe(char *out, size_t n, const char *name)
 {
-    char path[MAX_PATH];
+    char path[MAX_PATH + 64];
     DWORD len = GetModuleFileName(NULL, path, MAX_PATH);
     if (len == 0 || len >= MAX_PATH) {
         snprintf(out, n, "%s", name);

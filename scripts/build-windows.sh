@@ -150,18 +150,47 @@ say "generating the interpreter fallback"
 
 say "compiling"
 cp runtime/gb.h "$SRC_DIR/"
-mkdir -p "$OUT_DIR"
+mkdir -p "$OUT_DIR" "$OUT_DIR/obj"
 
+JOBS=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
+
+# The generated bank files are enormous - a single function can run to a
+# hundred thousand lines - and optimising them is both very slow and close to
+# pointless: the code is already straight-line, and the machine being emulated
+# runs at four megahertz. They compile at -O1, in parallel. The runtime and
+# frontend are ordinary code and still get -O2.
+echo "  $(ls "$SRC_DIR"/bank_*.c | wc -l) generated files at -O1, $JOBS at a time"
+
+pids=()
+fail=0
+for src in "$SRC_DIR"/bank_*.c "$SRC_DIR"/dispatch.c; do
+    obj="$OUT_DIR/obj/$(basename "${src%.c}").o"
+    # Skip anything already built from an unchanged source.
+    if [ -f "$obj" ] && [ "$obj" -nt "$src" ]; then
+        continue
+    fi
+    "$CC_WIN" -O1 -Iruntime -I"$SRC_DIR" -c "$src" -o "$obj" &
+    pids+=($!)
+    # Keep at most JOBS compilers running.
+    while [ "$(jobs -rp | wc -l)" -ge "$JOBS" ]; do
+        wait -n 2>/dev/null || true
+    done
+done
+for pid in "${pids[@]}"; do
+    wait "$pid" || fail=1
+done
+[ "$fail" -eq 0 ] || die "a generated file failed to compile"
+
+echo "  runtime and frontend at -O2"
 # -mwindows suppresses the console window. Static linking means the exe runs
 # on a machine with no toolchain installed.
-# shellcheck disable=SC2086
 "$CC_WIN" -O2 -Wall -Iruntime -I"$SRC_DIR" \
     -o "$EXE" \
     frontend/win32.c \
     runtime/alu.c runtime/memory.c runtime/ppu.c runtime/machine.c \
     runtime/interp.c runtime/interp_gen.c runtime/present.c runtime/io_masks.c \
     runtime/diag.c \
-    "$SRC_DIR"/bank_*.c "$SRC_DIR"/dispatch.c \
+    "$OUT_DIR"/obj/*.o \
     -lgdi32 -luser32 -lm -static -mwindows
 
 say "done"
