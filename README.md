@@ -1,8 +1,9 @@
-# Oracle of Seasons — native Android port
+# Oracle of Seasons — native port
 
-Working toward a native Android build of Zelda: Oracle of Seasons with a real
-camera (free zoom), correct-speed high-refresh rendering, and live sprite
-editing.
+A native build of Zelda: Oracle of Seasons. The game's own code is recompiled
+from SM83 to C ahead of time and compiled to native machine code — there is no
+interpreter dispatch loop in the output. Windows builds today; Android is the
+same runtime behind a different frontend.
 
 The game is exceptionally well disassembled — `oracles-disasm` is a complete,
 documented, *relocatable* disassembly of both Oracle games, stress-tested for
@@ -107,6 +108,29 @@ python3 tools/identify.py your-dump.gbc external/oracles-disasm/seasons.gbc
 does not reproduce a byte-exact Seasons ROM, because it handles empty space
 differently. `identify.py` checks whether every difference falls in padding
 and tells you so — if it does, the build is good. (Ages does match exactly.)
+
+## Building for Windows
+
+```sh
+./scripts/build-windows.sh /c/Users/YOU/Downloads/seasons.gbc
+./build/oracle.exe /c/Users/YOU/Downloads/seasons.gbc
+```
+
+Needs only Python 3 and gcc — no SDL, no extra packages. The frontend uses the
+Win32 API directly and links statically, so the executable runs on a machine
+with no toolchain at all.
+
+The ROM is read at run time and never copied into the executable.
+
+| Key | |
+|---|---|
+| Arrows | Move |
+| X / Enter | A |
+| Z / Backspace | B |
+| Space | Start |
+| Shift | Select |
+| F1 | Integer or fill scaling |
+| Esc | Quit |
 
 ## Sprite editor
 
