@@ -10,6 +10,7 @@
  */
 #include <windows.h>
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 #include "gb.h"
 #include "present.h"
@@ -131,8 +132,24 @@ static const char *stop_reason_text(const gb_t *gb, char *buf, size_t n)
  * handler at all - so the same detail goes to a file that survives. */
 static void write_log(const gb_t *gb, const char *note)
 {
-    FILE *fh = fopen("oracle-log.txt", "w");
+    /* Next to the executable, not the working directory: that is what the
+     * dialog tells the user, and it is where they will look after launching
+     * it from Explorer rather than a shell. */
+    char path[MAX_PATH];
+    DWORD n = GetModuleFileName(NULL, path, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) {
+        strcpy(path, "oracle-log.txt");
+    } else {
+        char *slash = strrchr(path, '\\');
+        if (slash && (size_t)(slash - path) + sizeof("\\oracle-log.txt") < MAX_PATH)
+            strcpy(slash + 1, "oracle-log.txt");
+        else
+            strcpy(path, "oracle-log.txt");
+    }
+
+    FILE *fh = fopen(path, "w");
     if (!fh) return;
+    fprintf(fh, "log           %s\n", path);
     fprintf(fh, "stop reason   %d\n", gb->stop_reason);
     fprintf(fh, "note          %s\n", note ? note : "(none)");
     fprintf(fh, "stopped at    %02X:%04X\n", gb->stop_bank, gb->stop_pc);
