@@ -287,7 +287,9 @@ class Emitter:
         for b in banks:
             lines.append(f"    [{b}] = gb_bank_{b:02X},")
         lines += ["};", ""]
-        lines.append("const uint16_t gb_entry_count = "
+        # A real game recompiles to tens of thousands of blocks, which does
+        # not fit the 16-bit type this used to be declared with.
+        lines.append("const uint32_t gb_entry_count = "
                      f"{len(self.prog.blocks)};")
         return "\n".join(lines)
 
