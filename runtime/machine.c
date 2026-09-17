@@ -226,6 +226,11 @@ void gb_dispatch(gb_t *gb, uint16_t bank, uint16_t target)
 
 void gb_no_entry(gb_t *gb, uint16_t bank, uint16_t entry)
 {
+    /* Interpreting is correct here, but reaching an address with no block at
+     * all in a bank that was recompiled usually means a bad dispatch rather
+     * than a genuine jump table, so it is worth recording. */
+    gb->no_entry_count++;
+
     /* Code the discovery pass never reached: a jump table the analysis could
      * not resolve, or a routine copied into RAM. Hand it to the interpreter
      * rather than guessing. */
@@ -248,6 +253,9 @@ void gb_halt(gb_t *gb)
 void gb_stop(gb_t *gb)
 {
     gb->stopped = 1;
+    gb->stop_reason = GB_STOP_OPCODE;
+    gb->stop_pc = gb->pc;
+    gb->stop_bank = gb->rom_bank;
 }
 
 void gb_illegal(gb_t *gb, uint8_t opcode)
@@ -256,6 +264,9 @@ void gb_illegal(gb_t *gb, uint8_t opcode)
      * since reaching one means something upstream went wrong. */
     gb->illegal_opcode = opcode;
     gb->stopped = 1;
+    gb->stop_reason = GB_STOP_ILLEGAL;
+    gb->stop_pc = gb->pc;
+    gb->stop_bank = gb->rom_bank;
 }
 
 /* --- lifecycle --------------------------------------------------------- */

@@ -76,10 +76,73 @@ static void on_frame(gb_t *gb, void *user)
         WaitForSingleObject(app.timer, 100);
 }
 
+/* A fault inside recompiled code would otherwise close the window with no
+ * indication of what happened, which is the least useful failure possible. */
+static LONG WINAPI on_crash(EXCEPTION_POINTERS *info)
+{
+    char msg[512];
+    snprintf(msg, sizeof(msg),
+             "The game crashed.\n\n"
+             "Exception:  0x%08lX\n"
+             "Address:    %p\n"
+             "Frames run: %llu\n"
+             "Last bank:  %02X\n"
+             "Interpreter fallbacks: %llu",
+             (unsigned long)info->ExceptionRecord->ExceptionCode,
+             info->ExceptionRecord->ExceptionAddress,
+             app.gb ? (unsigned long long)app.gb->frames : 0ULL,
+             app.gb ? app.gb->rom_bank : 0,
+             app.gb ? (unsigned long long)app.gb->no_entry_count : 0ULL);
+    MessageBox(NULL, msg, "Oracle of Seasons - crash", MB_ICONERROR);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
+static const char *stop_reason_text(const gb_t *gb, char *buf, size_t n)
+{
+    switch (gb->stop_reason) {
+    case GB_STOP_ILLEGAL:
+        snprintf(buf, n,
+                 "The game executed opcode %02X, which does not exist on this "
+                 "processor.\n\nThat normally means control reached somewhere "
+                 "it should not have, rather than a problem with the ROM.",
+                 gb->illegal_opcode);
+        return buf;
+    case GB_STOP_OPCODE:
+        return "The game executed STOP, which halts the processor.";
+    case GB_STOP_NO_ENTRY:
+        return "The game jumped to an address with no code at it.";
+    case GB_STOP_INTERP_RUNAWAY:
+        return "Interpreted code ran for two million instructions without "
+               "returning, so it was stopped rather than left to hang.";
+    default:
+        return NULL;
+    }
+}
+
 static DWORD WINAPI game_thread(LPVOID param)
 {
-    gb_run((gb_t *)param);
+    gb_t *gb = (gb_t *)param;
+    gb_run(gb);
     InterlockedExchange(&app.running, 0);
+
+    /* Report a fault before the window goes away. A user-requested stop is
+     * not a fault and closes quietly. */
+    char detail[512], msg[1024];
+    const char *why = stop_reason_text(gb, detail, sizeof(detail));
+    if (why) {
+        snprintf(msg, sizeof(msg),
+                 "%s\n\n"
+                 "Stopped at:  %02X:%04X\n"
+                 "Frames run:  %llu\n"
+                 "Cycles:      %llu\n"
+                 "Interpreter fallbacks: %llu",
+                 why, gb->stop_bank, gb->stop_pc,
+                 (unsigned long long)gb->frames,
+                 (unsigned long long)gb->cycles,
+                 (unsigned long long)gb->no_entry_count);
+        MessageBox(NULL, msg, "Oracle of Seasons - stopped", MB_ICONWARNING);
+    }
+
     if (app.hwnd)
         PostMessage(app.hwnd, WM_CLOSE, 0, 0);
     return 0;
@@ -158,7 +221,10 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_CLOSE:
         InterlockedExchange(&app.running, 0);
-        if (app.gb) app.gb->stopped = 1;
+        if (app.gb && !app.gb->stop_reason) {
+            app.gb->stopped = 1;
+            app.gb->stop_reason = GB_STOP_USER;
+        }
         DestroyWindow(hwnd);
         return 0;
 
@@ -207,6 +273,8 @@ int main(int argc, char **argv)
                    "Oracle of Seasons", MB_ICONERROR);
         return 1;
     }
+
+    SetUnhandledExceptionFilter(on_crash);
 
     app.gb = &gb;
     app.fit = GB_FIT_INTEGER;

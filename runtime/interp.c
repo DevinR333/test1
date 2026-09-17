@@ -26,7 +26,14 @@ void gb_interp(gb_t *gb, uint16_t addr)
         /* A RET past where we came in means the routine finished. */
         if (gb->sp > entry_sp)
             return;
-        if (++guard > 2000000)
-            return;                 /* wedged; let the caller carry on */
+        if (++guard > 2000000) {
+            /* Not returning after two million instructions means it is not
+             * going to. Stopping with a reason beats hanging. */
+            gb->stopped = 1;
+            gb->stop_reason = GB_STOP_INTERP_RUNAWAY;
+            gb->stop_pc = gb->pc;
+            gb->stop_bank = gb->rom_bank;
+            return;
+        }
     }
 }

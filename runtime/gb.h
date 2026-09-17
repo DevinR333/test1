@@ -42,6 +42,10 @@ struct gb_s {
     uint32_t div_cycles;     /* divider counter */
     uint32_t tima_cycles;    /* timer counter */
     uint8_t  illegal_opcode; /* set if the game executed an invalid opcode */
+    uint8_t  stop_reason;    /* GB_STOP_*, why the run loop exited */
+    uint16_t stop_pc;        /* address it stopped at */
+    uint16_t stop_bank;      /* bank mapped at the time */
+    uint64_t no_entry_count; /* dispatches that fell back to the interpreter */
 
     /* Memory map. */
     const uint8_t *rom;
@@ -85,6 +89,17 @@ struct gb_s {
 
 enum { GB_MAPPER_NONE, GB_MAPPER_MBC1, GB_MAPPER_MBC2,
        GB_MAPPER_MBC3, GB_MAPPER_MBC5 };
+
+/* Why the machine stopped. Anything other than NONE or USER is a fault, and
+ * the frontend reports it rather than closing silently. */
+enum {
+    GB_STOP_NONE = 0,
+    GB_STOP_USER,            /* the frontend asked it to stop */
+    GB_STOP_ILLEGAL,         /* an opcode that does not exist was executed */
+    GB_STOP_OPCODE,          /* the STOP instruction */
+    GB_STOP_NO_ENTRY,        /* dispatched to an address with no code at all */
+    GB_STOP_INTERP_RUNAWAY,  /* the interpreter ran without ever returning */
+};
 
 /* Register accessors used verbatim by generated code. */
 #define A  (gb->a)
