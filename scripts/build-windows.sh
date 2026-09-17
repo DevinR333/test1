@@ -33,13 +33,60 @@ for c in python3 python; do
 done
 [ -n "$PY" ] || die "no Python 3 found on PATH"
 
-# Prefer a native compiler; fall back to a cross-compiler when building on
-# Linux for Windows.
+# MSYS2 has several environments and each puts a different directory on PATH,
+# so a compiler installed for one is invisible from another. Add them all
+# rather than requiring a particular Start-menu shortcut.
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+        for d in /mingw64/bin /ucrt64/bin /clang64/bin /mingw32/bin; do
+            if [ -d "$d" ]; then
+                case ":$PATH:" in *":$d:"*) ;; *) PATH="$PATH:$d" ;; esac
+            fi
+        done
+        export PATH
+        ;;
+esac
+
+# A compiler's name says nothing about what it targets: under MSYS2 `gcc`
+# builds Windows binaries, on Linux the same name does not. Probe each
+# candidate instead of trusting it.
+targets_windows() {
+    local probe rc
+    probe=$(mktemp -d)
+    printf '#ifndef _WIN32\n#error not windows\n#endif\nint main(void){return 0;}\n' \
+        > "$probe/t.c"
+    "$1" -c "$probe/t.c" -o "$probe/t.o" >/dev/null 2>&1
+    rc=$?
+    rm -rf "$probe"
+    return $rc
+}
+
 CC_WIN=""
-for c in "${CC:-}" gcc x86_64-w64-mingw32-gcc; do
-    [ -n "$c" ] && command -v "$c" >/dev/null && { CC_WIN="$c"; break; }
+candidates=("${CC:-}" gcc cc clang x86_64-w64-mingw32-gcc
+            /mingw64/bin/gcc /ucrt64/bin/gcc /clang64/bin/gcc)
+for c in "${candidates[@]}"; do
+    [ -n "$c" ] || continue
+    command -v "$c" >/dev/null 2>&1 || [ -x "$c" ] || continue
+    if targets_windows "$c"; then CC_WIN="$c"; break; fi
 done
-[ -n "$CC_WIN" ] || die "no C compiler found. In MSYS2: pacman -S mingw-w64-x86_64-toolchain"
+
+if [ -z "$CC_WIN" ]; then
+    # Name the package that matches the environment actually in use, since
+    # installing the wrong one leaves the compiler just as unreachable.
+    case "${MSYSTEM:-}" in
+        UCRT64)  pkg="mingw-w64-ucrt-x86_64-toolchain" ;;
+        CLANG64) pkg="mingw-w64-clang-x86_64-toolchain" ;;
+        MINGW32) pkg="mingw-w64-i686-toolchain" ;;
+        *)       pkg="mingw-w64-x86_64-toolchain" ;;
+    esac
+    die "no compiler that targets Windows was found.
+  You are in the ${MSYSTEM:-unknown} environment. Install its toolchain:
+
+      pacman -S --needed --noconfirm $pkg
+
+  then run this script again."
+fi
+echo "  compiler: $CC_WIN ($("$CC_WIN" --version 2>/dev/null | head -1))"
 
 say "recompiling $(basename "$ROM")"
 RECOMP_ARGS=("$ROM" -o "$SRC_DIR")
