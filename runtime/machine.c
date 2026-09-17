@@ -211,17 +211,39 @@ void gb_call(gb_t *gb, uint16_t bank, uint16_t target, uint16_t ret_addr)
     gb->sp += 2;                             /* balance the pushed address */
 }
 
+/* Record a tail jump and return. The caller returns immediately afterwards,
+ * and the dispatch loop below picks it up, so the C stack does not grow. */
+void gb_jump(gb_t *gb, uint16_t bank, uint16_t target)
+{
+    gb->jump_bank = bank;
+    gb->jump_pc = target;
+    gb->jump_pending = 1;
+}
+
 void gb_dispatch(gb_t *gb, uint16_t bank, uint16_t target)
 {
-    gb_sync(gb);
+    uint16_t next_bank = bank, next_pc = target;
 
-    /* Bank 0 is fixed; anything above 0x4000 comes from the mapped bank. */
-    uint16_t b = (target < 0x4000) ? 0 : (bank ? bank : gb->rom_bank);
-    if (b < GB_MAX_BANKS && gb_bank_table[b]) {
-        gb_bank_table[b](gb, target);
-        return;
+    for (;;) {
+        gb_sync(gb);
+        if (gb->stopped)
+            return;
+
+        /* Bank 0 is fixed; anything above 0x4000 comes from the mapped bank. */
+        uint16_t b = (next_pc < 0x4000) ? 0 : (next_bank ? next_bank : gb->rom_bank);
+
+        gb->jump_pending = 0;
+        if (b < GB_MAX_BANKS && gb_bank_table[b])
+            gb_bank_table[b](gb, next_pc);
+        else
+            gb_no_entry(gb, b, next_pc);
+
+        /* A jump asked for another target; loop rather than recurse. */
+        if (!gb->jump_pending)
+            return;
+        next_bank = gb->jump_bank;
+        next_pc = gb->jump_pc;
     }
-    gb_no_entry(gb, b, target);
 }
 
 void gb_no_entry(gb_t *gb, uint16_t bank, uint16_t entry)

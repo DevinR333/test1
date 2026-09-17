@@ -223,11 +223,11 @@ class Emitter:
             if local:
                 return ([GB_LOOP_SYNC, f"goto {_label(tgt)};"] if backward
                         else [f"goto {_label(tgt)};"])
-            return [f"gb_dispatch(gb, {blk.bank}, 0x{tgt:04X}); return;"]
+            return [f"gb_jump(gb, {blk.bank}, 0x{tgt:04X}); return;"]
         if op.flow == sm83.CJUMP:
             sync = (GB_LOOP_SYNC + " ") if backward else ""
             inner = (f"{sync}goto {_label(tgt)};" if local
-                     else f"{{ gb_dispatch(gb, {blk.bank}, 0x{tgt:04X}); return; }}")
+                     else f"{{ gb_jump(gb, {blk.bank}, 0x{tgt:04X}); return; }}")
             return [f"if ({COND_EXPR[op.cond]}) {{ gb->cycles += "
                     f"{op.cycles_taken - op.cycles}; {inner} }}"]
         if op.flow == sm83.CALL:
@@ -248,7 +248,7 @@ class Emitter:
         if op.flow == sm83.IJUMP:
             # Target is in HL and only known now. The dispatcher will find a
             # recompiled entry or fall back to interpreting.
-            return [f"gb_dispatch(gb, {blk.bank}, HL); return;"]
+            return [f"gb_jump(gb, {blk.bank}, HL); return;"]
         if op.flow in (sm83.HALT, sm83.STOP):
             return []
         return ["return;"]

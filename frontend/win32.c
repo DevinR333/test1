@@ -76,6 +76,8 @@ static void on_frame(gb_t *gb, void *user)
         WaitForSingleObject(app.timer, 100);
 }
 
+static void write_log(const gb_t *gb, const char *note);
+
 /* A fault inside recompiled code would otherwise close the window with no
  * indication of what happened, which is the least useful failure possible. */
 static LONG WINAPI on_crash(EXCEPTION_POINTERS *info)
@@ -87,12 +89,14 @@ static LONG WINAPI on_crash(EXCEPTION_POINTERS *info)
              "Address:    %p\n"
              "Frames run: %llu\n"
              "Last bank:  %02X\n"
-             "Interpreter fallbacks: %llu",
+             "Interpreter fallbacks: %llu\n\n"
+             "Written to oracle-log.txt beside the executable.",
              (unsigned long)info->ExceptionRecord->ExceptionCode,
              info->ExceptionRecord->ExceptionAddress,
              app.gb ? (unsigned long long)app.gb->frames : 0ULL,
              app.gb ? app.gb->rom_bank : 0,
              app.gb ? (unsigned long long)app.gb->no_entry_count : 0ULL);
+    if (app.gb) write_log(app.gb, "crashed");
     MessageBox(NULL, msg, "Oracle of Seasons - crash", MB_ICONERROR);
     return EXCEPTION_EXECUTE_HANDLER;
 }
@@ -114,9 +118,33 @@ static const char *stop_reason_text(const gb_t *gb, char *buf, size_t n)
     case GB_STOP_INTERP_RUNAWAY:
         return "Interpreted code ran for two million instructions without "
                "returning, so it was stopped rather than left to hang.";
+    case GB_STOP_USER:
+        return NULL;                         /* closing the window is not a fault */
     default:
-        return NULL;
+        return "The game loop exited without recording a reason, which should "
+               "not happen.";
     }
+}
+
+/* Written beside the executable on every exit. A dialog cannot be shown for
+ * every kind of failure - a stack overflow in particular often cannot run any
+ * handler at all - so the same detail goes to a file that survives. */
+static void write_log(const gb_t *gb, const char *note)
+{
+    FILE *fh = fopen("oracle-log.txt", "w");
+    if (!fh) return;
+    fprintf(fh, "stop reason   %d\n", gb->stop_reason);
+    fprintf(fh, "note          %s\n", note ? note : "(none)");
+    fprintf(fh, "stopped at    %02X:%04X\n", gb->stop_bank, gb->stop_pc);
+    fprintf(fh, "frames        %llu\n", (unsigned long long)gb->frames);
+    fprintf(fh, "cycles        %llu\n", (unsigned long long)gb->cycles);
+    fprintf(fh, "interp calls  %llu\n", (unsigned long long)gb->no_entry_count);
+    fprintf(fh, "illegal op    %02X\n", gb->illegal_opcode);
+    fprintf(fh, "rom bank      %02X\n", gb->rom_bank);
+    fprintf(fh, "LCDC          %02X\n", gb->io[0x40]);
+    fprintf(fh, "LY            %02X\n", gb->io[0x44]);
+    fprintf(fh, "IE / IF       %02X / %02X\n", gb->io[0x7F], gb->io[0x0F]);
+    fclose(fh);
 }
 
 static DWORD WINAPI game_thread(LPVOID param)
@@ -129,13 +157,15 @@ static DWORD WINAPI game_thread(LPVOID param)
      * not a fault and closes quietly. */
     char detail[512], msg[1024];
     const char *why = stop_reason_text(gb, detail, sizeof(detail));
+    write_log(gb, why);
     if (why) {
         snprintf(msg, sizeof(msg),
                  "%s\n\n"
                  "Stopped at:  %02X:%04X\n"
                  "Frames run:  %llu\n"
                  "Cycles:      %llu\n"
-                 "Interpreter fallbacks: %llu",
+                 "Interpreter fallbacks: %llu\n\n"
+                 "Written to oracle-log.txt beside the executable.",
                  why, gb->stop_bank, gb->stop_pc,
                  (unsigned long long)gb->frames,
                  (unsigned long long)gb->cycles,
@@ -316,7 +346,7 @@ int main(int argc, char **argv)
     ShowWindow(app.hwnd, SW_SHOW);
 
     gb.frame_cb = on_frame;
-    app.thread = CreateThread(NULL, 0, game_thread, &gb, 0, NULL);
+    app.thread = CreateThread(NULL, 16 * 1024 * 1024, game_thread, &gb, 0, NULL);
 
     MSG msg;
     while (GetMessage(&msg, NULL, 0, 0) > 0) {

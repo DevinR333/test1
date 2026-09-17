@@ -47,6 +47,14 @@ struct gb_s {
     uint16_t stop_bank;      /* bank mapped at the time */
     uint64_t no_entry_count; /* dispatches that fell back to the interpreter */
 
+    /* A jump is not a call: it must not grow the C stack. Recompiled code
+     * records where to go next and returns, and gb_dispatch loops. Without
+     * this a game loop that jumps between banks nests one C frame per jump
+     * and overflows the stack. */
+    uint16_t jump_bank;
+    uint16_t jump_pc;
+    uint8_t  jump_pending;
+
     /* Memory map. */
     const uint8_t *rom;
     size_t   rom_size;
@@ -140,6 +148,7 @@ void     gb_pop_af(gb_t *gb);
 /* Control flow out of recompiled code. */
 void gb_call(gb_t *gb, uint16_t bank, uint16_t target, uint16_t ret_addr);
 void gb_dispatch(gb_t *gb, uint16_t bank, uint16_t target);
+void gb_jump(gb_t *gb, uint16_t bank, uint16_t target);   /* tail jump, no nesting */
 void gb_no_entry(gb_t *gb, uint16_t bank, uint16_t entry);
 void gb_interp(gb_t *gb, uint16_t addr);   /* interpreter fallback */
 uint32_t gb_interp_step(gb_t *gb);
