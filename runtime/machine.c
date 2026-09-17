@@ -27,6 +27,9 @@
 #define R_KEY1 0x4D
 #define R_HDMA1 0x51
 #define R_HDMA5 0x55
+#define R_SB    0x01
+#define R_SC    0x02
+#define R_NR52  0x26
 #define R_SVBK 0x70
 #define R_IE   0x7F          /* stored at the end of the IO block */
 
@@ -149,12 +152,42 @@ void gb_io_write(gb_t *gb, uint16_t addr, uint8_t value)
         return;
     }
 
+    /* Sound. No audio is produced yet, but the register file has to behave:
+     * games read these back, and NR52's power bit clears the others. */
+    case R_NR52:
+        if (!(value & 0x80)) {
+            /* Powering off clears every sound register except the length
+             * counters, and wave RAM is untouched. */
+            for (int i = 0x10; i <= 0x25; i++)
+                gb->io[i] = 0;
+            gb->io[R_NR52] = 0;
+        } else {
+            gb->io[R_NR52] = 0x80;
+        }
+        return;
+
+    /* Serial. Nothing is connected, so a transfer started on the internal
+     * clock shifts in ones and completes. Without this, a game that waits on
+     * the serial interrupt waits forever. */
+    case R_SC:
+        gb->io[R_SC] = value;
+        if ((value & 0x81) == 0x81) {
+            gb->io[R_SB] = 0xFF;
+            gb->io[R_SC] = value & 0x7F;      /* transfer finished */
+            gb->io[R_IF] |= INT_SERIAL;
+        }
+        return;
+
     case R_JOYP:
         /* Only the two select bits are writable; the rest reads the buttons. */
         gb->io[R_JOYP] = (gb->io[R_JOYP] & 0x0F) | (value & 0x30);
         return;
 
     default:
+        /* While the sound hardware is off, its registers ignore writes. Wave
+         * RAM stays writable. */
+        if (r >= 0x10 && r <= 0x25 && !(gb->io[R_NR52] & 0x80))
+            return;
         gb->io[r] = value;
         return;
     }
@@ -223,8 +256,17 @@ void gb_sync(gb_t *gb)
         gb_on_frame(gb);
     }
 
-    /* Roughly two seconds of cycles with no frame means it is not coming.
-     * Stopping with the register it is polling beats hanging silently. */
+    /* Ten seconds of frames with the display never coming on is a stall, not
+     * a long boot. */
+    if (gb->blank_frames > 600) {
+        gb->stopped = 1;
+        gb->stop_reason = GB_STOP_NO_PROGRESS;
+        gb->stop_pc = gb->pc;
+        gb->stop_bank = gb->rom_bank;
+    }
+
+    /* Roughly two seconds of cycles with no frame at all means the PPU is not
+     * advancing, which is a different fault from the display being off. */
     if (gb->cycles - gb->last_frame_cycle > 2000000ULL) {
         gb->stopped = 1;
         gb->stop_reason = GB_STOP_NO_PROGRESS;

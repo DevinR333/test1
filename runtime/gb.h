@@ -91,6 +91,7 @@ struct gb_s {
      * that reads two registers resets the count every time round. These are
      * totals since the last completed frame. */
     uint64_t last_frame_cycle;
+    uint32_t blank_frames;   /* consecutive frame ticks with the display off */
     uint32_t io_reads[128];
     uint32_t io_writes[128];
 
@@ -214,5 +215,6 @@ void gb_on_frame(gb_t *gb);
 void gb_free(gb_t *gb);
 
 extern const gb_bank_fn gb_bank_table[GB_MAX_BANKS];
+extern const uint8_t gb_io_read_mask[128];
 
 #endif /* GB_H */

@@ -159,7 +159,7 @@ mkdir -p "$OUT_DIR"
     -o "$EXE" \
     frontend/win32.c \
     runtime/alu.c runtime/memory.c runtime/ppu.c runtime/machine.c \
-    runtime/interp.c runtime/interp_gen.c runtime/present.c \
+    runtime/interp.c runtime/interp_gen.c runtime/present.c runtime/io_masks.c \
     "$SRC_DIR"/bank_*.c "$SRC_DIR"/dispatch.c \
     -lgdi32 -luser32 -lm -static -mwindows
 

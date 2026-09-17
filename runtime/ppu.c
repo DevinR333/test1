@@ -259,13 +259,24 @@ static void update_stat(gb_t *gb, int mode)
 void gb_ppu_step(gb_t *gb, uint32_t cycles)
 {
     if (!(io(gb, R_LCDC) & LCDC_ON)) {
-        /* With the display off the PPU is idle and LY reads zero. */
-        gb->ppu_cycles = 0;
+        /* With the display off the PPU is idle and LY reads zero. Hardware
+         * produces no VBlank here, but a game can legitimately keep the
+         * display off for a long stretch while it loads graphics, so a frame
+         * tick is still raised: it paces the frontend, keeps the window
+         * responsive, and stops a normal boot looking like a stall. */
         gb->window_line = 0;
         set_io(gb, R_LY, 0);
         set_io(gb, R_STAT, io(gb, R_STAT) & 0xFC);
+
+        gb->ppu_cycles += cycles;
+        while (gb->ppu_cycles >= LINE_CYCLES * LINES_TOTAL) {
+            gb->ppu_cycles -= LINE_CYCLES * LINES_TOTAL;
+            gb->frame_ready = 1;
+            gb->blank_frames++;
+        }
         return;
     }
+    gb->blank_frames = 0;
 
     gb->ppu_cycles += cycles;
 
