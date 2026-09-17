@@ -254,12 +254,28 @@ Done.
   toolchain:    $PREFIX/bin
   built ROM:    look for seasons.gbc above
 
-Note on verification: the project documents that WLA does not produce a
-byte-exact Seasons ROM, because of how it handles empty space. A mismatch
-against your own dump is expected here and does not affect how the game runs.
-Ages does match.
+NOTE
+
+if [ "$HACK_BASE" -eq 1 ]; then
+cat <<NOTE
+This is the modifiable build: graphics and text are stored uncompressed so
+they can be edited. That makes the ROM several times larger than the original
+and moves everything after each expanded asset, so it will NOT match your
+dump. That is the build working as intended, and it is the one you want for
+editing assets.
 
 Next:
   $PY tools/identify.py <your-dump.gbc>
-  $PY tools/identify.py $DISASM/seasons.gbc
 NOTE
+else
+cat <<NOTE
+This is the precompressed build, which aims to reproduce the original. Note
+that the project documents that WLA cannot produce a byte-exact Seasons ROM
+because of how it handles empty space, so a padding-only mismatch is expected
+and does not affect how the game runs. Ages does match exactly.
+
+Next:
+  $PY tools/identify.py <your-dump.gbc>
+  $PY tools/identify.py <your-dump.gbc> $DISASM/seasons.gbc
+NOTE
+fi

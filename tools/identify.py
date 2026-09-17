@@ -90,7 +90,18 @@ def compare(path_a, path_b):
         return 0
 
     if len(a) != len(b):
-        print(f"\n  Sizes differ by {abs(len(a) - len(b))} bytes.")
+        big, small = max(len(a), len(b)), min(len(a), len(b))
+        print(f"\n  Sizes differ: {len(a)} vs {len(b)} bytes.")
+        if big % small == 0:
+            print(f"  The larger is exactly {big // small}x the smaller.")
+        print()
+        print("  Two ROMs of different sizes are different builds, not a damaged")
+        print("  dump. A disassembly built in its modifiable configuration stores")
+        print("  graphics and text uncompressed so they can be edited, which")
+        print("  inflates the ROM and moves everything after each expanded asset.")
+        print("  Only a precompressed build is comparable to an original dump.")
+        print()
+        print("  The byte comparison below is therefore not meaningful here.")
 
     n = min(len(a), len(b))
     diffs = [i for i in range(n) if a[i] != b[i]]
@@ -115,6 +126,9 @@ def compare(path_a, path_b):
 
         # A build that differs only in padding is the expected outcome when a
         # disassembly handles empty space differently from the original.
+        if len(a) != len(b):
+            return 0
+
         filler = sum(1 for i in diffs if a[i] in (0x00, 0xFF) and b[i] in (0x00, 0xFF))
         if filler == len(diffs):
             print("\n  Every difference is between 0x00 and 0xFF padding bytes.")
