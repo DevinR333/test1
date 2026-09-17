@@ -306,6 +306,7 @@ static uint16_t take_interrupt(gb_t *gb)
 
     for (int i = 0; i < 5; i++) {
         if (pending & (1 << i)) {
+            gb->n_int++;
             gb->io[R_IF] &= ~(1 << i);
             gb->ime = 0;
             return 0x40 + i * 8;
@@ -347,6 +348,29 @@ void gb_jump(gb_t *gb, uint16_t bank, uint16_t target)
     gb->jump_pending = 1;
 }
 
+/* Called at every loop back-edge.
+ *
+ * Advancing the hardware here is not enough on its own. A game's idle loop is
+ * often two instructions - halt, then jump back - and that jump stays inside
+ * the same compiled function, so control never returns to the dispatcher and
+ * an enabled, pending interrupt is never taken. The game then waits forever
+ * for work its own handler was supposed to do.
+ *
+ * Returning nonzero means leave the block: the dispatcher will service the
+ * interrupt and resume at the address given. */
+int gb_poll(gb_t *gb, uint16_t bank, uint16_t resume_pc)
+{
+    gb_sync(gb);
+    if (gb->stopped)
+        return 1;
+
+    if (gb->ime && (gb->io[R_IF] & gb->ie & 0x1F)) {
+        gb_jump(gb, bank, resume_pc);
+        return 1;
+    }
+    return 0;
+}
+
 /* Runs recompiled code until it stops asking to go somewhere else. */
 void gb_dispatch(gb_t *gb, uint16_t bank, uint16_t target)
 {
@@ -362,6 +386,17 @@ void gb_dispatch(gb_t *gb, uint16_t bank, uint16_t target)
         gb_sync(gb);
         if (gb->stopped)
             return;
+
+        /* Service interrupts here, between blocks. The game's own code keeps
+         * asking to go somewhere else, so this loop runs for as long as the
+         * game does and control rarely returns to the caller - checking out
+         * there meant an enabled, pending interrupt was never taken at all. */
+        uint16_t vector = take_interrupt(gb);
+        if (vector) {
+            gb_push(gb, pc);
+            pc = vector;
+            b = 0;
+        }
 
         gb->pc = pc;
         if (b < GB_MAX_BANKS && gb_bank_table[b])
@@ -393,12 +428,26 @@ void gb_no_entry(gb_t *gb, uint16_t bank, uint16_t entry)
 
 void gb_halt(gb_t *gb)
 {
+    gb->n_halt++;
     gb->halted = 1;
-    /* Advance to the next interrupt rather than spinning. */
-    while (gb->halted && !gb->frame_ready) {
+
+    /* HALT suspends the processor until an interrupt is both enabled and
+     * pending. It does not service it: that happens afterwards, in the normal
+     * way, and only if IME is set.
+     *
+     * This used to call take_interrupt to decide when to stop waiting, which
+     * consumed the interrupt - clearing its pending flag and IME - and threw
+     * away the vector it returned, so the handler never ran. A game that waits
+     * for its VBlank handler to do something therefore waited forever, having
+     * had the interrupt silently taken from it. */
+    while (gb->halted && !gb->stopped) {
         gb->cycles += 4;
         gb_sync(gb);
-        take_interrupt(gb);
+
+        if (gb->io[R_IF] & gb->ie & 0x1F) {
+            gb->halted = 0;             /* resume; the caller services it */
+            return;
+        }
     }
 }
 
@@ -511,17 +560,20 @@ void gb_run(gb_t *gb)
     gb_jump(gb, 0, 0x0100);
 
     while (!gb->stopped) {
-        uint16_t vector = take_interrupt(gb);
-        if (vector) {
-            /* The hardware pushes the current address and jumps to the
-             * vector, which is exactly a call. */
-            gb_push(gb, gb->pc);
-            gb_jump(gb, 0, vector);
-        } else if (!gb->jump_pending) {
+        if (!gb->jump_pending)
             gb_jump(gb, gb->rom_bank, gb->pc);
-        }
 
         uint16_t pc = gb->jump_pc, bank = gb->jump_bank;
+
+        /* An interrupt pushes the address execution would otherwise have
+         * continued at, not wherever the last block happened to start. */
+        uint16_t vector = take_interrupt(gb);
+        if (vector) {
+            gb_push(gb, pc);
+            pc = vector;
+            bank = 0;
+        }
+
         gb->jump_pending = 0;
         gb_dispatch(gb, bank, pc);
         gb_sync(gb);

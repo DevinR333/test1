@@ -24,7 +24,10 @@ COND_EXPR = {"nz": "!FLAG_Z", "z": "FLAG_Z", "nc": "!FLAG_C", "c": "FLAG_C"}
 # frontend halt a running game at all: nothing else in a loop ever unwinds.
 # gb_sync returns immediately when no cycles have elapsed, so a tight loop
 # pays one comparison.
-GB_LOOP_SYNC = "gb_sync(gb); if (gb->stopped) return;"
+def _loop_edge(bank: int, target: int) -> str:
+    """Emitted at a loop back-edge: advance the hardware, and leave the block
+    if an interrupt needs servicing, resuming at the loop target."""
+    return f"if (gb_poll(gb, {bank}, 0x{target:04X})) return;"
 
 # Flow classes whose entire effect is the branch itself.
 CONTROL_ONLY = frozenset({
@@ -70,9 +73,9 @@ class Emitter:
         if m == "nop":
             return ["/* nop */"]
         if m == "di":
-            return ["gb->ime = 0;"]
+            return ["gb->n_di++;", "gb->ime = 0;"]
         if m == "ei":
-            return ["gb->ime_pending = 1;"]
+            return ["gb->n_ei++;", "gb->ime_pending = 1;"]
         if m == "halt":
             return ["gb_halt(gb);"]
         if m == "stop":
@@ -237,11 +240,11 @@ class Emitter:
 
         if op.flow == sm83.JUMP:
             if local:
-                return ([GB_LOOP_SYNC, f"goto {_label(tgt)};"] if backward
-                        else [f"goto {_label(tgt)};"])
+                return ([_loop_edge(blk.bank, tgt), f"goto {_label(tgt)};"]
+                        if backward else [f"goto {_label(tgt)};"])
             return [f"gb_jump(gb, {blk.bank}, 0x{tgt:04X}); return;"]
         if op.flow == sm83.CJUMP:
-            sync = (GB_LOOP_SYNC + " ") if backward else ""
+            sync = (_loop_edge(blk.bank, tgt) + " ") if backward else ""
             inner = (f"{sync}goto {_label(tgt)};" if local
                      else f"{{ gb_jump(gb, {blk.bank}, 0x{tgt:04X}); return; }}")
             return [f"if ({COND_EXPR[op.cond]}) {{ gb->cycles += "
@@ -264,7 +267,7 @@ class Emitter:
             return [f"if ({COND_EXPR[op.cond]}) {{ gb->cycles += "
                     f"{op.cycles_taken - op.cycles}; gb_ret(gb); return; }}"]
         if op.flow == sm83.RETI:
-            return ["gb->ime = 1;", "gb_ret(gb); return;"]
+            return ["gb->n_reti++;", "gb->ime = 1;", "gb_ret(gb); return;"]
         if op.flow == sm83.IJUMP:
             # Target is in HL and only known now. The dispatcher will find a
             # recompiled entry or fall back to interpreting.

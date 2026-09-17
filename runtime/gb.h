@@ -120,6 +120,9 @@ struct gb_s {
     uint16_t ev_b[64];
     uint32_t ev_pos;
 
+    /* Counters for tracking down an interrupt that never fires. */
+    uint64_t n_ei, n_di, n_reti, n_int, n_halt;
+
     /* PPU state. */
     uint32_t ppu_cycles;     /* M-cycles into the current scanline */
     uint8_t  window_line;    /* the window has its own line counter */
@@ -191,6 +194,7 @@ void gb_call(gb_t *gb, uint16_t bank, uint16_t target, uint16_t ret_addr);
 void gb_ret(gb_t *gb);            /* pops; a mismatched address is a jump */
 void gb_dispatch(gb_t *gb, uint16_t bank, uint16_t target);
 void gb_jump(gb_t *gb, uint16_t bank, uint16_t target);   /* tail jump, no nesting */
+int  gb_poll(gb_t *gb, uint16_t bank, uint16_t resume_pc); /* loop back-edge */
 void gb_no_entry(gb_t *gb, uint16_t bank, uint16_t entry);
 void gb_interp(gb_t *gb, uint16_t addr);   /* interpreter fallback */
 uint32_t gb_interp_step(gb_t *gb);

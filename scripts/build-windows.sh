@@ -159,6 +159,15 @@ mkdir -p "$OUT_DIR" "$OUT_DIR/obj"
 
 JOBS=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 
+# Block tracing costs a call per block entered. It is invaluable while
+# bringing a game up and pure overhead once it runs, so it is opt-in:
+#   TRACE=1 ./scripts/build-windows.sh ...
+TRACE_FLAG=""
+if [ -n "${TRACE:-}" ]; then
+    TRACE_FLAG="-DGB_TRACE"
+    echo "  block tracing enabled"
+fi
+
 # The generated bank files are enormous - a single function can run to a
 # hundred thousand lines - and optimising them is both very slow and close to
 # pointless: the code is already straight-line, and the machine being emulated
@@ -182,7 +191,7 @@ for src in "$SRC_DIR"/bank_*.c "$SRC_DIR"/dispatch.c; do
 
     # A partial object from an interrupted build must not be mistaken for a
     # finished one, so compile to a temporary name and move it into place.
-    ( "$CC_WIN" -O1 -DGB_TRACE -Iruntime -I"$SRC_DIR" -c "$src" -o "$obj.tmp" \
+    ( "$CC_WIN" -O1 $TRACE_FLAG -Iruntime -I"$SRC_DIR" -c "$src" -o "$obj.tmp" \
         && mv -f "$obj.tmp" "$obj" ) &
 
     while [ "$(jobs -rp | wc -l)" -ge "$JOBS" ]; do
@@ -204,7 +213,7 @@ BUILD_STAMP="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 BUILD_REV="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 # -mwindows suppresses the console window. Static linking means the exe runs
 # on a machine with no toolchain installed.
-"$CC_WIN" -O2 -Wall -DGB_TRACE -Iruntime -I"$SRC_DIR" \
+"$CC_WIN" -O2 -Wall $TRACE_FLAG -Iruntime -I"$SRC_DIR" \
     -DGB_BUILD_STAMP="\"$BUILD_STAMP\"" \
     -DGB_BUILD_REV="\"$BUILD_REV\"" \
     -o "$EXE" \
