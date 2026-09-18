@@ -2,7 +2,11 @@
 #
 # Builds a Windows executable from a Game Boy ROM.
 #
-#   ./scripts/build-windows.sh path/to/seasons.gbc
+#   bash /path/to/test1/scripts/build-windows.sh [path/to/seasons.gbc]
+#
+# Run it from anywhere - it finds the repository from its own location. The
+# ROM is optional: it looks in the usual places and remembers what it found,
+# so after the first build the path is never needed again.
 #
 # Recompiles the ROM's code to C, compiles that together with the runtime and
 # the Win32 frontend, and writes build/oracle.exe. The ROM is read, never
@@ -11,18 +15,77 @@
 #
 set -euo pipefail
 
-ROM="${1:-}"
-OUT_DIR="build"
-SRC_DIR="$OUT_DIR/src"
-EXE="$OUT_DIR/oracle.exe"
-SYMBOLS="${SYMBOLS:-}"
-
 say()  { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 die()  { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
-[ -n "$ROM" ] || die "give the path to your ROM:
-  ./scripts/build-windows.sh /c/Users/YOU/Downloads/seasons.gbc"
+# A new shell opens in the home directory, not here, so a relative path to
+# this script finds nothing and the build appears to do nothing at all. Work
+# from the repository regardless of where the command was typed.
+REPO="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)" || die "cannot locate the repository"
+cd "$REPO"
+
+printf '\033[1mbuilding in %s\033[0m\n' "$REPO"
+
+OUT_DIR="build"
+SRC_DIR="$OUT_DIR/src"
+EXE="$OUT_DIR/oracle.exe"
+REMEMBERED="$OUT_DIR/rom-path"
+SYMBOLS="${SYMBOLS:-}"
+
+# Every Game Boy cartridge opens with the same logo bytes at $104, which is a
+# far better test than the file's name or extension.
+is_rom() {
+    [ -f "$1" ] || return 1
+    local magic
+    magic=$(dd if="$1" bs=1 skip=260 count=4 2>/dev/null | od -An -tx1 | tr -d ' \n')
+    [ "$magic" = "ceed6666" ]
+}
+
+ROM="${1:-}"
+
+if [ -z "$ROM" ] && [ -f "$REMEMBERED" ]; then
+    candidate="$(cat "$REMEMBERED")"
+    if is_rom "$candidate"; then
+        ROM="$candidate"
+        echo "  using the ROM from last time: $ROM"
+    fi
+fi
+
+if [ -z "$ROM" ]; then
+    # The places a downloaded or dumped cartridge actually ends up. MSYS2
+    # mounts the Windows drives under /c, so a Windows download is reachable.
+    for dir in . "$HOME" "$HOME/Downloads" "$HOME/Desktop" \
+               /c/Users/*/Downloads /c/Users/*/Desktop /c/Users/*/Documents \
+               ../oracles-disasm external/oracles-disasm; do
+        [ -d "$dir" ] || continue
+        for f in "$dir"/*.gbc "$dir"/*.gb; do
+            if is_rom "$f"; then ROM="$f"; break 2; fi
+        done
+    done
+    # Not "[ -n ] && echo": under set -e a false test there ends the script,
+    # and an empty result here is the normal case that the next block reports.
+    if [ -n "$ROM" ]; then
+        echo "  found a ROM: $ROM"
+    fi
+fi
+
+if [ -z "$ROM" ]; then
+    die "no Game Boy ROM found, and none given.
+
+  Looked in this folder, your home folder, Downloads, Desktop and Documents.
+  Pass the path instead:
+
+    bash $REPO/scripts/build-windows.sh /c/Users/YOU/Downloads/seasons.gbc"
+fi
+
 [ -f "$ROM" ] || die "no such file: $ROM"
+is_rom "$ROM" || die "$ROM does not look like a Game Boy ROM
+  (its header is missing the logo bytes every cartridge starts with)."
+
+# Absolute, so the remembered path still works from a different folder.
+ROM="$(CDPATH= cd -- "$(dirname -- "$ROM")" && pwd)/$(basename -- "$ROM")"
+mkdir -p "$OUT_DIR"
+printf '%s\n' "$ROM" > "$REMEMBERED"
 
 # Find a Python 3 under whatever name this environment uses.
 PY=""
@@ -280,8 +343,8 @@ fi
 cat <<NOTE
   $EXE  (${SIZE} KiB)
 
-  Run it:
-    ./$EXE "$ROM"
+  Run it (from anywhere):
+    "$REPO/$EXE" "$ROM"
 
   Controls
     arrows        move
