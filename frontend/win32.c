@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include "gb.h"
 #include "present.h"
+#include "worldmap.h"
 
 /* Stamped in by the build so any report names the build that produced it.
  * Identical numbers from what should have been different code means a stale
@@ -46,6 +47,15 @@ static struct {
     int           integer_scale;
     float         zoom;
     float         pan_x, pan_y;
+
+    /* World map view: the whole world drawn from its room data, at any
+     * scale, rather than the hardware's 160x144 window. */
+    int           map_mode;
+    float         map_scale;
+    float         map_cam_x, map_cam_y;
+    uint32_t     *map_pixels;
+    int           map_w, map_h;
+    BITMAPINFO    map_bmi;
 } app;
 
 /* Keyboard mapping. Arrows move, Z and X are B and A, matching the layout
@@ -91,7 +101,7 @@ static void on_frame(gb_t *gb, void *user)
     }
 
     if (app.hwnd)
-        InvalidateRect(app.hwnd, NULL, FALSE);
+        InvalidateRect(app.hwnd, NULL, app.map_mode ? TRUE : FALSE);
 
     if (!InterlockedCompareExchange(&app.running, 0, 0)) {
         gb->stopped = 1;
@@ -298,6 +308,38 @@ static void paint(HWND hwnd)
     /* Nearest-neighbour keeps pixel art crisp; the default would blur it. */
     SetStretchBltMode(dc, COLORONCOLOR);
 
+    if (app.map_mode) {
+        /* Render the world at the window's own resolution, so zooming is
+         * genuine detail rather than a magnified 160x144. */
+        if (app.map_w != cw || app.map_h != ch) {
+            free(app.map_pixels);
+            app.map_pixels = malloc((size_t)cw * ch * sizeof(uint32_t));
+            app.map_w = cw;
+            app.map_h = ch;
+            app.map_bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+            app.map_bmi.bmiHeader.biWidth = cw;
+            app.map_bmi.bmiHeader.biHeight = -ch;
+            app.map_bmi.bmiHeader.biPlanes = 1;
+            app.map_bmi.bmiHeader.biBitCount = 32;
+            app.map_bmi.bmiHeader.biCompression = BI_RGB;
+            if (app.map_scale <= 0.0f) {
+                app.map_scale = gb_world_fit_scale(cw, ch);
+                app.map_cam_x = GB_WORLD_W * 0.5f;
+                app.map_cam_y = GB_WORLD_H * 0.5f;
+            }
+        }
+        if (app.map_pixels) {
+            EnterCriticalSection(&app.lock);
+            gb_world_render(app.gb, app.map_pixels, cw, ch,
+                            app.map_cam_x, app.map_cam_y, app.map_scale);
+            LeaveCriticalSection(&app.lock);
+            StretchDIBits(dc, 0, 0, cw, ch, 0, 0, cw, ch,
+                          app.map_pixels, &app.map_bmi, DIB_RGB_COLORS, SRCCOPY);
+        }
+        EndPaint(hwnd, &ps);
+        return;
+    }
+
     EnterCriticalSection(&app.lock);
     /* The source rect narrows as the zoom rises, so magnifying shows less of
      * the screen rather than stretching what is there. */
@@ -327,6 +369,51 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             PostMessage(hwnd, WM_CLOSE, 0, 0);
             return 0;
         }
+        if (msg == WM_KEYDOWN && wp == VK_TAB) {
+            app.map_mode = !app.map_mode;
+            if (app.map_mode && app.map_scale <= 0.0f) {
+                RECT rc; GetClientRect(hwnd, &rc);
+                app.map_scale = gb_world_fit_scale(rc.right, rc.bottom);
+                app.map_cam_x = GB_WORLD_W * 0.5f;
+                app.map_cam_y = GB_WORLD_H * 0.5f;
+            }
+            InvalidateRect(hwnd, NULL, TRUE);
+            return 0;
+        }
+
+        if (app.map_mode && msg == WM_KEYDOWN) {
+            RECT rc; GetClientRect(hwnd, &rc);
+            float fit = gb_world_fit_scale(rc.right, rc.bottom);
+            float step = 24.0f / app.map_scale;
+            switch (wp) {
+            case VK_OEM_PLUS: case VK_ADD:
+                app.map_scale *= 1.25f;
+                if (app.map_scale > 8.0f) app.map_scale = 8.0f;
+                break;
+            case VK_OEM_MINUS: case VK_SUBTRACT:
+                app.map_scale /= 1.25f;
+                /* Stop at the point where the whole world is on screen. */
+                if (app.map_scale < fit) app.map_scale = fit;
+                break;
+            case '0':
+                app.map_scale = fit;
+                app.map_cam_x = GB_WORLD_W * 0.5f;
+                app.map_cam_y = GB_WORLD_H * 0.5f;
+                break;
+            case VK_LEFT:  app.map_cam_x -= step; break;
+            case VK_RIGHT: app.map_cam_x += step; break;
+            case VK_UP:    app.map_cam_y -= step; break;
+            case VK_DOWN:  app.map_cam_y += step; break;
+            default: break;
+            }
+            if (app.map_cam_x < 0) app.map_cam_x = 0;
+            if (app.map_cam_y < 0) app.map_cam_y = 0;
+            if (app.map_cam_x > GB_WORLD_W) app.map_cam_x = GB_WORLD_W;
+            if (app.map_cam_y > GB_WORLD_H) app.map_cam_y = GB_WORLD_H;
+            InvalidateRect(hwnd, NULL, TRUE);
+            return 0;
+        }
+
         /* Zoom and pan. The Game Boy only ever renders 160x144, so zooming in
          * magnifies and crops; there is nothing outside that to zoom out to,
          * and 1.0 is the whole screen. */
@@ -493,6 +580,7 @@ int main(int argc, char **argv)
         CloseHandle(app.thread);
     }
     if (app.timer) CloseHandle(app.timer);
+    free(app.map_pixels);
     DeleteCriticalSection(&app.lock);
     gb_free(&gb);
     free(rom);

@@ -1,0 +1,130 @@
+/* World map renderer.
+ *
+ * Draws the world from its room data rather than from the hardware's display,
+ * which only ever holds the room the player is standing in. Tile pixels and
+ * colours come from whatever the game currently has loaded, so the map matches
+ * what the player is seeing.
+ *
+ * Sampling runs backwards, from each destination pixel to the world position
+ * behind it, which handles any scale without a separate path for magnifying
+ * and shrinking.
+ */
+#include <string.h>
+#include "worldmap.h"
+
+#define ROOM_PX_W (GB_ROOM_COLS * GB_METATILE_PX)   /* 160 */
+#define ROOM_PX_H (GB_ROOM_ROWS * GB_METATILE_PX)   /* 128 */
+
+/* Metatile attribute bits, as the hardware reads them. */
+#define ATTR_PALETTE 0x07
+#define ATTR_BANK    0x08
+#define ATTR_XFLIP   0x20
+#define ATTR_YFLIP   0x40
+
+static const uint32_t DMG_SHADES[4] = {
+    0xFFE0F8D0, 0xFF88C070, 0xFF346856, 0xFF081820
+};
+
+static inline uint8_t vram_at(const gb_t *gb, int bank, uint16_t addr)
+{
+    return gb->vram[(bank ? 0x2000 : 0) + (addr - 0x8000)];
+}
+
+static uint32_t colour_of(const gb_t *gb, int palette, int shade)
+{
+    if (!gb->cgb)
+        return DMG_SHADES[(gb->io[0x47] >> (shade * 2)) & 3];
+
+    int i = (palette * 4 + shade) * 2;
+    uint16_t v = gb->bg_palette[i] | ((uint16_t)gb->bg_palette[i + 1] << 8);
+    int r = v & 0x1F, g = (v >> 5) & 0x1F, b = (v >> 10) & 0x1F;
+    r = (r << 3) | (r >> 2);
+    g = (g << 3) | (g >> 2);
+    b = (b << 3) | (b >> 2);
+    return 0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+}
+
+/* Tile data sits in one of two overlapping regions, chosen by LCDC bit 4; the
+ * lower one indexes signed from 0x9000. */
+static uint16_t tile_row_addr(const gb_t *gb, uint8_t index, int row)
+{
+    if (gb->io[0x40] & 0x10)
+        return 0x8000 + index * 16 + row * 2;
+    return 0x9000 + (int8_t)index * 16 + row * 2;
+}
+
+float gb_world_fit_scale(int dst_w, int dst_h)
+{
+    float sx = (float)dst_w / GB_WORLD_W;
+    float sy = (float)dst_h / GB_WORLD_H;
+    return sx < sy ? sx : sy;
+}
+
+void gb_world_render(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
+                     float cam_x, float cam_y, float scale)
+{
+    if (!dst || dst_w <= 0 || dst_h <= 0 || scale <= 0.0f)
+        return;
+
+    const uint32_t backdrop = 0xFF101014u;
+    const float inv = 1.0f / scale;
+    const float left = cam_x - (dst_w * 0.5f) * inv;
+    const float top  = cam_y - (dst_h * 0.5f) * inv;
+
+    for (int dy = 0; dy < dst_h; dy++) {
+        float wy_f = top + dy * inv;
+        int wy = (int)wy_f;
+        uint32_t *row = dst + (size_t)dy * dst_w;
+
+        if (wy_f < 0 || wy >= GB_WORLD_H) {
+            for (int dx = 0; dx < dst_w; dx++)
+                row[dx] = backdrop;
+            continue;
+        }
+
+        int room_row = wy / ROOM_PX_H;
+        int in_room_y = wy % ROOM_PX_H;
+        int mt_y = in_room_y / GB_METATILE_PX;
+        int sub_y = in_room_y % GB_METATILE_PX;
+
+        for (int dx = 0; dx < dst_w; dx++) {
+            float wx_f = left + dx * inv;
+            int wx = (int)wx_f;
+            if (wx_f < 0 || wx >= GB_WORLD_W) {
+                row[dx] = backdrop;
+                continue;
+            }
+
+            int room = room_row * GB_WORLD_COLS + (wx / ROOM_PX_W);
+            int in_room_x = wx % ROOM_PX_W;
+
+            uint8_t metatile = gb_world_rooms[room][mt_y * GB_ROOM_COLS
+                                                    + in_room_x / GB_METATILE_PX];
+            int tileset = gb_world_room_tileset[room];
+            if (tileset >= gb_world_mapping_count)
+                tileset = 0;
+
+            /* Each metatile is four tiles: two across, two down. */
+            int sub_x = in_room_x % GB_METATILE_PX;
+            int quadrant = (sub_y / 8) * 2 + (sub_x / 8);
+            const uint8_t *entry =
+                &gb_world_mappings[tileset][metatile * 8 + quadrant * 2];
+
+            uint8_t index = entry[0];
+            uint8_t attr = entry[1];
+
+            int px = sub_x % 8, py = sub_y % 8;
+            if (attr & ATTR_XFLIP) px = 7 - px;
+            if (attr & ATTR_YFLIP) py = 7 - py;
+
+            uint16_t addr = tile_row_addr(gb, index, py);
+            int bank = (gb->cgb && (attr & ATTR_BANK)) ? 1 : 0;
+            uint8_t lo = vram_at(gb, bank, addr);
+            uint8_t hi = vram_at(gb, bank, addr + 1);
+
+            int bit = 7 - px;
+            int shade = (((hi >> bit) & 1) << 1) | ((lo >> bit) & 1);
+            row[dx] = colour_of(gb, attr & ATTR_PALETTE, shade);
+        }
+    }
+}

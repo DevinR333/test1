@@ -150,6 +150,23 @@ if bad:
 print("  generated code is internally consistent")
 CHECK
 
+# World map data, when a disassembly checkout is present. The hardware only
+# renders one room, so a camera that shows more needs the room layouts.
+WORLD_SRC=""
+for d in external/oracles-disasm ../oracles-disasm; do
+    if [ -d "$d/rooms" ]; then
+        say "building world map data from $d"
+        "$PY" tools/worldmap.py "$d" -o "$OUT_DIR/world_data.c"
+        WORLD_SRC="$OUT_DIR/world_data.c runtime/worldmap.c"
+        break
+    fi
+done
+if [ -z "$WORLD_SRC" ]; then
+    echo "  no disassembly checkout found; the map view will be unavailable"
+    printf '#include "worldmap.h"\nconst int gb_world_group=0;\nconst uint8_t gb_world_rooms[GB_WORLD_ROOMS][GB_ROOM_TILES]={{0}};\nconst uint8_t gb_world_room_tileset[GB_WORLD_ROOMS]={0};\nconst uint8_t gb_world_mappings[1][GB_MAPPING_BYTES]={{0}};\nconst int gb_world_mapping_count=1;\n' > "$OUT_DIR/world_data.c"
+    WORLD_SRC="$OUT_DIR/world_data.c runtime/worldmap.c"
+fi
+
 say "generating the interpreter fallback"
 "$PY" tools/gen_interp.py runtime/interp_gen.c
 
@@ -220,7 +237,7 @@ BUILD_REV="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
     frontend/win32.c \
     runtime/alu.c runtime/memory.c runtime/ppu.c runtime/machine.c \
     runtime/interp.c runtime/interp_gen.c runtime/present.c runtime/io_masks.c \
-    runtime/diag.c \
+    runtime/diag.c $WORLD_SRC \
     "$OUT_DIR"/obj/*.o \
     -lgdi32 -luser32 -lm -static -mwindows
 
@@ -241,6 +258,7 @@ cat <<NOTE
     Z or Backspace B
     Space         Start
     Shift         Select
+    Tab           world map view (whole world, free zoom)
     + / -         zoom in and out
     0             reset zoom
     Ctrl+arrows   pan while zoomed in
