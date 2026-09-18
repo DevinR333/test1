@@ -384,12 +384,25 @@ static void paint(HWND hwnd)
     if (app.gb)
         gb_world_screen_origin(app.gb, &screen_x, &screen_y);
 
-    /* The camera sits on the screen exactly. The position already moves a few
-     * pixels a frame while the game crosses between rooms, so it needs no
-     * smoothing of its own - and smoothing it would slide the world out from
-     * under the live screen drawn on top of it. */
+    /* The camera follows Link, not the screen.
+     *
+     * The screen is what shifts: crossing a boundary it scrolls a whole room
+     * over about forty frames and then stops. Link's own position crosses the
+     * same boundary as one unbroken line, so a camera on him has nothing to
+     * shift about - the world just travels past while he walks, which is what
+     * a room boundary should look like when the whole world is drawn.
+     *
+     * The live screen still goes where the game says it is, so its pixels
+     * stay lined up with the world drawn around them throughout. */
     float cam_x = screen_x + 80.0f;
     float cam_y = screen_y + 64.0f;
+    if (app.gb) {
+        float lx, ly;
+        if (gb_world_link_position(app.gb, &lx, &ly)) {
+            cam_x = lx;
+            cam_y = ly;
+        }
+    }
     app.cam_x = cam_x;
     app.cam_y = cam_y;
     app.cam_valid = 1;

@@ -68,6 +68,11 @@ int  gb_world_active_room(const gb_t *gb);
  * Returns 0 if the position cannot be determined. */
 int  gb_world_screen_origin(const gb_t *gb, float *out_x, float *out_y);
 
+/* Where Link is standing, in world pixels. Unlike the screen, this never
+ * jumps: it crosses a room boundary as one continuous line. Returns 0 if it
+ * cannot be determined. */
+int  gb_world_link_position(const gb_t *gb, float *out_x, float *out_y);
+
 /* Whether the game is somewhere the world data describes. Menus, cutscenes,
  * dungeons and interiors are not, and drawing overworld rooms around them
  * shows scenery that has nothing to do with what is on screen. */

@@ -335,6 +335,7 @@ static struct {
     int   valid;
     int   kx, ky;      /* what to add to a reading to get a world position */
     float x, y;
+    float anchor_x, anchor_y;   /* the room the objects' coordinates are in */
 } origin;
 
 /* The value congruent to `raw` modulo 256 that lies closest to `anchor`. A
@@ -383,6 +384,8 @@ int gb_world_screen_origin(const gb_t *gb, float *out_x, float *out_y)
         origin.ky = (base_y - raw_y) & 0xFF;
         origin.x  = (float)base_x;
         origin.y  = (float)base_y;
+        origin.anchor_x = (float)base_x;
+        origin.anchor_y = (float)base_y;
         origin.valid = 1;
     } else {
         origin.x = resolve(origin.x, (raw_x + origin.kx) & 0xFF);
@@ -391,6 +394,41 @@ int gb_world_screen_origin(const gb_t *gb, float *out_x, float *out_y)
 
     if (out_x) *out_x = origin.x;
     if (out_y) *out_y = origin.y;
+    return 1;
+}
+
+
+/* Where Link is in the world.
+ *
+ * His own coordinates are measured within the room he started the transition
+ * in, and stay that way for the whole of it: walking east they run past the
+ * room's width - 154, 160, 169 - and only wrap to 9 when the transition
+ * finishes and the room he is counted against becomes the new one. Added to
+ * the room he is counted against, rather than to where the screen currently
+ * is, that makes one unbroken line across the boundary: 1274, 1278, ... 1289,
+ * and 1289 again on the far side.
+ *
+ * A camera on that line never jumps, so there is no shift from one screen to
+ * the next - the world simply travels past as he walks.
+ */
+#define W_LINK_OBJECT 0xCC48   /* high byte of whichever object Link is */
+
+int gb_world_link_position(const gb_t *gb, float *out_x, float *out_y)
+{
+    float sx, sy;
+    if (!gb_world_screen_origin(gb, &sx, &sy))   /* also updates the anchor */
+        return 0;
+
+    /* Riding an animal makes a different object the one being steered. */
+    int object = gb->wram[W_LINK_OBJECT - 0xC000];
+    if (object < 0xD0 || object > 0xDF)
+        return 0;
+
+    /* Objects live in the second bank of work RAM. */
+    const uint8_t *o = &gb->wram[0x1000 + ((object << 8) - 0xD000)];
+
+    if (out_x) *out_x = origin.anchor_x + o[0x0D];   /* x, whole pixels */
+    if (out_y) *out_y = origin.anchor_y + o[0x0B];   /* y, whole pixels */
     return 1;
 }
 
