@@ -25,18 +25,20 @@ static const uint32_t DMG_SHADES[4] = {
     0xFFE0F8D0, 0xFF88C070, 0xFF346856, 0xFF081820
 };
 
-static inline uint8_t vram_at(const gb_t *gb, int bank, uint16_t addr)
+/* Tiles come from the tileset's own graphics, not from video memory: the
+ * hardware only ever holds the area the player is standing in. */
+static inline uint8_t vram_at(const uint8_t *vram, uint16_t addr)
 {
-    return gb->vram[(bank ? 0x2000 : 0) + (addr - 0x8000)];
+    return vram[addr - 0x8000];
 }
 
-static uint32_t colour_of(const gb_t *gb, int palette, int shade)
+static uint32_t colour_of(const gb_t *gb, const uint8_t *pal, int palette, int shade)
 {
     if (!gb->cgb)
         return DMG_SHADES[(gb->io[0x47] >> (shade * 2)) & 3];
 
     int i = (palette * 4 + shade) * 2;
-    uint16_t v = gb->bg_palette[i] | ((uint16_t)gb->bg_palette[i + 1] << 8);
+    uint16_t v = pal[i] | ((uint16_t)pal[i + 1] << 8);
     int r = v & 0x1F, g = (v >> 5) & 0x1F, b = (v >> 10) & 0x1F;
     r = (r << 3) | (r >> 2);
     g = (g << 3) | (g >> 2);
@@ -46,10 +48,11 @@ static uint32_t colour_of(const gb_t *gb, int palette, int shade)
 
 /* Tile data sits in one of two overlapping regions, chosen by LCDC bit 4; the
  * lower one indexes signed from 0x9000. */
-static uint16_t tile_row_addr(const gb_t *gb, uint8_t index, int row)
+/* The world's tilesets are built for the signed addressing the overworld
+ * uses, so indices are read from 0x9000 regardless of what the display is
+ * currently configured for. */
+static uint16_t tile_row_addr(uint8_t index, int row)
 {
-    if (gb->io[0x40] & 0x10)
-        return 0x8000 + index * 16 + row * 2;
     return 0x9000 + (int8_t)index * 16 + row * 2;
 }
 
@@ -100,15 +103,19 @@ void gb_world_render(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
 
             uint8_t metatile = gb_world_rooms[room][mt_y * GB_ROOM_COLS
                                                     + in_room_x / GB_METATILE_PX];
-            int tileset = gb_world_room_tileset[room];
-            if (tileset >= gb_world_mapping_count)
-                tileset = 0;
+            /* The top bit of a room's tileset byte is a flag, not part of
+             * the number. */
+            int tileset = gb_world_room_tileset[room] & 0x7F;
+            int mapping = (tileset < gb_world_mapping_count) ? tileset : 0;
+            int assets = (tileset < gb_world_tileset_count) ? tileset : 0;
+            const uint8_t *tvram = gb_world_tileset_vram[assets];
+            const uint8_t *tpal = gb_world_tileset_palette[assets];
 
             /* Each metatile is four tiles: two across, two down. */
             int sub_x = in_room_x % GB_METATILE_PX;
             int quadrant = (sub_y / 8) * 2 + (sub_x / 8);
             const uint8_t *entry =
-                &gb_world_mappings[tileset][metatile * 8 + quadrant * 2];
+                &gb_world_mappings[mapping][metatile * 8 + quadrant * 2];
 
             uint8_t index = entry[0];
             uint8_t attr = entry[1];
@@ -117,14 +124,62 @@ void gb_world_render(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
             if (attr & ATTR_XFLIP) px = 7 - px;
             if (attr & ATTR_YFLIP) py = 7 - py;
 
-            uint16_t addr = tile_row_addr(gb, index, py);
-            int bank = (gb->cgb && (attr & ATTR_BANK)) ? 1 : 0;
-            uint8_t lo = vram_at(gb, bank, addr);
-            uint8_t hi = vram_at(gb, bank, addr + 1);
+            uint16_t addr = tile_row_addr(index, py);
+            uint8_t lo = vram_at(tvram, addr);
+            uint8_t hi = vram_at(tvram, addr + 1);
 
             int bit = 7 - px;
             int shade = (((hi >> bit) & 1) << 1) | ((lo >> bit) & 1);
-            row[dx] = colour_of(gb, attr & ATTR_PALETTE, shade);
+            row[dx] = colour_of(gb, tpal, attr & ATTR_PALETTE, shade);
+        }
+    }
+}
+
+
+/* The game keeps the room it is standing in at a known address in work RAM.
+ * Reading it lets the map open where the player is rather than at the middle
+ * of the world. */
+#define W_ACTIVE_ROOM 0xCC4C
+
+int gb_world_active_room(const gb_t *gb)
+{
+    int room = gb->wram[W_ACTIVE_ROOM - 0xC000];
+    return (room >= 0 && room < GB_WORLD_ROOMS) ? room : -1;
+}
+
+void gb_world_mark_room(uint32_t *dst, int dst_w, int dst_h,
+                        float cam_x, float cam_y, float scale, int room)
+{
+    if (!dst || room < 0 || room >= GB_WORLD_ROOMS || scale <= 0.0f)
+        return;
+
+    /* Where the room sits in the world, then on screen. */
+    float wx = (float)(room % GB_WORLD_COLS) * ROOM_PX_W;
+    float wy = (float)(room / GB_WORLD_COLS) * ROOM_PX_H;
+
+    float left = cam_x - (dst_w * 0.5f) / scale;
+    float top  = cam_y - (dst_h * 0.5f) / scale;
+
+    int x0 = (int)((wx - left) * scale);
+    int y0 = (int)((wy - top) * scale);
+    int x1 = (int)((wx + ROOM_PX_W - left) * scale);
+    int y1 = (int)((wy + ROOM_PX_H - top) * scale);
+
+    /* A two-pixel outline, thick enough to see when the whole world is in
+     * view and not so thick that it hides the room when zoomed in. */
+    const uint32_t mark = 0xFFFFFFFFu;
+    for (int t = 0; t < 2; t++) {
+        for (int x = x0 - t; x <= x1 + t; x++) {
+            if (x < 0 || x >= dst_w) continue;
+            int ya = y0 - t, yb = y1 + t;
+            if (ya >= 0 && ya < dst_h) dst[(size_t)ya * dst_w + x] = mark;
+            if (yb >= 0 && yb < dst_h) dst[(size_t)yb * dst_w + x] = mark;
+        }
+        for (int y = y0 - t; y <= y1 + t; y++) {
+            if (y < 0 || y >= dst_h) continue;
+            int xa = x0 - t, xb = x1 + t;
+            if (xa >= 0 && xa < dst_w) dst[(size_t)y * dst_w + xa] = mark;
+            if (xb >= 0 && xb < dst_w) dst[(size_t)y * dst_w + xb] = mark;
         }
     }
 }

@@ -41,7 +41,8 @@ static struct {
     uint32_t      pixels[GB_SCREEN_W * GB_SCREEN_H];   /* presented copy */
     BITMAPINFO    bmi;
     volatile LONG running;
-    volatile LONG keys;
+    volatile LONG keys;        /* currently held */
+    volatile LONG keys_latched; /* pressed since the last frame, even if released */
     volatile LONG want_diag;
     gb_fit_mode_t fit;
     int           integer_scale;
@@ -89,7 +90,15 @@ static void on_frame(gb_t *gb, void *user)
     memcpy(app.pixels, gb->framebuffer, sizeof(app.pixels));
     LeaveCriticalSection(&app.lock);
 
-    gb->joypad = (uint8_t)InterlockedCompareExchange(&app.keys, 0, 0);
+    /* Held keys, plus anything pressed and released since the last frame.
+     *
+     * Sampling only what is held at this instant loses a quick tap entirely:
+     * the key goes down and up between two frames and the game never sees it.
+     * Latching a press until it has been reported once means every tap
+     * registers, however briefly it was held. */
+    LONG held = InterlockedCompareExchange(&app.keys, 0, 0);
+    LONG tapped = InterlockedExchange(&app.keys_latched, 0);
+    gb->joypad = (uint8_t)(held | tapped);
 
     /* Snapshot the machine once the game has had a few seconds to get
      * somewhere. One run then explains a blank screen without needing another
@@ -279,6 +288,37 @@ static DWORD WINAPI game_thread(LPVOID param)
     return 0;
 }
 
+/* The scale at which the map shows the world at the same size the game does. */
+static float game_scale(HWND hwnd)
+{
+    RECT rc;
+    GetClientRect(hwnd, &rc);
+    float sx = (float)(rc.right - rc.left) / GB_SCREEN_W;
+    float sy = (float)(rc.bottom - rc.top) / GB_SCREEN_H;
+    return sx < sy ? sx : sy;
+}
+
+/* Opens the map where the player is, at the size the game was showing. */
+static void enter_map(HWND hwnd)
+{
+    RECT rc;
+    GetClientRect(hwnd, &rc);
+
+    int room = app.gb ? gb_world_active_room(app.gb) : -1;
+    if (room >= 0) {
+        app.map_cam_x = (room % GB_WORLD_COLS) * 160.0f + 80.0f;
+        app.map_cam_y = (room / GB_WORLD_COLS) * 128.0f + 64.0f;
+    } else {
+        app.map_cam_x = GB_WORLD_W * 0.5f;
+        app.map_cam_y = GB_WORLD_H * 0.5f;
+    }
+
+    app.map_scale = game_scale(hwnd);
+    float fit = gb_world_fit_scale(rc.right, rc.bottom);
+    if (app.map_scale < fit) app.map_scale = fit;
+    app.map_mode = 1;
+}
+
 static void paint(HWND hwnd)
 {
     PAINTSTRUCT ps;
@@ -322,16 +362,16 @@ static void paint(HWND hwnd)
             app.map_bmi.bmiHeader.biPlanes = 1;
             app.map_bmi.bmiHeader.biBitCount = 32;
             app.map_bmi.bmiHeader.biCompression = BI_RGB;
-            if (app.map_scale <= 0.0f) {
+            if (app.map_scale <= 0.0f)
                 app.map_scale = gb_world_fit_scale(cw, ch);
-                app.map_cam_x = GB_WORLD_W * 0.5f;
-                app.map_cam_y = GB_WORLD_H * 0.5f;
-            }
         }
         if (app.map_pixels) {
             EnterCriticalSection(&app.lock);
             gb_world_render(app.gb, app.map_pixels, cw, ch,
                             app.map_cam_x, app.map_cam_y, app.map_scale);
+            gb_world_mark_room(app.map_pixels, cw, ch, app.map_cam_x,
+                               app.map_cam_y, app.map_scale,
+                               gb_world_active_room(app.gb));
             LeaveCriticalSection(&app.lock);
             StretchDIBits(dc, 0, 0, cw, ch, 0, 0, cw, ch,
                           app.map_pixels, &app.map_bmi, DIB_RGB_COLORS, SRCCOPY);
@@ -370,13 +410,8 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             return 0;
         }
         if (msg == WM_KEYDOWN && wp == VK_TAB) {
-            app.map_mode = !app.map_mode;
-            if (app.map_mode && app.map_scale <= 0.0f) {
-                RECT rc; GetClientRect(hwnd, &rc);
-                app.map_scale = gb_world_fit_scale(rc.right, rc.bottom);
-                app.map_cam_x = GB_WORLD_W * 0.5f;
-                app.map_cam_y = GB_WORLD_H * 0.5f;
-            }
+            if (app.map_mode) app.map_mode = 0;
+            else              enter_map(hwnd);
             InvalidateRect(hwnd, NULL, TRUE);
             return 0;
         }
@@ -388,12 +423,19 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             switch (wp) {
             case VK_OEM_PLUS: case VK_ADD:
                 app.map_scale *= 1.25f;
-                if (app.map_scale > 8.0f) app.map_scale = 8.0f;
+                /* Zooming in past the game's own scale returns to playing. */
+                if (app.map_scale > game_scale(hwnd)) {
+                    app.map_mode = 0;
+                    app.zoom = 1.0f;
+                }
                 break;
             case VK_OEM_MINUS: case VK_SUBTRACT:
                 app.map_scale /= 1.25f;
                 /* Stop at the point where the whole world is on screen. */
                 if (app.map_scale < fit) app.map_scale = fit;
+                break;
+            case VK_ESCAPE:
+                app.map_mode = 0;
                 break;
             case '0':
                 app.map_scale = fit;
@@ -423,8 +465,17 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             return 0;
         }
         if (msg == WM_KEYDOWN && (wp == VK_OEM_MINUS || wp == VK_SUBTRACT)) {
-            app.zoom = gb_clamp_zoom(app.zoom / 1.25f);
-            if (app.zoom <= 1.001f) { app.zoom = 1.0f; app.pan_x = app.pan_y = 0; }
+            if (app.zoom > 1.001f) {
+                app.zoom = gb_clamp_zoom(app.zoom / 1.25f);
+                if (app.zoom <= 1.001f) { app.zoom = 1.0f; app.pan_x = app.pan_y = 0; }
+            } else {
+                /* Already showing the whole screen. Beyond this the hardware
+                 * has nothing more to give, so continue into the world map,
+                 * which does - one zoom range from the character to the
+                 * whole of the world. */
+                enter_map(hwnd);
+                app.map_scale = game_scale(hwnd) / 1.25f;
+            }
             InvalidateRect(hwnd, NULL, TRUE);
             return 0;
         }
@@ -463,6 +514,14 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                 val = (msg == WM_KEYDOWN) ? (old | (1L << button))
                                           : (old & ~(1L << button));
             } while (InterlockedCompareExchange(&app.keys, val, old) != old);
+
+            /* Remember the press so a tap shorter than a frame still counts. */
+            if (msg == WM_KEYDOWN) {
+                do {
+                    old = app.keys_latched;
+                    val = old | (1L << button);
+                } while (InterlockedCompareExchange(&app.keys_latched, val, old) != old);
+            }
         }
         return 0;
     }

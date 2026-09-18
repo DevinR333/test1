@@ -77,7 +77,186 @@ def collect_mappings(disasm, game):
     return out
 
 
-def emit_c(path, layouts, tilesets, mappings, group):
+
+
+# --- tileset graphics and colours ----------------------------------------
+# The renderer cannot use whatever the hardware currently holds: video memory
+# only ever contains the tileset for the area the player is standing in, so
+# every other room would draw from unrelated tiles. Each tileset's own
+# graphics and palettes are resolved here instead.
+#
+# The chain runs: a room names a tileset, a tileset names a graphics header
+# and a palette header, a graphics header lists files and the video addresses
+# they load to, and a palette header names a block of colour data.
+
+import re
+
+VRAM_BASE = 0x8000
+VRAM_SIZE = 0x2000
+PALETTE_BYTES = 8 * 4 * 2          # eight palettes, four colours, two bytes
+
+
+def _strip(line):
+    return line.split(";")[0].rstrip()
+
+
+def parse_gfx_headers(disasm, game):
+    """GFXH name -> [(gfx file name, destination address)]"""
+    out, cur = {}, None
+    path = os.path.join(disasm, "data", game, "gfxHeaders.s")
+    if not os.path.exists(path):
+        return out
+    for line in open(path, errors="replace"):
+        line = _strip(line).strip()
+        m = re.match(r"m_GfxHeaderStart\s+\$?[0-9a-fA-F]+,\s*(\w+)", line)
+        if m:
+            cur = m.group(1)
+            out[cur] = []
+            continue
+        if line.startswith("m_GfxHeaderEnd"):
+            cur = None
+            continue
+        m = re.match(r"m_GfxHeader\s+(\w+),\s*\$([0-9a-fA-F]+)", line)
+        if m and cur is not None:
+            # Bit 0 of the address is a continue flag, not part of the address.
+            out[cur].append((m.group(1), int(m.group(2), 16) & 0xFFFE))
+    return out
+
+
+def parse_tilesets(disasm, game):
+    """Tileset index -> (GFXH name, PALH name), in table order."""
+    path = os.path.join(disasm, "data", game, "tilesets.s")
+    if not os.path.exists(path):
+        return []
+    text = open(path, errors="replace").read()
+
+    order = []
+    for line in text.splitlines():
+        m = re.match(r"\s*m_\w*Tileset\s+(\w+)", _strip(line))
+        if m:
+            order.append(m.group(1))
+
+    out = []
+    for label in order:
+        m = re.search(rf"^{label}:(.*?)(?=^\w+:|\Z)", text, re.S | re.M)
+        body = m.group(1) if m else ""
+        gfxh = re.search(r"\b(GFXH_\w+)", body)
+        palh = re.search(r"\b(PALH_\w+)", body)
+        out.append((gfxh.group(1) if gfxh else None,
+                    palh.group(1) if palh else None))
+    return out
+
+
+def parse_palette_headers(disasm, game):
+    """PALH name -> [(first palette, count, data label)] for backgrounds."""
+    out, cur = {}, None
+    path = os.path.join(disasm, "data", game, "paletteHeaders.s")
+    if not os.path.exists(path):
+        return out
+    for line in open(path, errors="replace"):
+        line = _strip(line).strip()
+        m = re.match(r"m_PaletteHeaderStart\s+\$?[0-9a-fA-F]+,\s*(\w+)", line)
+        if m:
+            cur = m.group(1)
+            out[cur] = []
+            continue
+        m = re.match(r"m_PaletteHeaderBg\s+(\d+),\s*(\d+),\s*(\w+)", line)
+        if m and cur is not None:
+            out[cur].append((int(m.group(1)), int(m.group(2)), m.group(3)))
+    return out
+
+
+def parse_palette_data(disasm, game):
+    """Label -> raw colour bytes, little-endian 15-bit BGR."""
+    path = os.path.join(disasm, "data", game, "paletteData.s")
+    if not os.path.exists(path):
+        return {}
+    text = open(path, errors="replace").read()
+    out = {}
+    for m in re.finditer(r"^(\w+):(.*?)(?=^\w+:|\Z)", text, re.S | re.M):
+        label, body = m.group(1), m.group(2)
+        raw = bytearray()
+        for c in re.finditer(r"m_RGB16\s+\$?([0-9a-fA-F]+)\s+\$?([0-9a-fA-F]+)\s+\$?([0-9a-fA-F]+)",
+                             body):
+            r, g, b = (int(c.group(i), 16) & 0x1F for i in (1, 2, 3))
+            v = r | (g << 5) | (b << 10)
+            raw += bytes((v & 0xFF, v >> 8))
+        if raw:
+            out[label] = bytes(raw)
+    return out
+
+
+def find_gfx_file(disasm, game, name):
+    for sub in (f"gfx_compressible/{game}", "gfx_compressible/common",
+                f"gfx/{game}", "gfx/common"):
+        for ext in (".png", ".bin"):
+            path = os.path.join(disasm, sub, name + ext)
+            if os.path.exists(path):
+                return path
+    return None
+
+
+def gfx_tile_bytes(path):
+    """A graphics file as raw 2bpp tile data."""
+    if path.endswith(".bin"):
+        return load(path)
+
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import tiles as tilelib
+    pixels, _, _ = tilelib.read_png(path)
+
+    # Tiles run down each 8-pixel column strip, then across, which is how the
+    # hardware expects consecutive tile indices to appear.
+    out = bytearray()
+    rows = len(pixels) // 8
+    cols = (len(pixels[0]) // 8) if pixels else 0
+    for ty in range(rows):
+        for tx in range(cols):
+            tile = [pixels[ty * 8 + y][tx * 8:tx * 8 + 8] for y in range(8)]
+            out += tilelib.encode_tile(tile)
+    return bytes(out)
+
+
+def build_tileset_assets(disasm, game):
+    """Per tileset: an image of video memory, and its background palettes."""
+    headers = parse_gfx_headers(disasm, game)
+    tilesets = parse_tilesets(disasm, game)
+    pal_headers = parse_palette_headers(disasm, game)
+    pal_data = parse_palette_data(disasm, game)
+
+    vram_out, pal_out, loaded = [], [], 0
+    cache = {}
+
+    for gfxh, palh in tilesets:
+        vram = bytearray(VRAM_SIZE)
+        for name, dest in headers.get(gfxh, []):
+            if name not in cache:
+                path = find_gfx_file(disasm, game, name)
+                cache[name] = gfx_tile_bytes(path) if path else b""
+            data = cache[name]
+            if not data:
+                continue
+            off = dest - VRAM_BASE
+            if 0 <= off < VRAM_SIZE:
+                end = min(VRAM_SIZE, off + len(data))
+                vram[off:end] = data[:end - off]
+                loaded += 1
+
+        palettes = bytearray(b"\xFF" * PALETTE_BYTES)
+        for first, count, label in pal_headers.get(palh, []):
+            raw = pal_data.get(label, b"")
+            off = first * 8
+            take = min(len(raw), count * 8, PALETTE_BYTES - off)
+            if take > 0:
+                palettes[off:off + take] = raw[:take]
+
+        vram_out.append(bytes(vram))
+        pal_out.append(bytes(palettes))
+
+    return vram_out, pal_out, loaded, len(headers), len(pal_data)
+
+
+def emit_c(path, layouts, tilesets, mappings, group, assets=None):
     lines = [
         "/* Generated by tools/worldmap.py - do not edit.",
         " *",
@@ -120,6 +299,25 @@ def emit_c(path, layouts, tilesets, mappings, group):
         lines.append("    {" + ",\n     ".join(chunks) + "},")
     lines += ["};", "", f"const int gb_world_mapping_count = {top};", ""]
 
+    vram_imgs, palettes = (assets if assets else ([], []))
+    count = max(1, len(vram_imgs))
+    lines.append("/* Each tileset's own tile pixels: video memory only ever")
+    lines.append(" * holds the area the player is in, so the rest of the world")
+    lines.append(" * has to bring its own. */")
+    lines.append(f"const uint8_t gb_world_tileset_vram[{count}][GB_TILESET_VRAM] = {{")
+    for img in vram_imgs or [bytes(0x2000)]:
+        vals = list(img) + [0] * (0x2000 - len(img))
+        chunks = [",".join(str(v) for v in vals[j:j + 32]) for j in range(0, 0x2000, 32)]
+        lines.append("    {" + ",\n     ".join(chunks) + "},")
+    lines += ["};", ""]
+
+    lines.append("/* And its own colours. */")
+    lines.append(f"const uint8_t gb_world_tileset_palette[{count}][GB_TILESET_PALETTE] = {{")
+    for pal in palettes or [b"\xFF" * 64]:
+        vals = list(pal) + [0xFF] * (64 - len(pal))
+        lines.append("    {" + ",".join(str(v) for v in vals) + "},")
+    lines += ["};", "", f"const int gb_world_tileset_count = {count};", ""]
+
     with open(path, "w") as fh:
         fh.write("\n".join(lines))
     return len(lines)
@@ -154,8 +352,13 @@ def main():
     print(f"    world extent    {GROUP_COLS * SMALL_W * METATILE_PX}"
           f"x{GROUP_ROWS * SMALL_H * METATILE_PX} px")
 
+    vram_imgs, pal_imgs, chunks, nheaders, npal = build_tileset_assets(args.disasm, args.game)
+    print(f"    tileset graphics {len(vram_imgs)} tilesets, "
+          f"{chunks} graphics chunks loaded")
+
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
-    n = emit_c(args.out, layouts, tilesets, mappings, args.group)
+    n = emit_c(args.out, layouts, tilesets, mappings, args.group,
+               (vram_imgs, pal_imgs))
     print(f"    wrote {args.out} ({n} lines)")
     return 0
 
