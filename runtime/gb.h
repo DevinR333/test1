@@ -133,6 +133,7 @@ struct gb_s {
 
     uint32_t framebuffer[GB_SCREEN_W * GB_SCREEN_H];
     uint8_t  joypad;         /* bit per button, 1 = pressed */
+    uint8_t  joypad_prev;    /* previous frame, for the joypad interrupt */
     uint64_t frames;         /* completed frames since reset */
     gb_frame_fn frame_cb;    /* called at VBlank with a complete framebuffer */
     void       *frame_cb_user;
@@ -182,6 +183,7 @@ uint8_t  gb_read(gb_t *gb, uint16_t addr);
 void     gb_write(gb_t *gb, uint16_t addr, uint8_t value);
 uint16_t gb_read16(gb_t *gb, uint16_t addr);
 void     gb_io_write(gb_t *gb, uint16_t addr, uint8_t value);
+uint8_t  gb_joypad_state(gb_t *gb);
 void     gb_write16(gb_t *gb, uint16_t addr, uint16_t value);
 
 /* Stack. */

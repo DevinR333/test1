@@ -40,6 +40,9 @@ uint8_t gb_read(gb_t *gb, uint16_t addr)
             /* Tally accesses so a stall can name what the game is waiting on. */
             uint8_t reg = (uint8_t)(addr - 0xFF00);
             if (gb->io_reads[reg] < 0xFFFFFFFFu) gb->io_reads[reg]++;
+            /* Sampled live: the game selects a row and reads it right away. */
+            if (reg == 0x00)
+                return gb_joypad_state(gb);
             /* Nonexistent bits read as one, which games do test. */
             return gb->io[reg] | gb_io_read_mask[reg];
         }

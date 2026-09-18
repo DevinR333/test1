@@ -205,7 +205,13 @@ void gb_io_write(gb_t *gb, uint16_t addr, uint8_t value)
 }
 
 /* The joypad register reports whichever half the game selected, active low. */
-static uint8_t read_joypad(gb_t *gb)
+/* The joypad register reports whichever half the game selected, active low.
+ *
+ * It has to be computed when read, not cached: a game selects a row by writing
+ * the register and reads it back immediately, several times. Refreshing it
+ * once per frame meant every read returned a value computed for whichever row
+ * happened to be selected at the last VBlank, so no button was ever seen. */
+uint8_t gb_joypad_state(gb_t *gb)
 {
     uint8_t sel = gb->io[R_JOYP] & 0x30;
     uint8_t bits = 0x0F;
@@ -602,7 +608,10 @@ void gb_hdma_hblank(gb_t *gb)
 /* Called from gb_sync when the PPU completes a frame. */
 void gb_on_frame(gb_t *gb)
 {
-    gb->io[R_JOYP] = read_joypad(gb);
+    if (gb->joypad & ~gb->joypad_prev)
+        gb->io[R_IF] |= INT_JOYPAD;
+    gb->joypad_prev = gb->joypad;
+
     gb->frames++;
     if (gb->frame_cb)
         gb->frame_cb(gb, gb->frame_cb_user);

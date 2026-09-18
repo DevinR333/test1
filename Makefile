@@ -9,7 +9,7 @@ ifneq ($(SYMBOLS),)
 RECOMP_ARGS += --symbols $(SYMBOLS)
 endif
 
-.PHONY: all fixture recompile report check test-present test-tiles test-jump interp run clean
+.PHONY: all fixture recompile report check test-present test-tiles test-jump test-joypad interp run clean
 
 all: check
 
@@ -23,7 +23,7 @@ report:
 	$(PYTHON) tools/gbrecomp.py $(ROM) --report-only
 
 # Verifies the emitter produces C that actually compiles.
-check: fixture recompile interp test-present test-tiles test-jump run
+check: fixture recompile interp test-present test-tiles test-jump test-joypad run
 	cp runtime/gb.h $(OUT)/
 	$(CC) -fsyntax-only $(CFLAGS) $(OUT)/*.c
 	$(CC) -fsyntax-only $(CFLAGS) runtime/alu.c runtime/memory.c
@@ -51,6 +51,16 @@ run: recompile interp
 	$(CC) -O2 -Wall -Wextra -Iruntime -I$(OUT) -o $(OUT)/harness \
 		tests/harness.c $(RUNTIME) $(OUT)/bank_*.c $(OUT)/dispatch.c
 	$(OUT)/harness tests/fixture.gb 60
+
+# The joypad reports the selected button row, computed at the moment of the
+# read: a game selects a row and reads it back immediately.
+test-joypad: interp | $(OUT)
+	@mkdir -p $(OUT)/stub
+	@printf '#ifndef GB_BANKS_H\n#define GB_BANKS_H\n#include "gb.h"\n#endif\n' > $(OUT)/stub/banks.h
+	@printf '#include "gb.h"\nconst gb_bank_fn gb_bank_table[GB_MAX_BANKS] = { 0 };\n' > $(OUT)/stub/emptytable.c
+	$(CC) -O1 -Wall -Wextra -Iruntime -I$(OUT)/stub -o $(OUT)/test_joypad \
+		tests/test_joypad.c $(OUT)/stub/emptytable.c $(RUNTIME)
+	$(OUT)/test_joypad
 
 # Both meanings of RET: an ordinary return, and the push-and-ret idiom games
 # use for computed jumps. Treating the second as a return loops forever.

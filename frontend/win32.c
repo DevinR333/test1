@@ -44,6 +44,8 @@ static struct {
     volatile LONG want_diag;
     gb_fit_mode_t fit;
     int           integer_scale;
+    float         zoom;
+    float         pan_x, pan_y;
 } app;
 
 /* Keyboard mapping. Arrows move, Z and X are B and A, matching the layout
@@ -276,7 +278,8 @@ static void paint(HWND hwnd)
     GetClientRect(hwnd, &rc);
     int cw = rc.right - rc.left, ch = rc.bottom - rc.top;
 
-    gb_viewport_t v = gb_fit_viewport(cw, ch, app.fit, 1.0f, 0, 0);
+    gb_viewport_t v = gb_fit_viewport(cw, ch, app.fit, app.zoom,
+                                     app.pan_x, app.pan_y);
 
     /* Fill the letterbox, or old pixels stay visible when the window grows. */
     if (v.dst_w < cw || v.dst_h < ch) {
@@ -296,9 +299,12 @@ static void paint(HWND hwnd)
     SetStretchBltMode(dc, COLORONCOLOR);
 
     EnterCriticalSection(&app.lock);
+    /* The source rect narrows as the zoom rises, so magnifying shows less of
+     * the screen rather than stretching what is there. */
     StretchDIBits(dc,
                   v.dst_x, v.dst_y, v.dst_w, v.dst_h,
-                  0, 0, GB_SCREEN_W, GB_SCREEN_H,
+                  (int)(v.src_x + 0.5f), (int)(v.src_y + 0.5f),
+                  (int)(v.src_w + 0.5f), (int)(v.src_h + 0.5f),
                   app.pixels, &app.bmi, DIB_RGB_COLORS, SRCCOPY);
     LeaveCriticalSection(&app.lock);
 
@@ -320,6 +326,38 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         if (msg == WM_KEYDOWN && wp == VK_ESCAPE) {
             PostMessage(hwnd, WM_CLOSE, 0, 0);
             return 0;
+        }
+        /* Zoom and pan. The Game Boy only ever renders 160x144, so zooming in
+         * magnifies and crops; there is nothing outside that to zoom out to,
+         * and 1.0 is the whole screen. */
+        if (msg == WM_KEYDOWN && (wp == VK_OEM_PLUS || wp == VK_ADD)) {
+            app.zoom = gb_clamp_zoom(app.zoom * 1.25f);
+            InvalidateRect(hwnd, NULL, TRUE);
+            return 0;
+        }
+        if (msg == WM_KEYDOWN && (wp == VK_OEM_MINUS || wp == VK_SUBTRACT)) {
+            app.zoom = gb_clamp_zoom(app.zoom / 1.25f);
+            if (app.zoom <= 1.001f) { app.zoom = 1.0f; app.pan_x = app.pan_y = 0; }
+            InvalidateRect(hwnd, NULL, TRUE);
+            return 0;
+        }
+        if (msg == WM_KEYDOWN && wp == '0') {
+            app.zoom = 1.0f; app.pan_x = app.pan_y = 0;
+            InvalidateRect(hwnd, NULL, TRUE);
+            return 0;
+        }
+        /* Ctrl with the arrows pans instead of moving the character. */
+        if (msg == WM_KEYDOWN && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            float step = 8.0f / app.zoom;
+            int panned = 1;
+            switch (wp) {
+            case VK_LEFT:  app.pan_x -= step; break;
+            case VK_RIGHT: app.pan_x += step; break;
+            case VK_UP:    app.pan_y -= step; break;
+            case VK_DOWN:  app.pan_y += step; break;
+            default: panned = 0; break;
+            }
+            if (panned) { InvalidateRect(hwnd, NULL, TRUE); return 0; }
         }
         if (msg == WM_KEYDOWN && wp == VK_F2) {
             InterlockedExchange(&app.want_diag, 1);
@@ -401,6 +439,7 @@ int main(int argc, char **argv)
 
     app.gb = &gb;
     app.fit = GB_FIT_INTEGER;
+    app.zoom = 1.0f;
     app.running = 1;
     InitializeCriticalSection(&app.lock);
 

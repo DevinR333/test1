@@ -241,6 +241,10 @@ cat <<NOTE
     Z or Backspace B
     Space         Start
     Shift         Select
+    + / -         zoom in and out
+    0             reset zoom
+    Ctrl+arrows   pan while zoomed in
     F1            switch between integer and fill scaling
+    F2            write a diagnostic snapshot
     Esc           quit
 NOTE
