@@ -632,6 +632,24 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    /* An argument naming a different cartridge is nearly always a command
+     * line left over from an earlier build. The executable knows exactly
+     * which ROM it was translated from, so if that file is still there, open
+     * it rather than refusing: the argument is a hint, not an instruction. */
+    if (GB_ROM_FINGERPRINT && fingerprint(rom, size) != (uint64_t)GB_ROM_FINGERPRINT
+        && GB_ROM_PATH[0] && strcmp(rom_path, GB_ROM_PATH) != 0) {
+        size_t own_size = 0;
+        uint8_t *own = read_file(GB_ROM_PATH, &own_size);
+        if (own && fingerprint(own, own_size) == (uint64_t)GB_ROM_FINGERPRINT) {
+            free(rom);
+            rom = own;
+            size = own_size;
+            rom_path = GB_ROM_PATH;
+        } else {
+            free(own);
+        }
+    }
+
     if (GB_ROM_FINGERPRINT && fingerprint(rom, size) != (uint64_t)GB_ROM_FINGERPRINT) {
         char msg[1400];
         snprintf(msg, sizeof(msg),
