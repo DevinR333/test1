@@ -500,16 +500,14 @@ void gb_world_draw_objects(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
  * The game tracks where its screen actually is while that happens, so the
  * screen can be placed at its real position instead and simply travel.
  */
-#define W_SCREEN_OFFSET_Y   0xCD08
-#define W_SCREEN_OFFSET_X   0xCD09
 #define W_TRANSITION_STATE  0xCD04
 #define W_TRANSITION_STATE2 0xCD05
-#define H_CAMERA_Y          0xFFA8   /* sixteen bits, low byte first */
-#define H_CAMERA_X          0xFFAA
+#define R_SCY               0x42
+#define R_SCX               0x43
 
-/* Where the tracking stands. The offsets only tell us a position to the
- * nearest screen-width, so the full position is carried from frame to frame
- * and each new reading is resolved against it. */
+/* Where the tracking stands. A scroll register only says where the screen is
+ * to the nearest 256 pixels, so the full position is carried from frame to
+ * frame and each new reading is resolved against it. */
 static struct {
     int   valid;
     int   kx, ky;      /* what to add to a reading to get a world position */
@@ -543,13 +541,22 @@ int gb_world_screen_origin(const gb_t *gb, float *out_x, float *out_y)
      * camera moves a few pixels every frame. Reading only the offset gives a
      * position that holds still for the whole transition and then jumps a
      * whole room at the end of it, which is the shift the player sees. */
-    int cx = gb->hram[H_CAMERA_X - 0xFF80]
-           | ((int)gb->hram[H_CAMERA_X + 1 - 0xFF80] << 8);
-    int cy = gb->hram[H_CAMERA_Y - 0xFF80]
-           | ((int)gb->hram[H_CAMERA_Y + 1 - 0xFF80] << 8);
-
-    int raw_x = (cx + gb->wram[W_SCREEN_OFFSET_X - 0xC000]) & 0xFF;
-    int raw_y = (cy + gb->wram[W_SCREEN_OFFSET_Y - 0xC000]) & 0xFF;
+    /* Read the scroll from the hardware registers, which is what the picture
+     * in hand was actually drawn with.
+     *
+     * The game keeps its own copy of where the screen is - a camera within
+     * the area plus the area's own offset - and updates it each frame, but
+     * the hardware does not see that until the next blanking period. So the
+     * game's copy is a frame ahead of the framebuffer, and during a crossing
+     * the screen moves four pixels a frame: composing the live screen at the
+     * game's copy put it four pixels from its own contents, which lurched in
+     * at the start of a crossing and back out at the end.
+     *
+     * The vertical register is offset because the game scrolls the room down
+     * by the height of the status bar to make room for it, so the row below
+     * the bar is the top of the room. */
+    int raw_x = gb->io[R_SCX];
+    int raw_y = (gb->io[R_SCY] + GB_STATUS_H) & 0xFF;
 
     /* Both are counted from wherever the game last set them, so they say
      * where the screen is only up to a whole multiple of 256 pixels. Standing
