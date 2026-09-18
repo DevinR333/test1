@@ -51,21 +51,57 @@ if [ -z "$ROM" ] && [ -f "$REMEMBERED" ]; then
     fi
 fi
 
+# The title in the cartridge header, at $134, up to fifteen characters.
+rom_title() {
+    dd if="$1" bs=1 skip=308 count=15 2>/dev/null | tr -d '\000' | tr -cd '\40-\176'
+}
+
 if [ -z "$ROM" ]; then
     # The places a downloaded or dumped cartridge actually ends up. MSYS2
     # mounts the Windows drives under /c, so a Windows download is reachable.
+    found=""
     for dir in . "$HOME" "$HOME/Downloads" "$HOME/Desktop" \
                /c/Users/*/Downloads /c/Users/*/Desktop /c/Users/*/Documents \
                ../oracles-disasm external/oracles-disasm; do
         [ -d "$dir" ] || continue
         for f in "$dir"/*.gbc "$dir"/*.gb; do
-            if is_rom "$f"; then ROM="$f"; break 2; fi
+            if is_rom "$f"; then found="$found$f
+"; fi
         done
     done
-    # Not "[ -n ] && echo": under set -e a false test there ends the script,
-    # and an empty result here is the normal case that the next block reports.
-    if [ -n "$ROM" ]; then
-        echo "  found a ROM: $ROM"
+
+    # Everything found, minus files that are byte for byte the same cartridge
+    # in two places, which is not a choice worth asking about.
+    uniq_found=""
+    seen=""
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        key="$(wc -c < "$f" | tr -d ' ')-$(rom_title "$f")"
+        case "$seen" in *"[$key]"*) continue ;; esac
+        seen="$seen[$key]"
+        uniq_found="$uniq_found$f
+"
+    done <<EOF
+$found
+EOF
+
+    count=$(printf '%s' "$uniq_found" | grep -c . || true)
+    if [ "$count" -eq 1 ]; then
+        ROM="$(printf '%s' "$uniq_found" | head -1)"
+        echo "  found a ROM: $ROM  [$(rom_title "$ROM")]"
+    elif [ "$count" -gt 1 ]; then
+        # Guessing here is how an executable ends up translated from one
+        # cartridge and opened with another, which crashes with no clue why.
+        printf '\033[31merror:\033[0m more than one Game Boy ROM found. Say which:\n\n' >&2
+        while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            printf '    bash %s/scripts/build-windows.sh "%s"\n' "$REPO" "$f" >&2
+            printf '        %s, %s KiB\n\n' "$(rom_title "$f")" \
+                   "$(( $(wc -c < "$f") / 1024 ))" >&2
+        done <<EOF2
+$uniq_found
+EOF2
+        exit 1
     fi
 fi
 
@@ -86,6 +122,8 @@ is_rom "$ROM" || die "$ROM does not look like a Game Boy ROM
 ROM="$(CDPATH= cd -- "$(dirname -- "$ROM")" && pwd)/$(basename -- "$ROM")"
 mkdir -p "$OUT_DIR"
 printf '%s\n' "$ROM" > "$REMEMBERED"
+printf '  ROM: %s\n       %s, %s KiB\n' "$ROM" "$(rom_title "$ROM")" \
+       "$(( $(wc -c < "$ROM") / 1024 ))"
 
 # Find a Python 3 under whatever name this environment uses.
 PY=""
@@ -317,11 +355,26 @@ echo "  $built objects ready"
 echo "  runtime and frontend at -O2"
 BUILD_STAMP="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 BUILD_REV="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+
+# Which ROM this executable was translated from. It only runs with that exact
+# file, so it checks at startup and says so rather than crashing.
+ROM_FINGERPRINT="$("$PY" - "$ROM" <<'FP'
+import sys
+h = 0xcbf29ce484222325
+for b in open(sys.argv[1], "rb").read():
+    h = ((h ^ b) * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF
+print("0x%016xULL" % h)
+FP
+)"
+ROM_SIZE="$(wc -c < "$ROM" | tr -d ' ')"
 # -mwindows suppresses the console window. Static linking means the exe runs
 # on a machine with no toolchain installed.
 "$CC_WIN" -O2 -Wall $TRACE_FLAG -Iruntime -I"$SRC_DIR" \
     -DGB_BUILD_STAMP="\"$BUILD_STAMP\"" \
     -DGB_BUILD_REV="\"$BUILD_REV\"" \
+    -DGB_ROM_FINGERPRINT="$ROM_FINGERPRINT" \
+    -DGB_ROM_SIZE="$ROM_SIZE" \
+    -DGB_ROM_PATH="\"$(printf '%s' "$ROM" | sed 's/\\/\\\\/g')\"" \
     -o "$EXE" \
     frontend/win32.c \
     runtime/alu.c runtime/memory.c runtime/ppu.c runtime/machine.c \

@@ -562,19 +562,71 @@ static uint8_t *read_file(const char *path, size_t *size)
     return buf;
 }
 
+/* The build stamps in which ROM it translated. The game's code is turned into
+ * C at build time, so the executable is bound to that exact file: opening a
+ * different one means every jump in it lands somewhere that was never there.
+ * That used to crash without explanation. */
+#ifndef GB_ROM_FINGERPRINT
+#define GB_ROM_FINGERPRINT 0ULL
+#endif
+#ifndef GB_ROM_PATH
+#define GB_ROM_PATH ""
+#endif
+#ifndef GB_ROM_SIZE
+#define GB_ROM_SIZE 0
+#endif
+
+static uint64_t fingerprint(const uint8_t *p, size_t n)
+{
+    uint64_t h = 0xcbf29ce484222325ULL;       /* FNV-1a, 64 bit */
+    for (size_t i = 0; i < n; i++) {
+        h ^= p[i];
+        h *= 0x100000001b3ULL;
+    }
+    return h;
+}
+
 int main(int argc, char **argv)
 {
-    const char *rom_path = (argc > 1) ? argv[1] : "rom.gbc";
+    /* With no argument, open the ROM this was built from - so the executable
+     * works when it is double-clicked, not only from a command line. */
+    const char *rom_path = (argc > 1) ? argv[1]
+                         : (GB_ROM_PATH[0] ? GB_ROM_PATH : "rom.gbc");
 
     size_t size = 0;
     uint8_t *rom = read_file(rom_path, &size);
+    if (!rom && argc <= 1 && GB_ROM_PATH[0]) {
+        rom_path = "rom.gbc";                 /* moved since the build */
+        rom = read_file(rom_path, &size);
+    }
     if (!rom) {
-        char msg[512];
+        char msg[1024];
         snprintf(msg, sizeof(msg),
                  "Could not open the ROM:\n\n%s\n\n"
+                 "This was built from:\n%s\n\n"
                  "Pass one on the command line, or put it beside the "
-                 "executable as rom.gbc", rom_path);
+                 "executable as rom.gbc", rom_path, GB_ROM_PATH);
         MessageBox(NULL, msg, "Oracle of Seasons", MB_ICONERROR);
+        return 1;
+    }
+
+    if (GB_ROM_FINGERPRINT && fingerprint(rom, size) != (uint64_t)GB_ROM_FINGERPRINT) {
+        char msg[1400];
+        snprintf(msg, sizeof(msg),
+                 "This build was made from a different ROM.\n\n"
+                 "Built from:  %s\n"
+                 "             %ld KiB\n\n"
+                 "You opened:  %s\n"
+                 "             %ld KiB\n\n"
+                 "The game's code is translated from the ROM when the "
+                 "executable is built, so it only runs with the exact file it "
+                 "was built from. Running it with another one would crash "
+                 "somewhere unhelpful, so it stops here instead.\n\n"
+                 "Either open the file above, or rebuild from this one:\n\n"
+                 "    bash scripts/build-windows.sh \"%s\"",
+                 GB_ROM_PATH, (long)GB_ROM_SIZE / 1024,
+                 rom_path, (long)size / 1024, rom_path);
+        MessageBox(NULL, msg, "Oracle of Seasons - wrong ROM", MB_ICONERROR);
         return 1;
     }
 
