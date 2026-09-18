@@ -34,6 +34,7 @@ extern const int     gb_world_mapping_count;
 extern const uint8_t gb_world_tileset_vram[][GB_TILESET_VRAM];
 extern const uint8_t gb_world_tileset_palette[][GB_TILESET_PALETTE];
 extern const int     gb_world_tileset_count;
+extern const uint8_t gb_world_tileset_layout[];
 
 /* Draws the world into `dst` at `scale` (1.0 shows every pixel one for one,
  * lower values shrink it). `cam_x` and `cam_y` are world pixels at the centre

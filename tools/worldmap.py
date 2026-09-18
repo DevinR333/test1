@@ -58,23 +58,56 @@ def collect_group(disasm, game, group):
     return layouts, tilesets, missing
 
 
-def collect_mappings(disasm, game):
-    """Every tileset mapping present, indexed by its number."""
-    base = os.path.join(disasm, "tileset_layouts", game)
+def collect_mappings(disasm, game, season="spring"):
+    """Metatile definitions for every tileset, keyed by tileset number.
+
+    Two directory layouts exist. A normal checkout keeps one file per tileset
+    in tileset_layouts/. The modifiable build expands them per season into
+    tileset_layouts_expanded/, named tilesetMappingsNN_<season>.bin, because
+    the seasons change what the world looks like.
+
+    Finding neither used to return an empty table, and an empty table makes
+    every metatile resolve to tile zero, which draws the entire world as one
+    repeated pattern. It raises now instead.
+    """
     out = {}
-    if not os.path.isdir(base):
-        return out
-    for name in sorted(os.listdir(base)):
-        if not name.startswith("tilesetMappings") or not name.endswith(".bin"):
+    tried = []
+
+    for sub in (os.path.join("tileset_layouts", game),
+                os.path.join("tileset_layouts_expanded", game)):
+        base = os.path.join(disasm, sub)
+        tried.append(sub)
+        if not os.path.isdir(base):
             continue
-        stem = name[len("tilesetMappings"):-len(".bin")]
-        if len(stem) != 2:
-            continue                     # skip the Indices/Attributes variants
-        try:
-            out[int(stem, 16)] = load(os.path.join(base, name))
-        except ValueError:
-            continue
-    return out
+
+        for name in sorted(os.listdir(base)):
+            if not name.startswith("tilesetMappings") or not name.endswith(".bin"):
+                continue
+            stem = name[len("tilesetMappings"):-len(".bin")]
+
+            # Either "NN" or "NN_season".
+            if "_" in stem:
+                number, _, which = stem.partition("_")
+                if which != season:
+                    continue
+            else:
+                number = stem
+            if len(number) != 2:
+                continue                 # skip the Indices/Attributes variants
+
+            try:
+                out.setdefault(int(number, 16), load(os.path.join(base, name)))
+            except ValueError:
+                continue
+
+        if out:
+            return out, sub
+
+    raise SystemExit(
+        "error: no tileset metatile definitions found.\n"
+        "  Looked for tilesetMappingsNN.bin under:\n    "
+        + "\n    ".join(tried)
+        + "\n  Without them every room draws as a single repeated tile.")
 
 
 
@@ -360,7 +393,7 @@ def main():
         raise SystemExit(f"error: {args.disasm} has no rooms/ directory")
 
     layouts, tilesets, missing = collect_group(args.disasm, args.game, args.group)
-    mappings = collect_mappings(args.disasm, args.game)
+    mappings, mapping_dir = collect_mappings(args.disasm, args.game)
 
     present = sum(1 for k, _ in layouts if k != "none")
     sizes = {}
@@ -371,7 +404,11 @@ def main():
     print(f"    rooms found     {present} of {ROOMS_PER_GROUP}"
           + (f", {missing} missing" if missing else ""))
     print(f"    room sizes      " + ", ".join(f"{k}: {v}" for k, v in sorted(sizes.items())))
-    print(f"    tileset mappings {len(mappings)} loaded")
+    print(f"    tileset mappings {len(mappings)} from {mapping_dir}")
+    if len(mappings) < 16:
+        raise SystemExit(f"error: only {len(mappings)} tileset mappings found, "
+                         "far too few. The world would draw as one repeated "
+                         "tile, so this is treated as a failure.")
     print(f"    world extent    {GROUP_COLS * SMALL_W * METATILE_PX}"
           f"x{GROUP_ROWS * SMALL_H * METATILE_PX} px")
 

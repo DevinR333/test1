@@ -277,6 +277,7 @@ cat <<NOTE
     Space         Start
     Shift         Select
     - and +       zoom out and in, while playing
+                  (at normal size the world fills the window, no bars)
     Tab           snap between normal size and fully pulled back
     0             back to normal size
     F1            switch between integer and fill scaling

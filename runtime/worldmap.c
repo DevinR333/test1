@@ -124,8 +124,8 @@ void gb_world_render(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
             /* The top bit of a room's tileset byte is a flag, not part of
              * the number. */
             int tileset = gb_world_room_tileset[room] & 0x7F;
-            int mapping = (tileset < gb_world_mapping_count) ? tileset : 0;
             int assets = (tileset < gb_world_tileset_count) ? tileset : 0;
+            int mapping = (tileset < gb_world_mapping_count) ? tileset : 0;
             const uint8_t *tvram = gb_world_tileset_vram[assets];
             const uint8_t *tpal = gb_world_tileset_palette[assets];
 

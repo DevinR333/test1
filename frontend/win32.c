@@ -333,8 +333,9 @@ static void paint(HWND hwnd)
     float by = (float)ch / GB_SCREEN_H;
     if (by < base) base = by;
 
-    if (app.zoom >= 0.999f) {
-        /* Normal play. */
+    /* Above natural size there is no world to put around the screen, so the
+     * hardware's own output is all there is to show. */
+    if (app.zoom > 1.001f) {
         gb_viewport_t v = gb_fit_viewport(cw, ch, app.fit, app.zoom,
                                           app.pan_x, app.pan_y);
         if (v.dst_w < cw || v.dst_h < ch) {
@@ -359,7 +360,11 @@ static void paint(HWND hwnd)
         return;
     }
 
-    /* Pulled back. World pixels per screen pixel. */
+    /* At natural size and below, the window is filled with world and the live
+     * screen sits in it at its own scale. At exactly 1 the screen is the size
+     * the hardware intends and the rest of a widescreen window shows the world
+     * around it, rather than black bars. Nothing is stretched: every pixel is
+     * drawn at the same scale. */
     float scale = base * app.zoom;
 
     int room = app.gb ? gb_world_active_room(app.gb) : -1;
