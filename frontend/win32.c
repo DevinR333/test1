@@ -51,6 +51,8 @@ static struct {
     volatile LONG keys;        /* currently held */
     volatile LONG keys_latched; /* pressed since the last frame, even if released */
     volatile LONG want_diag;
+    volatile LONG seamless;    /* pace room crossings by Link, not by the clock */
+    int           burst, shown_x, shown_y, settling;
     gb_fit_mode_t fit;
     int           integer_scale;
     float         zoom;
@@ -125,13 +127,67 @@ static void on_frame(gb_t *gb, void *user)
         gb_write_diagnostics(gb, path);
     }
 
-    if (app.hwnd)
-        InvalidateRect(app.hwnd, NULL, FALSE);
-
     if (!InterlockedCompareExchange(&app.running, 0, 0)) {
         gb->stopped = 1;
         return;
     }
+
+    /* Crossing a room boundary, show a frame per pixel Link moves, and run
+     * the rest as fast as they compute.
+     *
+     * The game spends about fifty frames scrolling from one room to the next,
+     * moving Link three eighths of a pixel a frame - fifteen pixels of travel
+     * stretched over nearly a second. Nothing about that is wrong; it is how
+     * the game was written, for hardware that could hold one room at a time.
+     * But it is why a world drawn in one piece still feels like a set of
+     * separate screens: the walking stops, the screen slides, the walking
+     * resumes.
+     *
+     * Every frame still runs, in order, with nothing skipped or altered - the
+     * game's logic, Link's position and the geometry of the crossing are
+     * exactly as written. What changes is which of them the window is shown.
+     * Presenting one frame for each whole pixel he moves is precisely the
+     * rate he moves at when walking normally, so the crossing takes as long
+     * as walking that far would, and looks like it: no pause, no slide, no
+     * boundary.
+     */
+    int step_x, step_y;
+    int crossing = gb_world_scrolling(gb);
+
+    /* The game also holds Link still for a few frames after the scroll ends,
+     * reloading the room it has arrived in. Left at the game's pace that is a
+     * short dead stop right after the crossing, which reads as the boundary
+     * all over again, so it is carried through under the same rule - bounded,
+     * so standing still at a boundary cannot run the game away. */
+    if (crossing)
+        app.settling = 12;
+    else if (app.settling > 0)
+        app.settling--;
+
+    if (InterlockedCompareExchange(&app.seamless, 0, 0)
+        && (crossing || app.settling > 0)
+        && gb_world_link_step(gb, &step_x, &step_y)) {
+        if (step_x == app.shown_x && step_y == app.shown_y && app.burst < 32) {
+            app.burst++;
+            return;                     /* not moved yet: no repaint, no wait */
+        }
+        /* Arriving in the new room wraps his coordinates by a whole room
+         * width, which is not him moving - counting it as movement ends the
+         * window on the very frame it is needed. */
+        int wrapped = abs(step_x - app.shown_x) > 8 || abs(step_y - app.shown_y) > 8;
+        app.shown_x = step_x;
+        app.shown_y = step_y;
+        app.burst = 0;
+        if (!crossing && !wrapped)
+            app.settling = 0;           /* walking again: back to real time */
+    } else if (gb_world_link_step(gb, &step_x, &step_y)) {
+        app.shown_x = step_x;           /* keep current, ready for the next one */
+        app.shown_y = step_y;
+        app.burst = 0;
+    }
+
+    if (app.hwnd)
+        InvalidateRect(app.hwnd, NULL, FALSE);
 
     /* Pace to real time. A waitable timer is used rather than Sleep because
      * Sleep's granularity is coarser than a frame. */
@@ -681,6 +737,7 @@ int main(int argc, char **argv)
 
     app.gb = &gb;
     app.fit = GB_FIT_INTEGER;
+    app.seamless = 1;
     app.zoom = 1.0f;
     app.running = 1;
     InitializeCriticalSection(&app.lock);

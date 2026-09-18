@@ -57,6 +57,13 @@ extern const int      gb_world_tileset_count;
 extern const uint8_t  gb_world_tileset_asset[GB_SEASONS][GB_TILESET_SLOTS];
 #define GB_TILESET_NONE 0xFF
 
+/* Link's position within his room, in whole pixels. Needs no tracking state,
+ * so it is safe to read while the window is drawing. */
+int gb_world_link_step(const gb_t *gb, int *out_x, int *out_y);
+
+/* Whether the game is part way through scrolling from one room to the next. */
+int gb_world_scrolling(const gb_t *gb);
+
 /* The season the game is in, 0 to 3. */
 int gb_world_season(const gb_t *gb);
 

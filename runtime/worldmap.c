@@ -23,6 +23,7 @@
  * room behind. */
 #define W_LOADED_TILESET 0xCD20
 #define W_SEASON         0xCC4E
+#define W_SCROLL_MODE    0xCD00   /* 8 while a screen transition scrolls */
 
 /* Metatile attribute bits, as the hardware reads them. */
 #define ATTR_PALETTE 0x07
@@ -259,6 +260,35 @@ void gb_world_render(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
  * Reading it lets the map open where the player is rather than at the middle
  * of the world. */
 #define W_ACTIVE_ROOM 0xCC4C
+
+/* The game crosses a room boundary by scrolling the whole screen over about
+ * fifty frames, moving Link at three eighths of a pixel a frame while it does.
+ * Nothing else happens in that time, so at the game's own pace it reads as a
+ * pause between one screen and the next - the thing that makes a world drawn
+ * in one piece still feel like a set of separate screens. */
+int gb_world_scrolling(const gb_t *gb)
+{
+    return gb->wram[W_SCROLL_MODE - 0xC000] == 0x08;
+}
+
+/* Link's position within the room he is counted against, in whole pixels.
+ *
+ * Unlike his world position this needs no tracking state, so the thread
+ * running the game can read it safely while the window is drawing. During a
+ * crossing it moves steadily and does not wrap; the wrap happens on the frame
+ * the crossing finishes, by which point the game is no longer scrolling. */
+#define W_LINK_OBJECT_ID 0xCC48
+
+int gb_world_link_step(const gb_t *gb, int *out_x, int *out_y)
+{
+    int object = gb->wram[W_LINK_OBJECT_ID - 0xC000];
+    if (object < 0xD0 || object > 0xDF)
+        return 0;
+    const uint8_t *o = &gb->wram[0x1000 + ((object << 8) - 0xD000)];
+    if (out_x) *out_x = o[0x0D];
+    if (out_y) *out_y = o[0x0B];
+    return 1;
+}
 
 int gb_world_season(const gb_t *gb)
 {
