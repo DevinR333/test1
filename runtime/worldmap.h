@@ -30,21 +30,35 @@
 #define GB_WORLD_W (GB_WORLD_COLS * GB_ROOM_COLS * GB_METATILE_PX)   /* 2560 */
 #define GB_WORLD_H (GB_WORLD_ROWS * GB_ROOM_ROWS * GB_METATILE_PX)   /* 2048 */
 
-extern const int     gb_world_group;
-extern const uint8_t gb_world_rooms[GB_WORLD_ROOMS][GB_ROOM_TILES];
-extern const uint8_t gb_world_room_tileset[GB_WORLD_ROOMS];
-extern const uint8_t gb_world_mappings[][GB_MAPPING_BYTES];
-extern const int     gb_world_mapping_count;
-extern const uint8_t gb_world_tileset_vram[][GB_TILESET_VRAM];
-extern const uint8_t gb_world_tileset_palette[][GB_TILESET_PALETTE];
-extern const uint8_t gb_world_tileset_palette_mask[];
-extern const int     gb_world_tileset_count;
+#define GB_TILESET_SLOTS 128   /* a room's tileset byte names one of these */
+#define GB_SEASONS       4     /* spring, summer, autumn, winter */
 
-/* A tileset's own number indexes neither of these directly: tilesets share
- * metatile definitions, and only the ones this group uses carry graphics. */
-extern const uint8_t gb_world_tileset_layout[];
-extern const uint8_t gb_world_tileset_asset[];
+extern const int     gb_world_group;
+
+/* The season changes the tiles, the colours and the layout of every room in
+ * the overworld, and the game picks it at run time - so all four are here and
+ * the renderer chooses, rather than one being baked in. Tables shared between
+ * seasons are stored once. */
+extern const uint8_t  gb_world_room_tileset[GB_WORLD_ROOMS];
+extern const uint8_t  gb_world_layouts[][GB_ROOM_TILES];
+extern const int      gb_world_layout_count;
+extern const uint16_t gb_world_room_layout[GB_SEASONS][GB_WORLD_ROOMS];
+extern const uint8_t  gb_world_mappings[][GB_MAPPING_BYTES];
+extern const int      gb_world_mapping_count;
+extern const uint16_t gb_world_tileset_mapping[GB_SEASONS][GB_TILESET_SLOTS];
+extern const uint8_t  gb_world_tileset_vram[][GB_TILESET_VRAM];
+extern const uint8_t  gb_world_tileset_palette[][GB_TILESET_PALETTE];
+extern const uint8_t  gb_world_tileset_palette_mask[];
+extern const int      gb_world_tileset_count;
+
+/* Which graphics a tileset uses in a given season, or none for one no room in
+ * this group ever asks for. Identical graphics share an entry, so two tilesets
+ * with the same number here really are interchangeable. */
+extern const uint8_t  gb_world_tileset_asset[GB_SEASONS][GB_TILESET_SLOTS];
 #define GB_TILESET_NONE 0xFF
+
+/* The season the game is in, 0 to 3. */
+int gb_world_season(const gb_t *gb);
 
 /* Draws the world into `dst` at `scale` (1.0 shows every pixel one for one,
  * lower values shrink it). `cam_x` and `cam_y` are world pixels at the centre

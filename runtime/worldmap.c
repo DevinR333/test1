@@ -9,11 +9,20 @@
  * behind it, which handles any scale without a separate path for magnifying
  * and shrinking.
  */
+#include <limits.h>
 #include <string.h>
 #include "worldmap.h"
 
 #define ROOM_PX_W (GB_ROOM_COLS * GB_METATILE_PX)   /* 160 */
 #define ROOM_PX_H (GB_ROOM_ROWS * GB_METATILE_PX)   /* 128 */
+
+/* Which tileset the machine currently has in video memory, and which season
+ * the world is in - the season decides what every room looks like. */
+/* The tileset the loaded room uses. Not wLoadedTilesetIndex ($cd28): the
+ * expanded-tilesets patch stopped keeping that one up to date, so it lags a
+ * room behind. */
+#define W_LOADED_TILESET 0xCD20
+#define W_SEASON         0xCC4E
 
 /* Metatile attribute bits, as the hardware reads them. */
 #define ATTR_PALETTE 0x07
@@ -103,6 +112,19 @@ void gb_world_render(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
     }
 
     const uint32_t backdrop = 0xFF101014u;
+
+    const int season = gb_world_season(gb);
+
+    /* Which graphics the machine is holding right now, so tiles it animates -
+     * water, flowers, the torches - can be taken from it rather than from a
+     * fixed copy that would be frozen on one frame beside a live screen that
+     * is not. Only worth trusting once a room is actually loaded. */
+    int loaded_assets = -1;
+    if (gb_world_in_overworld(gb)) {
+        int loaded = gb->wram[W_LOADED_TILESET - 0xC000] & 0x7F;
+        loaded_assets = gb_world_tileset_asset[season][loaded];
+    }
+
     const float inv = 1.0f / scale;
     const float left = cam_x - (dst_w * 0.5f) * inv;
     const float top  = cam_y - (dst_h * 0.5f) * inv;
@@ -123,63 +145,111 @@ void gb_world_render(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
         int mt_y = in_room_y / GB_METATILE_PX;
         int sub_y = in_room_y % GB_METATILE_PX;
 
-        for (int dx = 0; dx < dst_w; dx++) {
-            float wx_f = left + dx * inv;
-            int wx = (int)wx_f;
-            if (wx_f < 0 || wx >= GB_WORLD_W) {
+        /* Everything but the pixel within a tile is the same for eight world
+         * pixels in a row, and at anything near natural size that is several
+         * destination pixels. Working it out once per tile rather than once
+         * per pixel, and stepping the source position by addition rather than
+         * a multiply and a float conversion, is most of the cost of this
+         * loop: at 1920x1080 a frame was taking longer than a frame lasts,
+         * which both capped how often the window could be redrawn and -
+         * because the game's own thread waits on this - held the game itself
+         * to the same rate. That is what made a smooth scroll look like a
+         * series of jumps. */
+        int column = INT_MIN;          /* which tile column is prepared */
+        uint8_t lo = 0, hi = 0, attr = 0;
+        uint32_t shade_of[4] = { backdrop, backdrop, backdrop, backdrop };
+        int solid = 0;                 /* nothing here; use the backdrop */
+
+        long long wx_fx = (long long)(left * 65536.0f);
+        const long long step = (long long)(inv * 65536.0f);
+
+        for (int dx = 0; dx < dst_w; dx++, wx_fx += step) {
+            int wx = (int)(wx_fx >> 16);     /* arithmetic: floors, as wanted */
+            if (wx < 0 || wx >= GB_WORLD_W) {
                 row[dx] = backdrop;
                 continue;
             }
 
-            int room = room_row * GB_WORLD_COLS + (wx / ROOM_PX_W);
-            int in_room_x = wx % ROOM_PX_W;
+            if ((wx >> 3) != column) {
+                column = wx >> 3;
 
-            uint8_t metatile = gb_world_rooms[room][mt_y * GB_ROOM_COLS
-                                                    + in_room_x / GB_METATILE_PX];
-            /* The top bit of a room's tileset byte is a flag, not part of
-             * the number. */
-            int tileset = gb_world_room_tileset[room] & 0x7F;
-            int assets = gb_world_tileset_asset[tileset];
-            if (assets == GB_TILESET_NONE) {
+                int room = room_row * GB_WORLD_COLS + (wx / ROOM_PX_W);
+                int in_room_x = wx % ROOM_PX_W;
+
+                /* The top bit of a room's tileset byte is a flag, not part
+                 * of the number. */
+                int tileset = gb_world_room_tileset[room] & 0x7F;
+                int assets = gb_world_tileset_asset[season][tileset];
+                solid = (assets == GB_TILESET_NONE);
+                if (!solid) {
+                    int layout = gb_world_room_layout[season][room];
+                    uint8_t metatile =
+                        gb_world_layouts[layout][mt_y * GB_ROOM_COLS
+                                                 + in_room_x / GB_METATILE_PX];
+                    int mapping = gb_world_tileset_mapping[season][tileset];
+                    if (mapping >= gb_world_mapping_count)
+                        mapping = 0;
+
+                    /* Each metatile is four tiles: two across, two down.
+                     *
+                     * Its eight bytes are four tile indices followed by four
+                     * attribute bytes, not four pairs of the two. Reading
+                     * them as pairs takes an attribute byte as a tile index
+                     * for half of every metatile, which draws real tiles in
+                     * the wrong places - the tiles look right and the terrain
+                     * does not. The distinction is visible in the data: the
+                     * last four bytes of each metatile take only a couple of
+                     * dozen distinct values across a whole tileset, as
+                     * attribute bits do, while the first four span the range. */
+                    int sub_x = in_room_x % GB_METATILE_PX;
+                    int quadrant = (sub_y / 8) * 2 + (sub_x / 8);
+                    const uint8_t *entry = &gb_world_mappings[mapping][metatile * 8];
+                    uint8_t index = entry[quadrant];
+                    attr = entry[4 + quadrant];
+
+                    /* For the graphics the machine is holding, use the
+                     * machine's own copy: the game animates tiles in place -
+                     * water, flowers, torches - so a fixed copy is frozen on
+                     * one frame beside a live screen that is not, and the
+                     * join between them is then plainly visible. Identical
+                     * graphics share an entry, so matching numbers here mean
+                     * the machine really is holding this room's tiles. */
+                    const uint8_t *tvram, *tpal;
+                    int tmask;
+                    if (assets == loaded_assets) {
+                        tvram = gb->vram;
+                        tpal  = gb->bg_palette;
+                        tmask = 0xFF;
+                    } else {
+                        tvram = gb_world_tileset_vram[assets];
+                        tpal  = gb_world_tileset_palette[assets];
+                        tmask = gb_world_tileset_palette_mask[assets];
+                    }
+
+                    int py = sub_y % 8;
+                    if (attr & ATTR_YFLIP) py = 7 - py;
+                    uint16_t addr = tile_row_addr(index, py);
+                    int bank = (attr & ATTR_BANK) ? 1 : 0;
+                    lo = vram_at(tvram, bank, addr);
+                    hi = vram_at(tvram, bank, addr + 1);
+
+                    /* A tile has four colours; looking each up once here
+                     * keeps the palette out of the per-pixel path. */
+                    for (int k = 0; k < 4; k++)
+                        shade_of[k] = colour_of(gb, tpal, tmask,
+                                                attr & ATTR_PALETTE, k);
+                }
+            }
+
+            if (solid) {
                 row[dx] = backdrop;
                 continue;
             }
-            int mapping = gb_world_tileset_layout[tileset];
-            if (mapping >= gb_world_mapping_count)
-                mapping = 0;
-            const uint8_t *tvram = gb_world_tileset_vram[assets];
-            const uint8_t *tpal = gb_world_tileset_palette[assets];
-            int tmask = gb_world_tileset_palette_mask[assets];
 
-            /* Each metatile is four tiles: two across, two down.
-             *
-             * A metatile's eight bytes are four tile indices followed by four
-             * attribute bytes, not four pairs of the two. Reading them as
-             * pairs takes an attribute byte as a tile index for half of every
-             * metatile, which draws real tiles in the wrong places - the
-             * tiles look right and the terrain does not. The distinction is
-             * visible in the data: the last four bytes of each metatile take
-             * only a couple of dozen distinct values across a whole tileset,
-             * as attribute bits do, while the first four span the range. */
-            int sub_x = in_room_x % GB_METATILE_PX;
-            int quadrant = (sub_y / 8) * 2 + (sub_x / 8);
-            const uint8_t *entry = &gb_world_mappings[mapping][metatile * 8];
-
-            uint8_t index = entry[quadrant];
-            uint8_t attr = entry[4 + quadrant];
-
-            int px = sub_x % 8, py = sub_y % 8;
+            int px = wx & 7;
             if (attr & ATTR_XFLIP) px = 7 - px;
-            if (attr & ATTR_YFLIP) py = 7 - py;
-
-            uint16_t addr = tile_row_addr(index, py);
-            int bank = (attr & ATTR_BANK) ? 1 : 0;
-            uint8_t lo = vram_at(tvram, bank, addr);
-            uint8_t hi = vram_at(tvram, bank, addr + 1);
-
             int bit = 7 - px;
-            int shade = (((hi >> bit) & 1) << 1) | ((lo >> bit) & 1);
-            row[dx] = colour_of(gb, tpal, tmask, attr & ATTR_PALETTE, shade);
+            row[dx] = shade_of[(((hi >> bit) & 1) << 1) | ((lo >> bit) & 1)];
         }
     }
 }
@@ -189,6 +259,11 @@ void gb_world_render(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
  * Reading it lets the map open where the player is rather than at the middle
  * of the world. */
 #define W_ACTIVE_ROOM 0xCC4C
+
+int gb_world_season(const gb_t *gb)
+{
+    return gb->wram[W_SEASON - 0xC000] & (GB_SEASONS - 1);
+}
 
 int gb_world_active_room(const gb_t *gb)
 {

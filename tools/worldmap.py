@@ -21,6 +21,7 @@ files at run time.
 """
 
 import argparse
+import hashlib
 import os
 import sys
 
@@ -69,10 +70,13 @@ def collect_group(disasm, game, group, tilesets):
     return layouts, room_tilesets, missing
 
 
-def collect_mappings(disasm, game, season="spring"):
-    """Metatile definitions for every tileset, keyed by tileset number.
+SEASONS = ("spring", "summer", "autumn", "winter")
 
-    Two directory layouts exist. A normal checkout keeps one file per tileset
+
+def collect_mappings(disasm, game, season):
+    """Metatile definitions for every layout, keyed by layout number.
+
+    Two directory layouts exist. A normal checkout keeps one file per layout
     in tileset_layouts/. The modifiable build expands them per season into
     tileset_layouts_expanded/, named tilesetMappingsNN_<season>.bin, because
     the seasons change what the world looks like.
@@ -81,6 +85,7 @@ def collect_mappings(disasm, game, season="spring"):
     every metatile resolve to tile zero, which draws the entire world as one
     repeated pattern. It raises now instead.
     """
+    want = SEASONS[season]
     out = {}
     tried = []
 
@@ -99,7 +104,7 @@ def collect_mappings(disasm, game, season="spring"):
             # Either "NN" or "NN_season".
             if "_" in stem:
                 number, _, which = stem.partition("_")
-                if which != season:
+                if which != want:
                     continue
             else:
                 number = stem
@@ -119,8 +124,6 @@ def collect_mappings(disasm, game, season="spring"):
         "  Looked for tilesetMappingsNN.bin under:\n    "
         + "\n    ".join(tried)
         + "\n  Without them every room draws as a single repeated tile.")
-
-
 
 
 # --- tileset graphics and colours ----------------------------------------
@@ -210,6 +213,13 @@ def parse_unique_gfx_headers(disasm, game):
 
 TILESET_ENTRY = 8       # bytes per tileset definition
 TILESET_SLOTS = 128     # a room's tileset byte names one of these
+
+# Sizes the renderer's header fixes, repeated here so the generated tables
+# match its declarations exactly.
+GB_ROOM_TILES = SMALL_W * SMALL_H
+GB_MAPPING_BYTES = 2048
+GB_TILESET_VRAM = 0x4000
+GB_TILESET_PALETTE = 64
 
 
 def _tileset_entries(text, label):
@@ -426,112 +436,173 @@ def build_tileset_assets(disasm, game, tilesets):
     return vram_out, pal_out, mask_out, loaded, len(headers), len(pal_data)
 
 
-def emit_c(path, layouts, room_tilesets, tilesets, mappings, group,
-           used, assets=None):
+class Pool:
+    """Distinct blobs, in the order first seen.
+
+    Four seasons of a world that mostly does not change between them would
+    otherwise be four copies of almost the same megabyte.
+    """
+
+    def __init__(self):
+        self.items = []
+        self._index = {}
+
+    def add(self, *blobs):
+        key = tuple(hashlib.sha1(b).digest() for b in blobs)
+        if key not in self._index:
+            self._index[key] = len(self.items)
+            self.items.append(blobs)
+        return self._index[key]
+
+
+def _table(lines, decl, values, per_row=16):
+    lines.append(decl + " = {")
+    row = [str(v) for v in values]
+    for i in range(0, len(row), per_row):
+        lines.append("    " + ",".join(row[i:i + per_row]) + ",")
+    lines += ["};", ""]
+
+
+def _blob_table(lines, decl, blobs, size, fill=0):
+    lines.append(decl + " = {")
+    for blob in blobs:
+        vals = list(blob) + [fill] * max(0, size - len(blob))
+        chunks = [",".join(str(v) for v in vals[j:j + 32])
+                  for j in range(0, size, 32)]
+        lines.append("    {" + ",\n     ".join(chunks) + "},")
+    lines += ["};", ""]
+
+
+def emit_c(path, group, room_tilesets, seasons):
+    """`seasons` is one entry per season: layouts, tilesets, mappings, assets."""
+    layout_pool = Pool()     # a room's metatile indices
+    mapping_pool = Pool()    # a layout's metatile definitions
+    asset_pool = Pool()      # a tileset's video memory and palettes
+
+    room_index = []          # [season][room] -> layout_pool slot
+    tileset_mapping = []     # [season][tileset] -> mapping_pool slot
+    tileset_asset = []       # [season][tileset] -> asset_pool slot, or 0xFF
+
+    for entry in seasons:
+        layouts, tilesets, mappings, vram, pal, mask = entry
+
+        rooms_row = []
+        for kind, data in layouts:
+            cells = bytes(list(data[:SMALL_W * SMALL_H])
+                          + [0] * (SMALL_W * SMALL_H - len(data[:SMALL_W * SMALL_H])))
+            rooms_row.append(layout_pool.add(cells))
+        room_index.append(rooms_row)
+
+        map_row, asset_row = [], []
+        for number in range(TILESET_SLOTS):
+            info = tilesets[number] if number < len(tilesets) else None
+            blob = mappings.get(info["layout"]) if info else None
+            map_row.append(mapping_pool.add(bytes(blob[:GB_MAPPING_BYTES])
+                                            if blob else b""))
+            if info is None or number >= len(vram):
+                asset_row.append(0xFF)
+            else:
+                asset_row.append(asset_pool.add(vram[number], pal[number],
+                                                bytes([mask[number]])))
+        tileset_mapping.append(map_row)
+        tileset_asset.append(asset_row)
+
+    # Only the tilesets some room in this group asks for, in any season.
+    used = set()
+    for r in range(ROOMS_PER_GROUP):
+        used.add(room_tilesets[r] & 0x7F if r < len(room_tilesets) else 0)
+    for row in tileset_asset:
+        for number in range(TILESET_SLOTS):
+            if number not in used:
+                row[number] = 0xFF
+
+    keep = sorted({slot for row in tileset_asset for slot in row if slot != 0xFF})
+    renumber = {slot: i for i, slot in enumerate(keep)}
+    for row in tileset_asset:
+        for i, slot in enumerate(row):
+            row[i] = renumber.get(slot, 0xFF)
+
     lines = [
         "/* Generated by tools/worldmap.py - do not edit.",
         " *",
-        " * Room layouts and tileset mappings for the world map renderer.",
-        " * A group is a 16x16 grid of rooms; each small room is 10x8 metatiles",
-        " * and each metatile is four 8x8 tiles, so the group covers",
+        " * Room layouts, metatile definitions and tileset graphics for the",
+        " * world map renderer, for each of the four seasons: the season",
+        " * changes the tiles, the colours and the layout of every room, and",
+        " * the game chooses it at run time.",
+        " *",
+        f" * A group is a {GROUP_COLS}x{GROUP_ROWS} grid of rooms; each small room is",
+        f" * {SMALL_W}x{SMALL_H} metatiles of four 8x8 tiles, so the group covers",
         f" * {GROUP_COLS * SMALL_W * METATILE_PX}x{GROUP_ROWS * SMALL_H * METATILE_PX} pixels.",
         " */",
         '#include "worldmap.h"',
         "",
         f"const int gb_world_group = {group};",
         "",
-        "/* Metatile indices, one room after another in room order. */",
-        "const uint8_t gb_world_rooms[GB_WORLD_ROOMS][GB_ROOM_TILES] = {",
     ]
 
-    for kind, data in layouts:
-        cells = list(data[:SMALL_W * SMALL_H])
-        cells += [0] * (SMALL_W * SMALL_H - len(cells))
-        lines.append("    {" + ",".join(str(c) for c in cells) + "},")
+    lines.append("/* Which tileset each room uses; the same in every season. */")
+    _table(lines, "const uint8_t gb_world_room_tileset[GB_WORLD_ROOMS]",
+           [room_tilesets[i] if i < len(room_tilesets) else 0
+            for i in range(ROOMS_PER_GROUP)])
+
+    lines.append("/* Distinct room layouts, shared between seasons wherever a")
+    lines.append(" * room looks the same in more than one. */")
+    _blob_table(lines,
+                f"const uint8_t gb_world_layouts[{len(layout_pool.items)}][GB_ROOM_TILES]",
+                [b[0] for b in layout_pool.items], GB_ROOM_TILES)
+    lines.append(f"const int gb_world_layout_count = {len(layout_pool.items)};")
+    lines.append("")
+
+    lines.append("/* Which layout each room has, per season. */")
+    lines.append(f"const uint16_t gb_world_room_layout[4][GB_WORLD_ROOMS] = {{")
+    for row in room_index:
+        lines.append("    {" + ",".join(str(v) for v in row) + "},")
     lines += ["};", ""]
 
-    lines.append("/* Which tileset each room uses. */")
-    lines.append("const uint8_t gb_world_room_tileset[GB_WORLD_ROOMS] = {")
-    row = [str(room_tilesets[i] if i < len(room_tilesets) else 0)
-           for i in range(ROOMS_PER_GROUP)]
-    for i in range(0, len(row), 16):
-        lines.append("    " + ",".join(row[i:i + 16]) + ",")
+    lines.append("/* Metatile definitions: four tiles of index, then four of")
+    lines.append(" * attributes. */")
+    _blob_table(lines,
+                f"const uint8_t gb_world_mappings[{len(mapping_pool.items)}][GB_MAPPING_BYTES]",
+                [b[0] for b in mapping_pool.items], GB_MAPPING_BYTES)
+    lines.append(f"const int gb_world_mapping_count = {len(mapping_pool.items)};")
+    lines.append("")
+
+    lines.append("/* Which definitions a tileset uses, per season. */")
+    lines.append("const uint16_t gb_world_tileset_mapping[4][GB_TILESET_SLOTS] = {")
+    for row in tileset_mapping:
+        lines.append("    {" + ",".join(str(v) for v in row) + "},")
     lines += ["};", ""]
 
-    lines.append("/* Which metatile definitions each tileset uses. Tilesets")
-    lines.append(" * share these, so a tileset's own number is the wrong")
-    lines.append(" * index for all but a handful of them. */")
-    lines.append(f"const uint8_t gb_world_tileset_layout[{TILESET_SLOTS}] = {{")
-    row = [str(tilesets[i]["layout"] if i < len(tilesets) and tilesets[i] else 0)
-           for i in range(TILESET_SLOTS)]
-    for i in range(0, len(row), 16):
-        lines.append("    " + ",".join(row[i:i + 16]) + ",")
-    lines += ["};", ""]
-
-    top = max(mappings) + 1 if mappings else 1
-    lines.append("/* Metatile definitions: four tiles of index and attributes. */")
-    lines.append(f"const uint8_t gb_world_mappings[{top}][GB_MAPPING_BYTES] = {{")
-    for i in range(top):
-        data = mappings.get(i)
-        if data is None:
-            lines.append("    {0},")
-            continue
-        vals = list(data[:2048]) + [0] * max(0, 2048 - len(data))
-        chunks = [",".join(str(v) for v in vals[j:j + 32]) for j in range(0, 2048, 32)]
-        lines.append("    {" + ",\n     ".join(chunks) + "},")
-    lines += ["};", "", f"const int gb_world_mapping_count = {top};", ""]
-
-    vram_imgs, palettes, masks = (assets if assets else ([], [], []))
-
-    # Only the tilesets this group's rooms ask for. All 128 would be a couple
-    # of megabytes of tile pixels, nearly all of it dungeons and interiors the
-    # world map never draws.
-    slot_of = [0xFF] * TILESET_SLOTS
-    for slot, number in enumerate(used):
-        slot_of[number] = slot
-
-    lines.append("/* Where each tileset's graphics are, or 0xFF for one this")
-    lines.append(" * group never uses. */")
-    lines.append(f"const uint8_t gb_world_tileset_asset[{TILESET_SLOTS}] = {{")
-    row = [str(v) for v in slot_of]
-    for i in range(0, len(row), 16):
-        lines.append("    " + ",".join(row[i:i + 16]) + ",")
-    lines += ["};", ""]
-
-    vram_imgs = [vram_imgs[n] for n in used] if vram_imgs else []
-    palettes = [palettes[n] for n in used] if palettes else []
-    masks = [masks[n] for n in used] if masks else []
-    count = max(1, len(vram_imgs))
-    lines.append("/* Each tileset's own tile pixels: video memory only ever")
+    kept = [asset_pool.items[slot] for slot in keep]
+    count = max(1, len(kept))
+    lines.append("/* Each tileset's own tile pixels - video memory only ever")
     lines.append(" * holds the area the player is in, so the rest of the world")
-    lines.append(" * has to bring its own. */")
-    lines.append(f"const uint8_t gb_world_tileset_vram[{count}][GB_TILESET_VRAM] = {{")
-    span = VRAM_SIZE * VRAM_BANKS
-    for img in vram_imgs or [bytes(span)]:
-        vals = list(img) + [0] * (span - len(img))
-        chunks = [",".join(str(v) for v in vals[j:j + 32]) for j in range(0, span, 32)]
-        lines.append("    {" + ",\n     ".join(chunks) + "},")
-    lines += ["};", ""]
+    lines.append(" * has to bring its own - and its colours. */")
+    _blob_table(lines,
+                f"const uint8_t gb_world_tileset_vram[{count}][GB_TILESET_VRAM]",
+                [k[0] for k in kept] or [bytes(GB_TILESET_VRAM)], GB_TILESET_VRAM)
+    _blob_table(lines,
+                f"const uint8_t gb_world_tileset_palette[{count}][GB_TILESET_PALETTE]",
+                [k[1] for k in kept] or [b"\xFF" * GB_TILESET_PALETTE],
+                GB_TILESET_PALETTE, fill=0xFF)
+    lines.append("/* Which of the eight palettes a tileset actually sets. The")
+    lines.append(" * two it leaves alone are shared across the whole game and")
+    lines.append(" * loaded once, so they come from the running machine. */")
+    _table(lines, f"const uint8_t gb_world_tileset_palette_mask[{count}]",
+           [k[2][0] for k in kept] or [0])
+    lines.append(f"const int gb_world_tileset_count = {count};")
+    lines.append("")
 
-    lines.append("/* And its own colours. */")
-    lines.append(f"const uint8_t gb_world_tileset_palette[{count}][GB_TILESET_PALETTE] = {{")
-    for pal in palettes or [b"\xFF" * 64]:
-        vals = list(pal) + [0xFF] * (64 - len(pal))
-        lines.append("    {" + ",".join(str(v) for v in vals) + "},")
+    lines.append("/* Where a tileset's graphics are, per season, or none for a")
+    lines.append(" * tileset no room in this group uses. */")
+    lines.append("const uint8_t gb_world_tileset_asset[4][GB_TILESET_SLOTS] = {")
+    for row in tileset_asset:
+        lines.append("    {" + ",".join(str(v) for v in row) + "},")
     lines += ["};", ""]
-
-    lines.append("/* Which of those eight a tileset actually sets. The two it")
-    lines.append(" * leaves alone are shared across the whole game and loaded")
-    lines.append(" * once, so they are read from the running machine. */")
-    lines.append(f"const uint8_t gb_world_tileset_palette_mask[{count}] = {{")
-    row = [str(m) for m in (masks or [0])]
-    for i in range(0, len(row), 16):
-        lines.append("    " + ",".join(row[i:i + 16]) + ",")
-    lines += ["};", "", f"const int gb_world_tileset_count = {count};", ""]
 
     with open(path, "w") as fh:
         fh.write("\n".join(lines))
-    return len(lines)
+    return len(lines), len(layout_pool.items), len(mapping_pool.items), count
 
 
 def main():
@@ -547,50 +618,45 @@ def main():
     if not os.path.isdir(os.path.join(args.disasm, "rooms")):
         raise SystemExit(f"error: {args.disasm} has no rooms/ directory")
 
-    tilesets = parse_tilesets(args.disasm, args.game)
-    if not tilesets:
-        raise SystemExit("error: no tileset definitions found in "
-                         f"data/{args.game}/tilesets.s")
-    layouts, room_tilesets, missing = collect_group(args.disasm, args.game,
-                                                   args.group, tilesets)
-    mappings, mapping_dir = collect_mappings(args.disasm, args.game)
-
-    present = sum(1 for k, _ in layouts if k != "none")
-    sizes = {}
-    for kind, _ in layouts:
-        sizes[kind] = sizes.get(kind, 0) + 1
-
     print(f"  group {args.group} ({args.game})")
-    print(f"    rooms found     {present} of {ROOMS_PER_GROUP}"
-          + (f", {missing} missing" if missing else ""))
-    print(f"    room sizes      " + ", ".join(f"{k}: {v}" for k, v in sorted(sizes.items())))
-    print(f"    tileset mappings {len(mappings)} from {mapping_dir}")
-    if len(mappings) < 16:
-        raise SystemExit(f"error: only {len(mappings)} tileset mappings found, "
-                         "far too few. The world would draw as one repeated "
-                         "tile, so this is treated as a failure.")
+
+    seasons = []
+    room_tilesets = None
+    for season, name in enumerate(SEASONS):
+        tilesets = parse_tilesets(args.disasm, args.game, season)
+        if not tilesets:
+            raise SystemExit("error: no tileset definitions found in "
+                             f"data/{args.game}/tilesets.s")
+        layouts, room_tilesets, missing = collect_group(args.disasm, args.game,
+                                                        args.group, tilesets)
+        mappings, mapping_dir = collect_mappings(args.disasm, args.game, season)
+        if len(mappings) < 16:
+            raise SystemExit(f"error: only {len(mappings)} metatile tables found "
+                             f"for {name}, far too few. The world would draw as "
+                             "one repeated tile, so this is a failure.")
+
+        vram, pal, mask, chunks, _, _ = build_tileset_assets(args.disasm,
+                                                             args.game, tilesets)
+        used = sorted({room_tilesets[i] & 0x7F for i in range(ROOMS_PER_GROUP)})
+        blank = [t for t in used if t >= len(mask) or not mask[t]]
+        if blank:
+            raise SystemExit(f"error: {name}: tilesets with no palettes at all: "
+                             + ", ".join(hex(t) for t in blank))
+
+        present = sum(1 for k, _ in layouts if k != "none")
+        print(f"    {name:<7} rooms {present}/{ROOMS_PER_GROUP}"
+              + (f" ({missing} missing)" if missing else "")
+              + f", {len(mappings)} metatile tables, {chunks} graphics chunks")
+        seasons.append((layouts, tilesets, mappings, vram, pal, mask))
+
+    print(f"    metatile tables from {mapping_dir}")
     print(f"    world extent    {GROUP_COLS * SMALL_W * METATILE_PX}"
           f"x{GROUP_ROWS * SMALL_H * METATILE_PX} px")
 
-    (vram_imgs, pal_imgs, pal_masks, chunks,
-     nheaders, npal) = build_tileset_assets(args.disasm, args.game, tilesets)
-    print(f"    tileset graphics {len(vram_imgs)} tilesets, "
-          f"{chunks} graphics chunks loaded")
-
-    used = sorted({room_tilesets[i] & 0x7F for i in range(ROOMS_PER_GROUP)})
-    lost = [t for t in used if t >= len(tilesets) or tilesets[t] is None]
-    if lost:
-        raise SystemExit("error: rooms use tilesets with no definition: "
-                         + ", ".join(hex(t) for t in lost))
-    blank = [t for t in used if not pal_masks[t]]
-    if blank:
-        raise SystemExit("error: tilesets with no palettes at all: "
-                         + ", ".join(hex(t) for t in blank))
-    print(f"    tilesets in use  {len(used)}, all with graphics and palettes")
-
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
-    n = emit_c(args.out, layouts, room_tilesets, tilesets, mappings, args.group,
-               used, (vram_imgs, pal_imgs, pal_masks))
+    n, nlayout, nmap, nassets = emit_c(args.out, args.group, room_tilesets, seasons)
+    print(f"    distinct        {nlayout} room layouts, {nmap} metatile tables, "
+          f"{nassets} tileset graphics")
     print(f"    wrote {args.out} ({n} lines)")
     return 0
 

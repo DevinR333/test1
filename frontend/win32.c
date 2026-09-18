@@ -38,6 +38,13 @@ static struct {
     HANDLE        thread;
     HANDLE        timer;
     CRITICAL_SECTION lock;
+
+    /* The machine as of one finished frame, and the window's own copy of it.
+     * Copying is cheap; rendering is not, so the game's thread is never left
+     * waiting on a redraw. */
+    gb_t          snapshot;      /* written by the game thread */
+    gb_t          view;          /* read by the window, under no lock */
+    volatile LONG have_frame;
     uint32_t      pixels[GB_SCREEN_W * GB_SCREEN_H];   /* presented copy */
     BITMAPINFO    bmi;
     volatile LONG running;
@@ -85,8 +92,18 @@ static void on_frame(gb_t *gb, void *user)
 {
     (void)user;
 
+    /* Hand the window a copy of the whole machine, not just the screen.
+     *
+     * The world drawn around the live screen comes from video memory, work
+     * RAM and the palettes, and the live screen comes from the framebuffer.
+     * Reading those from a running machine means they can be from different
+     * frames - the world a few frames ahead of the screen sitting in it - and
+     * that is exactly what "the parts outside the screen do not line up"
+     * looks like. One copy, taken at one instant, cannot disagree with
+     * itself. */
     EnterCriticalSection(&app.lock);
-    memcpy(app.pixels, gb->framebuffer, sizeof(app.pixels));
+    memcpy(&app.snapshot, gb, sizeof(app.snapshot));
+    app.have_frame = 1;
     LeaveCriticalSection(&app.lock);
 
     /* Held keys, plus anything pressed and released since the last frame.
@@ -328,6 +345,18 @@ static void paint(HWND hwnd)
     int cw = rc.right - rc.left, ch = rc.bottom - rc.top;
     if (cw <= 0 || ch <= 0) { EndPaint(hwnd, &ps); return; }
 
+    /* One frame of the machine, copied out quickly, then drawn at leisure.
+     * Drawing used to happen with the lock held, so the game's thread sat
+     * waiting on it - at a large window size that alone held the game below
+     * its own frame rate. */
+    EnterCriticalSection(&app.lock);
+    memcpy(&app.view, &app.snapshot, sizeof(app.view));
+    memcpy(app.pixels, app.view.framebuffer, sizeof(app.pixels));
+    int have = app.have_frame;
+    LeaveCriticalSection(&app.lock);
+
+    const gb_t *view = have ? &app.view : NULL;
+
     SetStretchBltMode(dc, COLORONCOLOR);
 
     /* At zoom 1 the screen is as large as it can be while staying square. */
@@ -339,7 +368,7 @@ static void paint(HWND hwnd)
      * there anywhere the world data does not describe - menus, cutscenes and
      * the opening - where surrounding the screen with overworld scenery would
      * show somewhere the player is not. */
-    int world_ok = app.gb && gb_world_in_overworld(app.gb);
+    int world_ok = view && gb_world_in_overworld(view);
     if (app.zoom > 1.001f || !world_ok) {
         app.cam_valid = 0;
         float z = app.zoom < 1.0f ? 1.0f : app.zoom;
@@ -357,12 +386,10 @@ static void paint(HWND hwnd)
                 if (bars[i].right > bars[i].left && bars[i].bottom > bars[i].top)
                     FillRect(dc, &bars[i], bg);
         }
-        EnterCriticalSection(&app.lock);
         StretchDIBits(dc, v.dst_x, v.dst_y, v.dst_w, v.dst_h,
                       (int)(v.src_x + 0.5f), (int)(v.src_y + 0.5f),
                       (int)(v.src_w + 0.5f), (int)(v.src_h + 0.5f),
                       app.pixels, &app.bmi, DIB_RGB_COLORS, SRCCOPY);
-        LeaveCriticalSection(&app.lock);
         EndPaint(hwnd, &ps);
         return;
     }
@@ -374,15 +401,14 @@ static void paint(HWND hwnd)
      * drawn at the same scale. */
     float scale = base * app.zoom;
 
-    int room = app.gb ? gb_world_active_room(app.gb) : -1;
+    int room = gb_world_active_room(view);
     if (room < 0) room = 0;
 
     /* Where the screen actually is, which during a room transition is
      * somewhere between two rooms rather than at either one's corner. */
     float screen_x = (room % GB_WORLD_COLS) * 160.0f;
     float screen_y = (room / GB_WORLD_COLS) * 128.0f;
-    if (app.gb)
-        gb_world_screen_origin(app.gb, &screen_x, &screen_y);
+    gb_world_screen_origin(view, &screen_x, &screen_y);
 
     /* The camera follows Link, not the screen.
      *
@@ -396,9 +422,9 @@ static void paint(HWND hwnd)
      * stay lined up with the world drawn around them throughout. */
     float cam_x = screen_x + 80.0f;
     float cam_y = screen_y + 64.0f;
-    if (app.gb) {
+    {
         float lx, ly;
-        if (gb_world_link_position(app.gb, &lx, &ly)) {
+        if (gb_world_link_position(view, &lx, &ly)) {
             cam_x = lx;
             cam_y = ly;
         }
@@ -421,9 +447,7 @@ static void paint(HWND hwnd)
     }
     if (!app.map_pixels) { EndPaint(hwnd, &ps); return; }
 
-    EnterCriticalSection(&app.lock);
-    gb_world_render(app.gb, app.map_pixels, cw, ch, cam_x, cam_y, scale);
-    LeaveCriticalSection(&app.lock);
+    gb_world_render(view, app.map_pixels, cw, ch, cam_x, cam_y, scale);
 
     /* The surrounding world fills the window, so a widescreen display shows
      * more world across rather than bars. */
@@ -442,7 +466,6 @@ static void paint(HWND hwnd)
     if (lw < 1) lw = 1;
     if (lh < 1) lh = 1;
 
-    EnterCriticalSection(&app.lock);
     /* Only the part of the screen showing the room. The status bar covers the
      * top sixteen rows - the game scrolls the room by sixteen less than its
      * true position to make room for it - so the room starts on row 16, and
@@ -450,7 +473,6 @@ static void paint(HWND hwnd)
      * hearts and rupees into it. */
     StretchDIBits(dc, lx, ly, lw, lh, 0, GB_STATUS_H, GB_SCREEN_W, 128,
                   app.pixels, &app.bmi, DIB_RGB_COLORS, SRCCOPY);
-    LeaveCriticalSection(&app.lock);
 
     EndPaint(hwnd, &ps);
 }

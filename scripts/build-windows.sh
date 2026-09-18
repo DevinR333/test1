@@ -259,16 +259,18 @@ if [ -n "${NO_MAP:-}" ]; then
     cat > "$OUT_DIR/world_data.c" <<'STUB'
 #include "worldmap.h"
 const int gb_world_group = 0;
-const uint8_t gb_world_rooms[GB_WORLD_ROOMS][GB_ROOM_TILES] = {{0}};
 const uint8_t gb_world_room_tileset[GB_WORLD_ROOMS] = {0};
-const uint8_t gb_world_tileset_layout[128] = {0};
-const uint8_t gb_world_tileset_asset[128] = {[0 ... 127] = GB_TILESET_NONE};
+const uint8_t gb_world_layouts[1][GB_ROOM_TILES] = {{0}};
+const int gb_world_layout_count = 1;
+const uint16_t gb_world_room_layout[GB_SEASONS][GB_WORLD_ROOMS] = {{0}};
 const uint8_t gb_world_mappings[1][GB_MAPPING_BYTES] = {{0}};
 const int gb_world_mapping_count = 1;
+const uint16_t gb_world_tileset_mapping[GB_SEASONS][GB_TILESET_SLOTS] = {{0}};
 const uint8_t gb_world_tileset_vram[1][GB_TILESET_VRAM] = {{0}};
 const uint8_t gb_world_tileset_palette[1][GB_TILESET_PALETTE] = {{0}};
 const uint8_t gb_world_tileset_palette_mask[1] = {0};
 const int gb_world_tileset_count = 0;
+const uint8_t gb_world_tileset_asset[GB_SEASONS][GB_TILESET_SLOTS] = {{0}};
 STUB
     WORLD_SRC="$OUT_DIR/world_data.c runtime/worldmap.c"
 fi
