@@ -129,14 +129,22 @@ void gb_world_render(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
             const uint8_t *tvram = gb_world_tileset_vram[assets];
             const uint8_t *tpal = gb_world_tileset_palette[assets];
 
-            /* Each metatile is four tiles: two across, two down. */
+            /* Each metatile is four tiles: two across, two down.
+             *
+             * A metatile's eight bytes are four tile indices followed by four
+             * attribute bytes, not four pairs of the two. Reading them as
+             * pairs takes an attribute byte as a tile index for half of every
+             * metatile, which draws real tiles in the wrong places - the
+             * tiles look right and the terrain does not. The distinction is
+             * visible in the data: the last four bytes of each metatile take
+             * only a couple of dozen distinct values across a whole tileset,
+             * as attribute bits do, while the first four span the range. */
             int sub_x = in_room_x % GB_METATILE_PX;
             int quadrant = (sub_y / 8) * 2 + (sub_x / 8);
-            const uint8_t *entry =
-                &gb_world_mappings[mapping][metatile * 8 + quadrant * 2];
+            const uint8_t *entry = &gb_world_mappings[mapping][metatile * 8];
 
-            uint8_t index = entry[0];
-            uint8_t attr = entry[1];
+            uint8_t index = entry[quadrant];
+            uint8_t attr = entry[4 + quadrant];
 
             int px = sub_x % 8, py = sub_y % 8;
             if (attr & ATTR_XFLIP) px = 7 - px;

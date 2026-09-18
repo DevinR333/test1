@@ -156,6 +156,34 @@ def parse_gfx_headers(disasm, game):
     return out
 
 
+def parse_unique_gfx_headers(disasm, game):
+    """UNIQUE_GFXH name -> [(gfx file, destination address)].
+
+    A tileset names two graphics headers: a shared one for the terrain its
+    whole region uses, and a unique one carrying the tiles particular to that
+    area. Loading only the shared one leaves gaps in video memory, and tile
+    indices pointing into those gaps draw as whatever happens to be there.
+    """
+    out, cur = {}, None
+    path = os.path.join(disasm, "data", game, "uniqueGfxHeaders.s")
+    if not os.path.exists(path):
+        return out
+    for line in open(path, errors="replace"):
+        line = _strip(line).strip()
+        m = re.match(r"m_UniqueGfxHeaderStart\s+\$?[0-9a-fA-F]+,\s*(\w+)", line)
+        if m:
+            cur = m.group(1)
+            out[cur] = []
+            continue
+        if line.startswith("m_GfxHeaderEnd"):
+            cur = None
+            continue
+        m = re.match(r"m_GfxHeader\s+(\w+),\s*\$([0-9a-fA-F]+)", line)
+        if m and cur is not None:
+            out[cur].append((m.group(1), int(m.group(2), 16) & 0xFFFE))
+    return out
+
+
 def parse_tilesets(disasm, game):
     """Tileset index -> (GFXH name, PALH name, numeric palette header).
 
@@ -183,9 +211,11 @@ def parse_tilesets(disasm, game):
         gfxh = re.search(r"\b(GFXH_\w+)", body)
         palh = re.search(r"\b(PALH_\w+)", body)
         base = re.search(r"\.db\s+\$([0-9a-fA-F]+),\s*\$([0-9a-fA-F]+)", body)
+        uniq = re.search(r"\b(UNIQUE_GFXH_\w+)", body)
         out.append((gfxh.group(1) if gfxh else None,
                     palh.group(1) if palh else None,
-                    int(base.group(2), 16) if base else None))
+                    int(base.group(2), 16) if base else None,
+                    uniq.group(1) if uniq else None))
     return out
 
 
@@ -271,6 +301,7 @@ def gfx_tile_bytes(path):
 def build_tileset_assets(disasm, game):
     """Per tileset: an image of video memory, and its background palettes."""
     headers = parse_gfx_headers(disasm, game)
+    unique = parse_unique_gfx_headers(disasm, game)
     tilesets = parse_tilesets(disasm, game)
     pal_headers = parse_palette_headers(disasm, game)
     pal_data = parse_palette_data(disasm, game)
@@ -278,9 +309,11 @@ def build_tileset_assets(disasm, game):
     vram_out, pal_out, loaded = [], [], 0
     cache = {}
 
-    for gfxh, palh, base_idx in tilesets:
+    for gfxh, palh, base_idx, uniqh in tilesets:
         vram = bytearray(VRAM_SIZE)
-        for name, dest in headers.get(gfxh, []):
+        # Shared terrain first, then the area's own tiles over the top, which
+        # is the order the game loads them in.
+        for name, dest in list(headers.get(gfxh, [])) + list(unique.get(uniqh, [])):
             if name not in cache:
                 path = find_gfx_file(disasm, game, name)
                 cache[name] = gfx_tile_bytes(path) if path else b""

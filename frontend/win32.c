@@ -579,7 +579,12 @@ int main(int argc, char **argv)
     wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
     RegisterClass(&wc);
 
-    RECT want = { 0, 0, GB_SCREEN_W * DEFAULT_SCALE, GB_SCREEN_H * DEFAULT_SCALE };
+    /* Open at 16:9. The screen's own height sets the scale, and the extra
+     * width shows more of the world beside it, so the original view is
+     * expanded rather than cropped or stretched. */
+    int win_h = GB_SCREEN_H * DEFAULT_SCALE;
+    int win_w = win_h * 16 / 9;
+    RECT want = { 0, 0, win_w, win_h };
     AdjustWindowRect(&want, WS_OVERLAPPEDWINDOW, FALSE);
 
     app.hwnd = CreateWindow(WINDOW_CLASS, "Oracle of Seasons",
