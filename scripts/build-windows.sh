@@ -258,7 +258,8 @@ cat <<NOTE
     Z or Backspace B
     Space         Start
     Shift         Select
-    Tab           world map view (whole world, free zoom)
+    Tab           world map view; keep pressing - to zoom out into it
+    0             in the map: fill the window, or fit the whole world
     + / -         zoom in and out
     0             reset zoom
     Ctrl+arrows   pan while zoomed in

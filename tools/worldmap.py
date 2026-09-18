@@ -124,7 +124,14 @@ def parse_gfx_headers(disasm, game):
 
 
 def parse_tilesets(disasm, game):
-    """Tileset index -> (GFXH name, PALH name), in table order."""
+    """Tileset index -> (GFXH name, PALH name, numeric palette header).
+
+    A tileset entry opens with two bytes, the second of which is a palette
+    header index. That header supplies palettes 0 and 1; the named PALH_
+    header supplies 2 to 7. Reading only the named one left the first two
+    unset, and unset palettes are white, which blanked about a fifth of the
+    world.
+    """
     path = os.path.join(disasm, "data", game, "tilesets.s")
     if not os.path.exists(path):
         return []
@@ -142,23 +149,34 @@ def parse_tilesets(disasm, game):
         body = m.group(1) if m else ""
         gfxh = re.search(r"\b(GFXH_\w+)", body)
         palh = re.search(r"\b(PALH_\w+)", body)
+        base = re.search(r"\.db\s+\$([0-9a-fA-F]+),\s*\$([0-9a-fA-F]+)", body)
         out.append((gfxh.group(1) if gfxh else None,
-                    palh.group(1) if palh else None))
+                    palh.group(1) if palh else None,
+                    int(base.group(2), 16) if base else None))
     return out
 
 
 def parse_palette_headers(disasm, game):
-    """PALH name -> [(first palette, count, data label)] for backgrounds."""
+    """Background palette entries, keyed by name and by numeric index.
+
+    A tileset names one header for palettes 2 to 7 and refers to another by
+    number for palettes 0 and 1. Reading only the named one left the first two
+    palettes unset, and they are white by default, so roughly a fifth of the
+    world rendered blank.
+    """
     out, cur = {}, None
     path = os.path.join(disasm, "data", game, "paletteHeaders.s")
     if not os.path.exists(path):
         return out
     for line in open(path, errors="replace"):
         line = _strip(line).strip()
-        m = re.match(r"m_PaletteHeaderStart\s+\$?[0-9a-fA-F]+,\s*(\w+)", line)
+        m = re.match(r"m_PaletteHeaderStart\s+\$?([0-9a-fA-F]+),\s*(\w+)", line)
         if m:
-            cur = m.group(1)
+            cur = m.group(2)
             out[cur] = []
+            # Also reachable by the number the header was declared with, which
+            # is how a tileset refers to the header for palettes 0 and 1.
+            out[("index", int(m.group(1), 16))] = out[cur]
             continue
         m = re.match(r"m_PaletteHeaderBg\s+(\d+),\s*(\d+),\s*(\w+)", line)
         if m and cur is not None:
@@ -227,7 +245,7 @@ def build_tileset_assets(disasm, game):
     vram_out, pal_out, loaded = [], [], 0
     cache = {}
 
-    for gfxh, palh in tilesets:
+    for gfxh, palh, base_idx in tilesets:
         vram = bytearray(VRAM_SIZE)
         for name, dest in headers.get(gfxh, []):
             if name not in cache:
@@ -243,7 +261,12 @@ def build_tileset_assets(disasm, game):
                 loaded += 1
 
         palettes = bytearray(b"\xFF" * PALETTE_BYTES)
-        for first, count, label in pal_headers.get(palh, []):
+        # The numbered header supplies palettes 0 and 1, the named one 2 to 7.
+        sources = []
+        if base_idx is not None:
+            sources += pal_headers.get(("index", base_idx), [])
+        sources += pal_headers.get(palh, [])
+        for first, count, label in sources:
             raw = pal_data.get(label, b"")
             off = first * 8
             take = min(len(raw), count * 8, PALETTE_BYTES - off)

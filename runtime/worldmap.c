@@ -63,6 +63,13 @@ float gb_world_fit_scale(int dst_w, int dst_h)
     return sx < sy ? sx : sy;
 }
 
+float gb_world_cover_scale(int dst_w, int dst_h)
+{
+    float sx = (float)dst_w / GB_WORLD_W;
+    float sy = (float)dst_h / GB_WORLD_H;
+    return sx > sy ? sx : sy;
+}
+
 void gb_world_render(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
                      float cam_x, float cam_y, float scale)
 {
@@ -180,6 +187,85 @@ void gb_world_mark_room(uint32_t *dst, int dst_w, int dst_h,
             int xa = x0 - t, xb = x1 + t;
             if (xa >= 0 && xa < dst_w) dst[(size_t)y * dst_w + xa] = mark;
             if (xb >= 0 && xb < dst_w) dst[(size_t)y * dst_w + xb] = mark;
+        }
+    }
+}
+
+
+/* Objects - the player, enemies, anything else the game is running - live in
+ * the hardware's object memory at their current positions, and their tiles are
+ * in video memory because the game is drawing them right now. Both are read
+ * live, so they move on the map as they move in the game.
+ *
+ * Only the room being simulated has any: the game runs one room at a time, so
+ * elsewhere on the map there is genuinely nothing to draw.
+ */
+void gb_world_draw_objects(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
+                           float cam_x, float cam_y, float scale, int room)
+{
+    if (!dst || room < 0 || room >= GB_WORLD_ROOMS || scale <= 0.0f)
+        return;
+
+    float room_x = (float)(room % GB_WORLD_COLS) * ROOM_PX_W;
+    float room_y = (float)(room / GB_WORLD_COLS) * ROOM_PX_H;
+    float left = cam_x - (dst_w * 0.5f) / scale;
+    float top  = cam_y - (dst_h * 0.5f) / scale;
+
+    int tall = (gb->io[0x40] & 0x04) ? 16 : 8;
+
+    /* Later entries draw first so earlier ones end up on top, matching the
+     * hardware's priority. */
+    for (int i = 39; i >= 0; i--) {
+        int oy = gb->oam[i * 4] - 16;
+        int ox = gb->oam[i * 4 + 1] - 8;
+        uint8_t index = gb->oam[i * 4 + 2];
+        uint8_t attr = gb->oam[i * 4 + 3];
+
+        /* The hardware hides an object by parking it outside the screen. */
+        if (gb->oam[i * 4] == 0 || gb->oam[i * 4] >= 160) continue;
+        if (gb->oam[i * 4 + 1] == 0 || gb->oam[i * 4 + 1] >= 168) continue;
+
+        if (tall == 16) index &= 0xFE;
+
+        for (int py = 0; py < tall; py++) {
+            for (int px = 0; px < 8; px++) {
+                int ty = (attr & ATTR_YFLIP) ? tall - 1 - py : py;
+                int tx = (attr & ATTR_XFLIP) ? 7 - px : px;
+
+                uint16_t addr = 0x8000 + index * 16 + ty * 2;
+                int bank = (gb->cgb && (attr & ATTR_BANK)) ? 1 : 0;
+                uint8_t lo = gb->vram[(bank ? 0x2000 : 0) + (addr - 0x8000)];
+                uint8_t hi = gb->vram[(bank ? 0x2000 : 0) + (addr - 0x8000) + 1];
+
+                int bit = 7 - tx;
+                int shade = (((hi >> bit) & 1) << 1) | ((lo >> bit) & 1);
+                if (shade == 0) continue;          /* transparent */
+
+                /* One world pixel can cover several screen pixels, so fill
+                 * the whole footprint rather than leaving gaps when zoomed. */
+                float wx = room_x + ox + px;
+                float wy = room_y + oy + py;
+                int sx0 = (int)((wx - left) * scale);
+                int sy0 = (int)((wy - top) * scale);
+                int sx1 = (int)((wx + 1 - left) * scale);
+                int sy1 = (int)((wy + 1 - top) * scale);
+                if (sx1 <= sx0) sx1 = sx0 + 1;
+                if (sy1 <= sy0) sy1 = sy0 + 1;
+
+                int pal = gb->cgb ? (attr & ATTR_PALETTE) : 0;
+                uint32_t colour = gb->cgb
+                    ? colour_of(gb, gb->obj_palette, pal, shade)
+                    : DMG_SHADES[((attr & 0x10 ? gb->io[0x49] : gb->io[0x48])
+                                  >> (shade * 2)) & 3];
+
+                for (int y = sy0; y < sy1; y++) {
+                    if (y < 0 || y >= dst_h) continue;
+                    for (int x = sx0; x < sx1; x++) {
+                        if (x < 0 || x >= dst_w) continue;
+                        dst[(size_t)y * dst_w + x] = colour;
+                    }
+                }
+            }
         }
     }
 }

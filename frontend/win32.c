@@ -52,6 +52,7 @@ static struct {
     /* World map view: the whole world drawn from its room data, at any
      * scale, rather than the hardware's 160x144 window. */
     int           map_mode;
+    int           map_show_all;   /* whole world with bars, or fill the window */
     float         map_scale;
     float         map_cam_x, map_cam_y;
     uint32_t     *map_pixels;
@@ -110,7 +111,7 @@ static void on_frame(gb_t *gb, void *user)
     }
 
     if (app.hwnd)
-        InvalidateRect(app.hwnd, NULL, app.map_mode ? TRUE : FALSE);
+        InvalidateRect(app.hwnd, NULL, FALSE);
 
     if (!InterlockedCompareExchange(&app.running, 0, 0)) {
         gb->stopped = 1;
@@ -314,8 +315,10 @@ static void enter_map(HWND hwnd)
     }
 
     app.map_scale = game_scale(hwnd);
-    float fit = gb_world_fit_scale(rc.right, rc.bottom);
-    if (app.map_scale < fit) app.map_scale = fit;
+    float floor_scale = app.map_show_all
+                      ? gb_world_fit_scale(rc.right, rc.bottom)
+                      : gb_world_cover_scale(rc.right, rc.bottom);
+    if (app.map_scale < floor_scale) app.map_scale = floor_scale;
     app.map_mode = 1;
 }
 
@@ -363,15 +366,19 @@ static void paint(HWND hwnd)
             app.map_bmi.bmiHeader.biBitCount = 32;
             app.map_bmi.bmiHeader.biCompression = BI_RGB;
             if (app.map_scale <= 0.0f)
-                app.map_scale = gb_world_fit_scale(cw, ch);
+                app.map_scale = gb_world_cover_scale(cw, ch);
         }
         if (app.map_pixels) {
             EnterCriticalSection(&app.lock);
             gb_world_render(app.gb, app.map_pixels, cw, ch,
                             app.map_cam_x, app.map_cam_y, app.map_scale);
+            int room = gb_world_active_room(app.gb);
+            /* The game is running while the map is up, so these are drawn
+             * from its current state and move as it plays. */
+            gb_world_draw_objects(app.gb, app.map_pixels, cw, ch, app.map_cam_x,
+                                  app.map_cam_y, app.map_scale, room);
             gb_world_mark_room(app.map_pixels, cw, ch, app.map_cam_x,
-                               app.map_cam_y, app.map_scale,
-                               gb_world_active_room(app.gb));
+                               app.map_cam_y, app.map_scale, room);
             LeaveCriticalSection(&app.lock);
             StretchDIBits(dc, 0, 0, cw, ch, 0, 0, cw, ch,
                           app.map_pixels, &app.map_bmi, DIB_RGB_COLORS, SRCCOPY);
@@ -418,7 +425,12 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
         if (app.map_mode && msg == WM_KEYDOWN) {
             RECT rc; GetClientRect(hwnd, &rc);
-            float fit = gb_world_fit_scale(rc.right, rc.bottom);
+            /* Stop zooming out where the world still covers the window, so a
+             * widescreen display shows world rather than bars. Show-all mode
+             * goes the extra step to fit the whole thing. */
+            float fit = app.map_show_all
+                      ? gb_world_fit_scale(rc.right, rc.bottom)
+                      : gb_world_cover_scale(rc.right, rc.bottom);
             float step = 24.0f / app.map_scale;
             switch (wp) {
             case VK_OEM_PLUS: case VK_ADD:
@@ -438,7 +450,11 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                 app.map_mode = 0;
                 break;
             case '0':
-                app.map_scale = fit;
+                /* Toggle between filling the window and fitting the world. */
+                app.map_show_all = !app.map_show_all;
+                app.map_scale = app.map_show_all
+                              ? gb_world_fit_scale(rc.right, rc.bottom)
+                              : gb_world_cover_scale(rc.right, rc.bottom);
                 app.map_cam_x = GB_WORLD_W * 0.5f;
                 app.map_cam_y = GB_WORLD_H * 0.5f;
                 break;

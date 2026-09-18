@@ -41,8 +41,13 @@ extern const int     gb_world_tileset_count;
 void gb_world_render(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
                      float cam_x, float cam_y, float scale);
 
-/* The scale at which the whole world fits in a view of this size. */
+/* The scale at which the whole world fits in a view of this size, leaving
+ * bars on the wider axis. */
 float gb_world_fit_scale(int dst_w, int dst_h);
+
+/* The scale at which the world covers the view completely, with no bars. The
+ * world is 5:4, so on a wider display this crops rather than letterboxes. */
+float gb_world_cover_scale(int dst_w, int dst_h);
 
 /* The room the game currently has loaded, or -1 if it is not in this group. */
 int  gb_world_active_room(const gb_t *gb);
@@ -50,5 +55,10 @@ int  gb_world_active_room(const gb_t *gb);
 /* Outlines a room, so the player can see where they are on the map. */
 void gb_world_mark_room(uint32_t *dst, int dst_w, int dst_h,
                         float cam_x, float cam_y, float scale, int room);
+
+/* Draws the objects the game currently has active, in the room it is
+ * simulating, at their live positions. */
+void gb_world_draw_objects(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
+                           float cam_x, float cam_y, float scale, int room);
 
 #endif
