@@ -396,8 +396,8 @@ fi
 cat <<NOTE
   $EXE  (${SIZE} KiB)
 
-  Run it (from anywhere):
-    "$REPO/$EXE" "$ROM"
+  Run it (from anywhere, no ROM argument - it opens the one above):
+    "$REPO/$EXE"
 
   Controls
     arrows        move
