@@ -370,9 +370,17 @@ static void paint(HWND hwnd)
     int room = app.gb ? gb_world_active_room(app.gb) : -1;
     if (room < 0) room = 0;
 
-    /* Keep the room the player is in at the centre of the view. */
-    float cam_x = (room % GB_WORLD_COLS) * 160.0f + 80.0f;
-    float cam_y = (room / GB_WORLD_COLS) * 128.0f + 64.0f;
+    /* Where the screen actually is, which during a room transition is
+     * somewhere between two rooms rather than at either one's corner. */
+    float screen_x = (room % GB_WORLD_COLS) * 160.0f;
+    float screen_y = (room / GB_WORLD_COLS) * 128.0f;
+    if (app.gb)
+        gb_world_screen_origin(app.gb, &screen_x, &screen_y);
+
+    /* The camera follows it, so crossing between rooms is travel rather than
+     * a cut. */
+    float cam_x = screen_x + 80.0f;
+    float cam_y = screen_y + 64.0f;
 
     if (app.map_w != cw || app.map_h != ch) {
         free(app.map_pixels);
@@ -397,15 +405,13 @@ static void paint(HWND hwnd)
     StretchDIBits(dc, 0, 0, cw, ch, 0, 0, cw, ch,
                   app.map_pixels, &app.map_bmi, DIB_RGB_COLORS, SRCCOPY);
 
-    /* The live screen goes exactly where its room sits in the world, so the
-     * room being played is the real thing and its surroundings are context. */
-    float room_x = (room % GB_WORLD_COLS) * 160.0f;
-    float room_y = (room / GB_WORLD_COLS) * 128.0f;
+    /* The live screen goes where the game says it is, so its content lines up
+     * with the world around it throughout a transition. */
     float left = cam_x - (cw * 0.5f) / scale;
     float top  = cam_y - (ch * 0.5f) / scale;
 
-    int lx = (int)((room_x - left) * scale);
-    int ly = (int)((room_y - top) * scale);
+    int lx = (int)((screen_x - left) * scale);
+    int ly = (int)((screen_y - top) * scale);
     int lw = (int)(160.0f * scale + 0.5f);
     int lh = (int)(128.0f * scale + 0.5f);
     if (lw < 1) lw = 1;

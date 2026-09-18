@@ -53,6 +53,11 @@ float gb_world_cover_scale(int dst_w, int dst_h);
 /* The room the game currently has loaded, or -1 if it is not in this group. */
 int  gb_world_active_room(const gb_t *gb);
 
+/* Where the hardware's screen sits in the world, in world pixels, following
+ * the game through a room transition rather than snapping between rooms.
+ * Returns 0 if the position cannot be determined. */
+int  gb_world_screen_origin(const gb_t *gb, float *out_x, float *out_y);
+
 /* Outlines a room, so the player can see where they are on the map. */
 void gb_world_mark_room(uint32_t *dst, int dst_w, int dst_h,
                         float cam_x, float cam_y, float scale, int room);

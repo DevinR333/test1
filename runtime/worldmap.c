@@ -288,3 +288,40 @@ void gb_world_draw_objects(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
         }
     }
 }
+
+
+/* Moving between rooms is a transition the game performs over many frames: it
+ * scrolls the view while swapping which room is loaded. Placing the live
+ * screen at the active room's corner therefore holds it still and then jumps a
+ * whole room, which reads as the screen shifting.
+ *
+ * The game tracks where its screen actually is while that happens, so the
+ * screen can be placed at its real position instead and simply travel.
+ */
+#define W_SCREEN_OFFSET_Y 0xCD08
+#define W_SCREEN_OFFSET_X 0xCD09
+#define W_TRANSITION_DIR  0xCD02
+#define W_LOADING_ROOM    0xCC4B
+
+int gb_world_screen_origin(const gb_t *gb, float *out_x, float *out_y)
+{
+    int room = gb_world_active_room(gb);
+    if (room < 0)
+        return 0;
+
+    float x = (float)(room % GB_WORLD_COLS) * ROOM_PX_W;
+    float y = (float)(room / GB_WORLD_COLS) * ROOM_PX_H;
+
+    /* The offsets are signed pixel counts, and run opposite to the direction
+     * the screen is travelling: the view slides one way as the world slides
+     * the other. */
+    int ox = (int8_t)gb->wram[W_SCREEN_OFFSET_X - 0xC000];
+    int oy = (int8_t)gb->wram[W_SCREEN_OFFSET_Y - 0xC000];
+
+    x -= (float)ox;
+    y -= (float)oy;
+
+    if (out_x) *out_x = x;
+    if (out_y) *out_y = y;
+    return 1;
+}
