@@ -36,13 +36,26 @@ def load(path):
         return fh.read()
 
 
-def collect_group(disasm, game, group):
-    """Room layouts for one group, in room order, plus the tileset each uses."""
-    base = os.path.join(disasm, "rooms", game)
-    layouts, missing = [], 0
+def collect_group(disasm, game, group, tilesets):
+    """Room layouts for one group, in room order, plus the tileset each uses.
 
+    Which file holds a room is not decided by the group alone. The layout
+    group in the room's tileset picks between four copies of the overworld,
+    one per season, so a room in a place that is always summer - the desert -
+    reads its layout from the summer set even in a spring world.
+    """
+    base = os.path.join(disasm, "rooms", game)
+
+    tileset_path = os.path.join(base, f"group{group}Tilesets.bin")
+    room_tilesets = load(tileset_path) if os.path.exists(tileset_path) else bytes(256)
+
+    layouts, missing = [], 0
     for room in range(ROOMS_PER_GROUP):
-        index = group * 0x100 + room
+        number = room_tilesets[room] & 0x7F if room < len(room_tilesets) else 0
+        entry = tilesets[number] if number < len(tilesets) else None
+        layout_group = entry["group"] if entry else group
+
+        index = layout_group * 0x100 + room
         small = os.path.join(base, "small", f"room{index:04x}.bin")
         large = os.path.join(base, "large", f"room{index:04x}.bin")
         if os.path.exists(small):
@@ -53,9 +66,7 @@ def collect_group(disasm, game, group):
             layouts.append(("none", b""))
             missing += 1
 
-    tileset_path = os.path.join(base, f"group{group}Tilesets.bin")
-    tilesets = load(tileset_path) if os.path.exists(tileset_path) else bytes(256)
-    return layouts, tilesets, missing
+    return layouts, room_tilesets, missing
 
 
 def collect_mappings(disasm, game, season="spring"):
@@ -126,6 +137,7 @@ import re
 
 VRAM_BASE = 0x8000
 VRAM_SIZE = 0x2000
+VRAM_BANKS = 2
 PALETTE_BYTES = 8 * 4 * 2          # eight palettes, four colours, two bytes
 
 
@@ -133,8 +145,21 @@ def _strip(line):
     return line.split(";")[0].rstrip()
 
 
+def _destination(name, hex_addr):
+    """A gfx header entry's destination: an address and a video memory bank.
+
+    Destinations are aligned to sixteen bytes, so the low four bits carry the
+    bank number instead. Taking the whole word as an address puts every bank 1
+    entry one byte below where it belongs, in bank 0, on top of the tiles
+    already there - which is most of a tileset's own graphics: the overworld
+    loads its area tiles to $9600 in bank 1.
+    """
+    addr = int(hex_addr, 16)
+    return (name, addr & 0xFFF0, addr & 0x0F)
+
+
 def parse_gfx_headers(disasm, game):
-    """GFXH name -> [(gfx file name, destination address)]"""
+    """GFXH name -> [(gfx file name, destination address, vram bank)]"""
     out, cur = {}, None
     path = os.path.join(disasm, "data", game, "gfxHeaders.s")
     if not os.path.exists(path):
@@ -151,13 +176,12 @@ def parse_gfx_headers(disasm, game):
             continue
         m = re.match(r"m_GfxHeader\s+(\w+),\s*\$([0-9a-fA-F]+)", line)
         if m and cur is not None:
-            # Bit 0 of the address is a continue flag, not part of the address.
-            out[cur].append((m.group(1), int(m.group(2), 16) & 0xFFFE))
+            out[cur].append(_destination(m.group(1), m.group(2)))
     return out
 
 
 def parse_unique_gfx_headers(disasm, game):
-    """UNIQUE_GFXH name -> [(gfx file, destination address)].
+    """UNIQUE_GFXH name -> [(gfx file, destination address, vram bank)].
 
     A tileset names two graphics headers: a shared one for the terrain its
     whole region uses, and a unique one carrying the tiles particular to that
@@ -180,42 +204,89 @@ def parse_unique_gfx_headers(disasm, game):
             continue
         m = re.match(r"m_GfxHeader\s+(\w+),\s*\$([0-9a-fA-F]+)", line)
         if m and cur is not None:
-            out[cur].append((m.group(1), int(m.group(2), 16) & 0xFFFE))
+            out[cur].append(_destination(m.group(1), m.group(2)))
     return out
 
 
-def parse_tilesets(disasm, game):
-    """Tileset index -> (GFXH name, PALH name, numeric palette header).
+TILESET_ENTRY = 8       # bytes per tileset definition
+TILESET_SLOTS = 128     # a room's tileset byte names one of these
 
-    A tileset entry opens with two bytes, the second of which is a palette
-    header index. That header supplies palettes 0 and 1; the named PALH_
-    header supplies 2 to 7. Reading only the named one left the first two
-    unset, and unset palettes are white, which blanked about a fifth of the
-    world.
+
+def _tileset_entries(text, label):
+    """The fixed-size tileset records that follow `label`, in order.
+
+    A record is eight bytes. Most are written as four `.db` lines; the ones
+    that change with the season are written as a macro naming a table of four
+    records, one per season, and occupy the same eight bytes.
+    """
+    m = re.search(rf"^{label}:(.*?)(?=^\w+:|\Z)", text, re.S | re.M)
+    body = m.group(1) if m else ""
+
+    entries, fields = [], []
+    for line in body.splitlines():
+        line = _strip(line).strip()
+        m = re.match(r"m_SeasonalTileset\s+(\w+)", line)
+        if m:
+            entries.append(("seasonal", m.group(1)))
+            fields = []
+            continue
+        m = re.match(r"\.db\s+(.+)$", line)
+        if not m:
+            continue
+        fields += [p.strip() for p in m.group(1).split(",")]
+        while len(fields) >= TILESET_ENTRY:
+            entries.append(("fields", fields[:TILESET_ENTRY]))
+            fields = fields[TILESET_ENTRY:]
+    return entries
+
+
+def _byte(token):
+    token = token.strip()
+    if token.startswith("$"):
+        try:
+            return int(token[1:], 16)
+        except ValueError:
+            return None
+    return int(token) if token.isdigit() else None
+
+
+def parse_tilesets(disasm, game, season=0):
+    """Every tileset definition, indexed by tileset number.
+
+    The eight bytes of a record are, in order: collision and dungeon, flags,
+    unique graphics, main graphics, palette header, metatile layout, layout
+    group, animation.
+
+    The layout byte matters most here. It is not the tileset's own number:
+    tilesets share metatile definitions, and the files in tileset_layouts are
+    named after the layout, so using the tileset number picks the wrong
+    metatiles for most of the world. The layout group is the season, and says
+    which of the four copies of a room to read.
     """
     path = os.path.join(disasm, "data", game, "tilesets.s")
     if not os.path.exists(path):
         return []
     text = open(path, errors="replace").read()
 
-    order = []
-    for line in text.splitlines():
-        m = re.match(r"\s*m_\w*Tileset\s+(\w+)", _strip(line))
-        if m:
-            order.append(m.group(1))
-
     out = []
-    for label in order:
-        m = re.search(rf"^{label}:(.*?)(?=^\w+:|\Z)", text, re.S | re.M)
-        body = m.group(1) if m else ""
-        gfxh = re.search(r"\b(GFXH_\w+)", body)
-        palh = re.search(r"\b(PALH_\w+)", body)
-        base = re.search(r"\.db\s+\$([0-9a-fA-F]+),\s*\$([0-9a-fA-F]+)", body)
-        uniq = re.search(r"\b(UNIQUE_GFXH_\w+)", body)
-        out.append((gfxh.group(1) if gfxh else None,
-                    palh.group(1) if palh else None,
-                    int(base.group(2), 16) if base else None,
-                    uniq.group(1) if uniq else None))
+    for kind, value in _tileset_entries(text, "tilesetData"):
+        fields = value
+        if kind == "seasonal":
+            seasonal = [f for k, f in _tileset_entries(text, value) if k == "fields"]
+            if not seasonal:
+                out.append(None)
+                continue
+            fields = seasonal[season] if season < len(seasonal) else seasonal[0]
+
+        layout = _byte(fields[5])
+        group = _byte(fields[6])
+        out.append({
+            "uniq":   fields[2],
+            "gfxh":   fields[3],
+            "palh":   fields[4],
+            "layout": layout if layout is not None else 0,
+            "group":  group if group is not None else 0,
+        })
     return out
 
 
@@ -298,54 +369,65 @@ def gfx_tile_bytes(path):
     return bytes(out)
 
 
-def build_tileset_assets(disasm, game):
-    """Per tileset: an image of video memory, and its background palettes."""
+def build_tileset_assets(disasm, game, tilesets):
+    """Per tileset: an image of video memory, its palettes, and which of them
+    it actually defines.
+
+    A tileset's palette header supplies background palettes 2 to 7 only.
+    Palettes 0 and 1 are shared - the status bar and the parts of the world
+    every area has in common - and are loaded once, not per tileset, so they
+    are taken from the running machine instead of from here.
+    """
     headers = parse_gfx_headers(disasm, game)
     unique = parse_unique_gfx_headers(disasm, game)
-    tilesets = parse_tilesets(disasm, game)
     pal_headers = parse_palette_headers(disasm, game)
     pal_data = parse_palette_data(disasm, game)
 
-    vram_out, pal_out, loaded = [], [], 0
+    vram_out, pal_out, mask_out, loaded = [], [], [], 0
     cache = {}
 
-    for gfxh, palh, base_idx, uniqh in tilesets:
-        vram = bytearray(VRAM_SIZE)
-        # Shared terrain first, then the area's own tiles over the top, which
-        # is the order the game loads them in.
-        for name, dest in list(headers.get(gfxh, [])) + list(unique.get(uniqh, [])):
-            if name not in cache:
-                path = find_gfx_file(disasm, game, name)
-                cache[name] = gfx_tile_bytes(path) if path else b""
-            data = cache[name]
-            if not data:
-                continue
-            off = dest - VRAM_BASE
-            if 0 <= off < VRAM_SIZE:
-                end = min(VRAM_SIZE, off + len(data))
-                vram[off:end] = data[:end - off]
-                loaded += 1
+    for entry in tilesets:
+        # Both banks, one after the other, the way the renderer reads them.
+        vram = bytearray(VRAM_SIZE * VRAM_BANKS)
+        palettes = bytearray(PALETTE_BYTES)
+        defined = 0
 
-        palettes = bytearray(b"\xFF" * PALETTE_BYTES)
-        # The numbered header supplies palettes 0 and 1, the named one 2 to 7.
-        sources = []
-        if base_idx is not None:
-            sources += pal_headers.get(("index", base_idx), [])
-        sources += pal_headers.get(palh, [])
-        for first, count, label in sources:
-            raw = pal_data.get(label, b"")
-            off = first * 8
-            take = min(len(raw), count * 8, PALETTE_BYTES - off)
-            if take > 0:
-                palettes[off:off + take] = raw[:take]
+        if entry is not None:
+            # Shared terrain first, then the area's own tiles over the top,
+            # which is the order the game loads them in.
+            for name, dest, bank in (list(headers.get(entry["gfxh"], []))
+                                     + list(unique.get(entry["uniq"], []))):
+                if name not in cache:
+                    path = find_gfx_file(disasm, game, name)
+                    cache[name] = gfx_tile_bytes(path) if path else b""
+                data = cache[name]
+                if not data or bank >= VRAM_BANKS:
+                    continue
+                off = (dest - VRAM_BASE) + bank * VRAM_SIZE
+                limit = (bank + 1) * VRAM_SIZE
+                if bank * VRAM_SIZE <= off < limit:
+                    end = min(limit, off + len(data))
+                    vram[off:end] = data[:end - off]
+                    loaded += 1
+
+            for first, count, label in pal_headers.get(entry["palh"], []):
+                raw = pal_data.get(label, b"")
+                off = first * 8
+                take = min(len(raw), count * 8, PALETTE_BYTES - off)
+                if take > 0:
+                    palettes[off:off + take] = raw[:take]
+                for i in range(first, min(first + count, 8)):
+                    defined |= 1 << i
 
         vram_out.append(bytes(vram))
         pal_out.append(bytes(palettes))
+        mask_out.append(defined)
 
-    return vram_out, pal_out, loaded, len(headers), len(pal_data)
+    return vram_out, pal_out, mask_out, loaded, len(headers), len(pal_data)
 
 
-def emit_c(path, layouts, tilesets, mappings, group, assets=None):
+def emit_c(path, layouts, room_tilesets, tilesets, mappings, group,
+           used, assets=None):
     lines = [
         "/* Generated by tools/worldmap.py - do not edit.",
         " *",
@@ -370,7 +452,18 @@ def emit_c(path, layouts, tilesets, mappings, group, assets=None):
 
     lines.append("/* Which tileset each room uses. */")
     lines.append("const uint8_t gb_world_room_tileset[GB_WORLD_ROOMS] = {")
-    row = [str(tilesets[i] if i < len(tilesets) else 0) for i in range(ROOMS_PER_GROUP)]
+    row = [str(room_tilesets[i] if i < len(room_tilesets) else 0)
+           for i in range(ROOMS_PER_GROUP)]
+    for i in range(0, len(row), 16):
+        lines.append("    " + ",".join(row[i:i + 16]) + ",")
+    lines += ["};", ""]
+
+    lines.append("/* Which metatile definitions each tileset uses. Tilesets")
+    lines.append(" * share these, so a tileset's own number is the wrong")
+    lines.append(" * index for all but a handful of them. */")
+    lines.append(f"const uint8_t gb_world_tileset_layout[{TILESET_SLOTS}] = {{")
+    row = [str(tilesets[i]["layout"] if i < len(tilesets) and tilesets[i] else 0)
+           for i in range(TILESET_SLOTS)]
     for i in range(0, len(row), 16):
         lines.append("    " + ",".join(row[i:i + 16]) + ",")
     lines += ["};", ""]
@@ -388,15 +481,35 @@ def emit_c(path, layouts, tilesets, mappings, group, assets=None):
         lines.append("    {" + ",\n     ".join(chunks) + "},")
     lines += ["};", "", f"const int gb_world_mapping_count = {top};", ""]
 
-    vram_imgs, palettes = (assets if assets else ([], []))
+    vram_imgs, palettes, masks = (assets if assets else ([], [], []))
+
+    # Only the tilesets this group's rooms ask for. All 128 would be a couple
+    # of megabytes of tile pixels, nearly all of it dungeons and interiors the
+    # world map never draws.
+    slot_of = [0xFF] * TILESET_SLOTS
+    for slot, number in enumerate(used):
+        slot_of[number] = slot
+
+    lines.append("/* Where each tileset's graphics are, or 0xFF for one this")
+    lines.append(" * group never uses. */")
+    lines.append(f"const uint8_t gb_world_tileset_asset[{TILESET_SLOTS}] = {{")
+    row = [str(v) for v in slot_of]
+    for i in range(0, len(row), 16):
+        lines.append("    " + ",".join(row[i:i + 16]) + ",")
+    lines += ["};", ""]
+
+    vram_imgs = [vram_imgs[n] for n in used] if vram_imgs else []
+    palettes = [palettes[n] for n in used] if palettes else []
+    masks = [masks[n] for n in used] if masks else []
     count = max(1, len(vram_imgs))
     lines.append("/* Each tileset's own tile pixels: video memory only ever")
     lines.append(" * holds the area the player is in, so the rest of the world")
     lines.append(" * has to bring its own. */")
     lines.append(f"const uint8_t gb_world_tileset_vram[{count}][GB_TILESET_VRAM] = {{")
-    for img in vram_imgs or [bytes(0x2000)]:
-        vals = list(img) + [0] * (0x2000 - len(img))
-        chunks = [",".join(str(v) for v in vals[j:j + 32]) for j in range(0, 0x2000, 32)]
+    span = VRAM_SIZE * VRAM_BANKS
+    for img in vram_imgs or [bytes(span)]:
+        vals = list(img) + [0] * (span - len(img))
+        chunks = [",".join(str(v) for v in vals[j:j + 32]) for j in range(0, span, 32)]
         lines.append("    {" + ",\n     ".join(chunks) + "},")
     lines += ["};", ""]
 
@@ -405,6 +518,15 @@ def emit_c(path, layouts, tilesets, mappings, group, assets=None):
     for pal in palettes or [b"\xFF" * 64]:
         vals = list(pal) + [0xFF] * (64 - len(pal))
         lines.append("    {" + ",".join(str(v) for v in vals) + "},")
+    lines += ["};", ""]
+
+    lines.append("/* Which of those eight a tileset actually sets. The two it")
+    lines.append(" * leaves alone are shared across the whole game and loaded")
+    lines.append(" * once, so they are read from the running machine. */")
+    lines.append(f"const uint8_t gb_world_tileset_palette_mask[{count}] = {{")
+    row = [str(m) for m in (masks or [0])]
+    for i in range(0, len(row), 16):
+        lines.append("    " + ",".join(row[i:i + 16]) + ",")
     lines += ["};", "", f"const int gb_world_tileset_count = {count};", ""]
 
     with open(path, "w") as fh:
@@ -425,7 +547,12 @@ def main():
     if not os.path.isdir(os.path.join(args.disasm, "rooms")):
         raise SystemExit(f"error: {args.disasm} has no rooms/ directory")
 
-    layouts, tilesets, missing = collect_group(args.disasm, args.game, args.group)
+    tilesets = parse_tilesets(args.disasm, args.game)
+    if not tilesets:
+        raise SystemExit("error: no tileset definitions found in "
+                         f"data/{args.game}/tilesets.s")
+    layouts, room_tilesets, missing = collect_group(args.disasm, args.game,
+                                                   args.group, tilesets)
     mappings, mapping_dir = collect_mappings(args.disasm, args.game)
 
     present = sum(1 for k, _ in layouts if k != "none")
@@ -445,13 +572,25 @@ def main():
     print(f"    world extent    {GROUP_COLS * SMALL_W * METATILE_PX}"
           f"x{GROUP_ROWS * SMALL_H * METATILE_PX} px")
 
-    vram_imgs, pal_imgs, chunks, nheaders, npal = build_tileset_assets(args.disasm, args.game)
+    (vram_imgs, pal_imgs, pal_masks, chunks,
+     nheaders, npal) = build_tileset_assets(args.disasm, args.game, tilesets)
     print(f"    tileset graphics {len(vram_imgs)} tilesets, "
           f"{chunks} graphics chunks loaded")
 
+    used = sorted({room_tilesets[i] & 0x7F for i in range(ROOMS_PER_GROUP)})
+    lost = [t for t in used if t >= len(tilesets) or tilesets[t] is None]
+    if lost:
+        raise SystemExit("error: rooms use tilesets with no definition: "
+                         + ", ".join(hex(t) for t in lost))
+    blank = [t for t in used if not pal_masks[t]]
+    if blank:
+        raise SystemExit("error: tilesets with no palettes at all: "
+                         + ", ".join(hex(t) for t in blank))
+    print(f"    tilesets in use  {len(used)}, all with graphics and palettes")
+
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
-    n = emit_c(args.out, layouts, tilesets, mappings, args.group,
-               (vram_imgs, pal_imgs))
+    n = emit_c(args.out, layouts, room_tilesets, tilesets, mappings, args.group,
+               used, (vram_imgs, pal_imgs, pal_masks))
     print(f"    wrote {args.out} ({n} lines)")
     return 0
 

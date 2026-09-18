@@ -52,6 +52,8 @@ static struct {
     /* World map view: the whole world drawn from its room data, at any
      * scale, rather than the hardware's 160x144 window. */
     uint32_t     *map_pixels;   /* scratch for the pulled-back view */
+    float         cam_x, cam_y; /* eased, so a room change glides */
+    int           cam_valid;
     int           map_w, map_h;
     BITMAPINFO    map_bmi;
 } app;
@@ -333,10 +335,15 @@ static void paint(HWND hwnd)
     float by = (float)ch / GB_SCREEN_H;
     if (by < base) base = by;
 
-    /* Above natural size there is no world to put around the screen, so the
-     * hardware's own output is all there is to show. */
-    if (app.zoom > 1.001f) {
-        gb_viewport_t v = gb_fit_viewport(cw, ch, app.fit, app.zoom,
+    /* Above natural size there is no world to put around the screen. Nor is
+     * there anywhere the world data does not describe - menus, cutscenes and
+     * the opening - where surrounding the screen with overworld scenery would
+     * show somewhere the player is not. */
+    int world_ok = app.gb && gb_world_in_overworld(app.gb);
+    if (app.zoom > 1.001f || !world_ok) {
+        app.cam_valid = 0;
+        float z = app.zoom < 1.0f ? 1.0f : app.zoom;
+        gb_viewport_t v = gb_fit_viewport(cw, ch, app.fit, z,
                                           app.pan_x, app.pan_y);
         if (v.dst_w < cw || v.dst_h < ch) {
             HBRUSH bg = (HBRUSH)GetStockObject(BLACK_BRUSH);
@@ -377,10 +384,15 @@ static void paint(HWND hwnd)
     if (app.gb)
         gb_world_screen_origin(app.gb, &screen_x, &screen_y);
 
-    /* The camera follows it, so crossing between rooms is travel rather than
-     * a cut. */
+    /* The camera sits on the screen exactly. The position already moves a few
+     * pixels a frame while the game crosses between rooms, so it needs no
+     * smoothing of its own - and smoothing it would slide the world out from
+     * under the live screen drawn on top of it. */
     float cam_x = screen_x + 80.0f;
     float cam_y = screen_y + 64.0f;
+    app.cam_x = cam_x;
+    app.cam_y = cam_y;
+    app.cam_valid = 1;
 
     if (app.map_w != cw || app.map_h != ch) {
         free(app.map_pixels);
@@ -418,8 +430,12 @@ static void paint(HWND hwnd)
     if (lh < 1) lh = 1;
 
     EnterCriticalSection(&app.lock);
-    /* Only the part of the screen showing the room; the rest is status. */
-    StretchDIBits(dc, lx, ly, lw, lh, 0, 0, GB_SCREEN_W, 128,
+    /* Only the part of the screen showing the room. The status bar covers the
+     * top sixteen rows - the game scrolls the room by sixteen less than its
+     * true position to make room for it - so the room starts on row 16, and
+     * taking it from row 0 puts the world sixteen pixels out and paints the
+     * hearts and rupees into it. */
+    StretchDIBits(dc, lx, ly, lw, lh, 0, GB_STATUS_H, GB_SCREEN_W, 128,
                   app.pixels, &app.bmi, DIB_RGB_COLORS, SRCCOPY);
     LeaveCriticalSection(&app.lock);
 

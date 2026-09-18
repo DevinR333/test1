@@ -19,8 +19,12 @@
 #define GB_WORLD_ROWS    16
 #define GB_WORLD_ROOMS   (GB_WORLD_COLS * GB_WORLD_ROWS)
 #define GB_METATILE_PX   16
+
+/* The game keeps the top of the display for the status bar and scrolls the
+ * room down past it, so the room occupies rows 16 to 143. */
+#define GB_STATUS_H      16
 #define GB_MAPPING_BYTES 2048
-#define GB_TILESET_VRAM    0x2000
+#define GB_TILESET_VRAM    0x4000   /* both banks, bank 1 after bank 0 */
 #define GB_TILESET_PALETTE 64
 
 #define GB_WORLD_W (GB_WORLD_COLS * GB_ROOM_COLS * GB_METATILE_PX)   /* 2560 */
@@ -33,8 +37,14 @@ extern const uint8_t gb_world_mappings[][GB_MAPPING_BYTES];
 extern const int     gb_world_mapping_count;
 extern const uint8_t gb_world_tileset_vram[][GB_TILESET_VRAM];
 extern const uint8_t gb_world_tileset_palette[][GB_TILESET_PALETTE];
+extern const uint8_t gb_world_tileset_palette_mask[];
 extern const int     gb_world_tileset_count;
+
+/* A tileset's own number indexes neither of these directly: tilesets share
+ * metatile definitions, and only the ones this group uses carry graphics. */
 extern const uint8_t gb_world_tileset_layout[];
+extern const uint8_t gb_world_tileset_asset[];
+#define GB_TILESET_NONE 0xFF
 
 /* Draws the world into `dst` at `scale` (1.0 shows every pixel one for one,
  * lower values shrink it). `cam_x` and `cam_y` are world pixels at the centre
@@ -57,6 +67,11 @@ int  gb_world_active_room(const gb_t *gb);
  * the game through a room transition rather than snapping between rooms.
  * Returns 0 if the position cannot be determined. */
 int  gb_world_screen_origin(const gb_t *gb, float *out_x, float *out_y);
+
+/* Whether the game is somewhere the world data describes. Menus, cutscenes,
+ * dungeons and interiors are not, and drawing overworld rooms around them
+ * shows scenery that has nothing to do with what is on screen. */
+int  gb_world_in_overworld(const gb_t *gb);
 
 /* Outlines a room, so the player can see where they are on the map. */
 void gb_world_mark_room(uint32_t *dst, int dst_w, int dst_h,

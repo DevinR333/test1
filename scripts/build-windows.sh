@@ -155,7 +155,20 @@ CHECK
 WORLD_SRC=""
 if [ -n "${NO_MAP:-}" ]; then
     say "building without the map view (NO_MAP set)"
-    printf '#include "worldmap.h"\nconst int gb_world_group=0;\nconst uint8_t gb_world_rooms[GB_WORLD_ROOMS][GB_ROOM_TILES]={{0}};\nconst uint8_t gb_world_room_tileset[GB_WORLD_ROOMS]={0};\nconst uint8_t gb_world_mappings[1][GB_MAPPING_BYTES]={{0}};\nconst int gb_world_mapping_count=1;\nconst uint8_t gb_world_tileset_vram[1][GB_TILESET_VRAM]={{0}};\nconst uint8_t gb_world_tileset_palette[1][GB_TILESET_PALETTE]={{0}};\nconst int gb_world_tileset_count=0;\n' > "$OUT_DIR/world_data.c"
+    cat > "$OUT_DIR/world_data.c" <<'STUB'
+#include "worldmap.h"
+const int gb_world_group = 0;
+const uint8_t gb_world_rooms[GB_WORLD_ROOMS][GB_ROOM_TILES] = {{0}};
+const uint8_t gb_world_room_tileset[GB_WORLD_ROOMS] = {0};
+const uint8_t gb_world_tileset_layout[128] = {0};
+const uint8_t gb_world_tileset_asset[128] = {[0 ... 127] = GB_TILESET_NONE};
+const uint8_t gb_world_mappings[1][GB_MAPPING_BYTES] = {{0}};
+const int gb_world_mapping_count = 1;
+const uint8_t gb_world_tileset_vram[1][GB_TILESET_VRAM] = {{0}};
+const uint8_t gb_world_tileset_palette[1][GB_TILESET_PALETTE] = {{0}};
+const uint8_t gb_world_tileset_palette_mask[1] = {0};
+const int gb_world_tileset_count = 0;
+STUB
     WORLD_SRC="$OUT_DIR/world_data.c runtime/worldmap.c"
 fi
 for d in external/oracles-disasm ../oracles-disasm; do

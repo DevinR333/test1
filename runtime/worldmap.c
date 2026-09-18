@@ -26,16 +26,31 @@ static const uint32_t DMG_SHADES[4] = {
 };
 
 /* Tiles come from the tileset's own graphics, not from video memory: the
- * hardware only ever holds the area the player is standing in. */
-static inline uint8_t vram_at(const uint8_t *vram, uint16_t addr)
+ * hardware only ever holds the area the player is standing in.
+ *
+ * Both video memory banks are kept, one after the other. The overworld loads
+ * each area's own tiles into bank 1 and reaches them through the metatile
+ * attribute's bank bit, so a single bank holds the shared terrain and nothing
+ * that makes one place look different from another. */
+static inline uint8_t vram_at(const uint8_t *vram, int bank, uint16_t addr)
 {
-    return vram[addr - 0x8000];
+    return vram[(addr - 0x8000) + bank * 0x2000];
 }
 
-static uint32_t colour_of(const gb_t *gb, const uint8_t *pal, int palette, int shade)
+static uint32_t colour_of(const gb_t *gb, const uint8_t *pal, int mask,
+                         int palette, int shade)
 {
     if (!gb->cgb)
         return DMG_SHADES[(gb->io[0x47] >> (shade * 2)) & 3];
+
+    /* A tileset defines background palettes 2 to 7. The first two are shared
+     * across the whole game - the status bar, and what every area has in
+     * common - and are loaded once rather than per area, so they are not in
+     * the tileset's own data. Taking them from there anyway leaves them at
+     * whatever the table was filled with, which is how parts of the world end
+     * up a colour nothing in the game is. */
+    if (!(mask & (1 << palette)))
+        pal = gb->bg_palette;
 
     int i = (palette * 4 + shade) * 2;
     uint16_t v = pal[i] | ((uint16_t)pal[i + 1] << 8);
@@ -124,10 +139,17 @@ void gb_world_render(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
             /* The top bit of a room's tileset byte is a flag, not part of
              * the number. */
             int tileset = gb_world_room_tileset[room] & 0x7F;
-            int assets = (tileset < gb_world_tileset_count) ? tileset : 0;
-            int mapping = (tileset < gb_world_mapping_count) ? tileset : 0;
+            int assets = gb_world_tileset_asset[tileset];
+            if (assets == GB_TILESET_NONE) {
+                row[dx] = backdrop;
+                continue;
+            }
+            int mapping = gb_world_tileset_layout[tileset];
+            if (mapping >= gb_world_mapping_count)
+                mapping = 0;
             const uint8_t *tvram = gb_world_tileset_vram[assets];
             const uint8_t *tpal = gb_world_tileset_palette[assets];
+            int tmask = gb_world_tileset_palette_mask[assets];
 
             /* Each metatile is four tiles: two across, two down.
              *
@@ -151,12 +173,13 @@ void gb_world_render(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
             if (attr & ATTR_YFLIP) py = 7 - py;
 
             uint16_t addr = tile_row_addr(index, py);
-            uint8_t lo = vram_at(tvram, addr);
-            uint8_t hi = vram_at(tvram, addr + 1);
+            int bank = (attr & ATTR_BANK) ? 1 : 0;
+            uint8_t lo = vram_at(tvram, bank, addr);
+            uint8_t hi = vram_at(tvram, bank, addr + 1);
 
             int bit = 7 - px;
             int shade = (((hi >> bit) & 1) << 1) | ((lo >> bit) & 1);
-            row[dx] = colour_of(gb, tpal, attr & ATTR_PALETTE, shade);
+            row[dx] = colour_of(gb, tpal, tmask, attr & ATTR_PALETTE, shade);
         }
     }
 }
@@ -273,7 +296,7 @@ void gb_world_draw_objects(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
 
                 int pal = gb->cgb ? (attr & ATTR_PALETTE) : 0;
                 uint32_t colour = gb->cgb
-                    ? colour_of(gb, gb->obj_palette, pal, shade)
+                    ? colour_of(gb, gb->obj_palette, 0xFF, pal, shade)
                     : DMG_SHADES[((attr & 0x10 ? gb->io[0x49] : gb->io[0x48])
                                   >> (shade * 2)) & 3];
 
@@ -298,30 +321,110 @@ void gb_world_draw_objects(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
  * The game tracks where its screen actually is while that happens, so the
  * screen can be placed at its real position instead and simply travel.
  */
-#define W_SCREEN_OFFSET_Y 0xCD08
-#define W_SCREEN_OFFSET_X 0xCD09
-#define W_TRANSITION_DIR  0xCD02
-#define W_LOADING_ROOM    0xCC4B
+#define W_SCREEN_OFFSET_Y   0xCD08
+#define W_SCREEN_OFFSET_X   0xCD09
+#define W_TRANSITION_STATE  0xCD04
+#define W_TRANSITION_STATE2 0xCD05
+#define H_CAMERA_Y          0xFFA8   /* sixteen bits, low byte first */
+#define H_CAMERA_X          0xFFAA
+
+/* Where the tracking stands. The offsets only tell us a position to the
+ * nearest screen-width, so the full position is carried from frame to frame
+ * and each new reading is resolved against it. */
+static struct {
+    int   valid;
+    int   kx, ky;      /* what to add to a reading to get a world position */
+    float x, y;
+} origin;
+
+/* The value congruent to `raw` modulo 256 that lies closest to `anchor`. A
+ * transition covers less than a whole 256, so there is never a tie. */
+static float resolve(float anchor, int raw)
+{
+    float v = (float)raw;
+    while (v - anchor > 128.0f)  v -= 256.0f;
+    while (anchor - v > 128.0f)  v += 256.0f;
+    return v;
+}
 
 int gb_world_screen_origin(const gb_t *gb, float *out_x, float *out_y)
 {
     int room = gb_world_active_room(gb);
-    if (room < 0)
+    if (room < 0 || !gb_world_in_overworld(gb)) {
+        origin.valid = 0;
+        return 0;
+    }
+
+    int base_x = (room % GB_WORLD_COLS) * ROOM_PX_W;
+    int base_y = (room / GB_WORLD_COLS) * ROOM_PX_H;
+
+    /* The scroll the hardware is given is the camera's position within the
+     * area plus the offset of the area itself, and during a transition the
+     * camera moves a few pixels every frame. Reading only the offset gives a
+     * position that holds still for the whole transition and then jumps a
+     * whole room at the end of it, which is the shift the player sees. */
+    int cx = gb->hram[H_CAMERA_X - 0xFF80]
+           | ((int)gb->hram[H_CAMERA_X + 1 - 0xFF80] << 8);
+    int cy = gb->hram[H_CAMERA_Y - 0xFF80]
+           | ((int)gb->hram[H_CAMERA_Y + 1 - 0xFF80] << 8);
+
+    int raw_x = (cx + gb->wram[W_SCREEN_OFFSET_X - 0xC000]) & 0xFF;
+    int raw_y = (cy + gb->wram[W_SCREEN_OFFSET_Y - 0xC000]) & 0xFF;
+
+    /* Both are counted from wherever the game last set them, so they say
+     * where the screen is only up to a whole multiple of 256 pixels. Standing
+     * still in a known room pins that multiple down; a transition then moves
+     * from there without ever needing it pinned down again. */
+    int settled = gb->wram[W_TRANSITION_STATE - 0xC000] == 0x02
+               && gb->wram[W_TRANSITION_STATE2 - 0xC000] == 0x00;
+
+    if (settled || !origin.valid) {
+        origin.kx = (base_x - raw_x) & 0xFF;
+        origin.ky = (base_y - raw_y) & 0xFF;
+        origin.x  = (float)base_x;
+        origin.y  = (float)base_y;
+        origin.valid = 1;
+    } else {
+        origin.x = resolve(origin.x, (raw_x + origin.kx) & 0xFF);
+        origin.y = resolve(origin.y, (raw_y + origin.ky) & 0xFF);
+    }
+
+    if (out_x) *out_x = origin.x;
+    if (out_y) *out_y = origin.y;
+    return 1;
+}
+
+
+/* Group 0 is the overworld. Everywhere else - dungeons, interiors, menus and
+ * the opening - is either a different set of rooms or no rooms at all, and the
+ * world data describes none of it. Drawing it anyway surrounds the screen with
+ * scenery from somewhere the player is not: the file-select and name-entry
+ * screens showed a strip of Horon Village beside them, because a group of zero
+ * is also what work RAM holds before the game has set anything.
+ */
+#define W_GAME_STATE  0xC2EE   /* 2 once a room is loaded and running */
+#define W_OPENED_MENU 0xCBCB   /* nonzero while a menu covers the screen */
+#define W_ACTIVE_GROUP 0xCC49
+
+int gb_world_in_overworld(const gb_t *gb)
+{
+    /* Anything before the first room - the logos, the title, choosing and
+     * naming a file - runs with the game state still at its initial value. */
+    if (gb->wram[W_GAME_STATE - 0xC000] != 0x02)
         return 0;
 
-    float x = (float)(room % GB_WORLD_COLS) * ROOM_PX_W;
-    float y = (float)(room / GB_WORLD_COLS) * ROOM_PX_H;
+    /* The inventory, the map and the save prompt each take over the whole
+     * display while the room stays loaded behind them. */
+    if (gb->wram[W_OPENED_MENU - 0xC000] != 0x00)
+        return 0;
 
-    /* The offsets are signed pixel counts, and run opposite to the direction
-     * the screen is travelling: the view slides one way as the world slides
-     * the other. */
-    int ox = (int8_t)gb->wram[W_SCREEN_OFFSET_X - 0xC000];
-    int oy = (int8_t)gb->wram[W_SCREEN_OFFSET_Y - 0xC000];
+    if (gb->wram[W_ACTIVE_GROUP - 0xC000] != gb_world_group)
+        return 0;
 
-    x -= (float)ox;
-    y -= (float)oy;
+    /* The display being off means the game is between places rather than in
+     * one. */
+    if (!(gb->io[0x40] & 0x80))
+        return 0;
 
-    if (out_x) *out_x = x;
-    if (out_y) *out_y = y;
     return 1;
 }
