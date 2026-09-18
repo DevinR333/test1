@@ -51,11 +51,7 @@ static struct {
 
     /* World map view: the whole world drawn from its room data, at any
      * scale, rather than the hardware's 160x144 window. */
-    int           map_mode;
-    int           map_show_all;   /* whole world with bars, or fill the window */
-    float         map_scale;
-    float         map_cam_x, map_cam_y;
-    uint32_t     *map_pixels;
+    uint32_t     *map_pixels;   /* scratch for the pulled-back view */
     int           map_w, map_h;
     BITMAPINFO    map_bmi;
 } app;
@@ -289,7 +285,7 @@ static DWORD WINAPI game_thread(LPVOID param)
     return 0;
 }
 
-/* The scale at which the map shows the world at the same size the game does. */
+/* The scale at which the hardware's screen fills the window. */
 static float game_scale(HWND hwnd)
 {
     RECT rc;
@@ -299,29 +295,27 @@ static float game_scale(HWND hwnd)
     return sx < sy ? sx : sy;
 }
 
-/* Opens the map where the player is, at the size the game was showing. */
-static void enter_map(HWND hwnd)
+/* How far back the camera can go: the point where the world still covers the
+ * window. Stopping there means a widescreen display shows more world across
+ * rather than bars down the sides. */
+static float min_zoom(HWND hwnd)
 {
     RECT rc;
     GetClientRect(hwnd, &rc);
-
-    int room = app.gb ? gb_world_active_room(app.gb) : -1;
-    if (room >= 0) {
-        app.map_cam_x = (room % GB_WORLD_COLS) * 160.0f + 80.0f;
-        app.map_cam_y = (room / GB_WORLD_COLS) * 128.0f + 64.0f;
-    } else {
-        app.map_cam_x = GB_WORLD_W * 0.5f;
-        app.map_cam_y = GB_WORLD_H * 0.5f;
-    }
-
-    app.map_scale = game_scale(hwnd);
-    float floor_scale = app.map_show_all
-                      ? gb_world_fit_scale(rc.right, rc.bottom)
-                      : gb_world_cover_scale(rc.right, rc.bottom);
-    if (app.map_scale < floor_scale) app.map_scale = floor_scale;
-    app.map_mode = 1;
+    float base = game_scale(hwnd);
+    if (base <= 0.0f) return 1.0f;
+    return gb_world_cover_scale(rc.right - rc.left, rc.bottom - rc.top) / base;
 }
 
+/* One view, at any zoom.
+ *
+ * At zoom 1 the hardware's screen fills the window, exactly as the game
+ * intends. Below that the camera pulls back: the surrounding world is drawn
+ * from its room data, and the live screen - which is where the game is
+ * actually running, enemies and all - is composited over the room the player
+ * is in, at the same scale. The game never stops, and input keeps reaching it,
+ * so zooming out is something done while playing rather than instead of it.
+ */
 static void paint(HWND hwnd)
 {
     PAINTSTRUCT ps;
@@ -330,70 +324,91 @@ static void paint(HWND hwnd)
     RECT rc;
     GetClientRect(hwnd, &rc);
     int cw = rc.right - rc.left, ch = rc.bottom - rc.top;
+    if (cw <= 0 || ch <= 0) { EndPaint(hwnd, &ps); return; }
 
-    gb_viewport_t v = gb_fit_viewport(cw, ch, app.fit, app.zoom,
-                                     app.pan_x, app.pan_y);
-
-    /* Fill the letterbox, or old pixels stay visible when the window grows. */
-    if (v.dst_w < cw || v.dst_h < ch) {
-        HBRUSH bg = (HBRUSH)GetStockObject(BLACK_BRUSH);
-        RECT bars[4] = {
-            { 0, 0, cw, v.dst_y },
-            { 0, v.dst_y + v.dst_h, cw, ch },
-            { 0, v.dst_y, v.dst_x, v.dst_y + v.dst_h },
-            { v.dst_x + v.dst_w, v.dst_y, cw, v.dst_y + v.dst_h },
-        };
-        for (int i = 0; i < 4; i++)
-            if (bars[i].right > bars[i].left && bars[i].bottom > bars[i].top)
-                FillRect(dc, &bars[i], bg);
-    }
-
-    /* Nearest-neighbour keeps pixel art crisp; the default would blur it. */
     SetStretchBltMode(dc, COLORONCOLOR);
 
-    if (app.map_mode) {
-        /* Render the world at the window's own resolution, so zooming is
-         * genuine detail rather than a magnified 160x144. */
-        if (app.map_w != cw || app.map_h != ch) {
-            free(app.map_pixels);
-            app.map_pixels = malloc((size_t)cw * ch * sizeof(uint32_t));
-            app.map_w = cw;
-            app.map_h = ch;
-            app.map_bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-            app.map_bmi.bmiHeader.biWidth = cw;
-            app.map_bmi.bmiHeader.biHeight = -ch;
-            app.map_bmi.bmiHeader.biPlanes = 1;
-            app.map_bmi.bmiHeader.biBitCount = 32;
-            app.map_bmi.bmiHeader.biCompression = BI_RGB;
-            if (app.map_scale <= 0.0f)
-                app.map_scale = gb_world_cover_scale(cw, ch);
+    /* At zoom 1 the screen is as large as it can be while staying square. */
+    float base = (float)cw / GB_SCREEN_W;
+    float by = (float)ch / GB_SCREEN_H;
+    if (by < base) base = by;
+
+    if (app.zoom >= 0.999f) {
+        /* Normal play. */
+        gb_viewport_t v = gb_fit_viewport(cw, ch, app.fit, app.zoom,
+                                          app.pan_x, app.pan_y);
+        if (v.dst_w < cw || v.dst_h < ch) {
+            HBRUSH bg = (HBRUSH)GetStockObject(BLACK_BRUSH);
+            RECT bars[4] = {
+                { 0, 0, cw, v.dst_y },
+                { 0, v.dst_y + v.dst_h, cw, ch },
+                { 0, v.dst_y, v.dst_x, v.dst_y + v.dst_h },
+                { v.dst_x + v.dst_w, v.dst_y, cw, v.dst_y + v.dst_h },
+            };
+            for (int i = 0; i < 4; i++)
+                if (bars[i].right > bars[i].left && bars[i].bottom > bars[i].top)
+                    FillRect(dc, &bars[i], bg);
         }
-        if (app.map_pixels) {
-            EnterCriticalSection(&app.lock);
-            gb_world_render(app.gb, app.map_pixels, cw, ch,
-                            app.map_cam_x, app.map_cam_y, app.map_scale);
-            int room = gb_world_active_room(app.gb);
-            /* The game is running while the map is up, so these are drawn
-             * from its current state and move as it plays. */
-            gb_world_draw_objects(app.gb, app.map_pixels, cw, ch, app.map_cam_x,
-                                  app.map_cam_y, app.map_scale, room);
-            gb_world_mark_room(app.map_pixels, cw, ch, app.map_cam_x,
-                               app.map_cam_y, app.map_scale, room);
-            LeaveCriticalSection(&app.lock);
-            StretchDIBits(dc, 0, 0, cw, ch, 0, 0, cw, ch,
-                          app.map_pixels, &app.map_bmi, DIB_RGB_COLORS, SRCCOPY);
-        }
+        EnterCriticalSection(&app.lock);
+        StretchDIBits(dc, v.dst_x, v.dst_y, v.dst_w, v.dst_h,
+                      (int)(v.src_x + 0.5f), (int)(v.src_y + 0.5f),
+                      (int)(v.src_w + 0.5f), (int)(v.src_h + 0.5f),
+                      app.pixels, &app.bmi, DIB_RGB_COLORS, SRCCOPY);
+        LeaveCriticalSection(&app.lock);
         EndPaint(hwnd, &ps);
         return;
     }
 
+    /* Pulled back. World pixels per screen pixel. */
+    float scale = base * app.zoom;
+
+    int room = app.gb ? gb_world_active_room(app.gb) : -1;
+    if (room < 0) room = 0;
+
+    /* Keep the room the player is in at the centre of the view. */
+    float cam_x = (room % GB_WORLD_COLS) * 160.0f + 80.0f;
+    float cam_y = (room / GB_WORLD_COLS) * 128.0f + 64.0f;
+
+    if (app.map_w != cw || app.map_h != ch) {
+        free(app.map_pixels);
+        app.map_pixels = malloc((size_t)cw * ch * sizeof(uint32_t));
+        app.map_w = cw;
+        app.map_h = ch;
+        app.map_bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        app.map_bmi.bmiHeader.biWidth = cw;
+        app.map_bmi.bmiHeader.biHeight = -ch;
+        app.map_bmi.bmiHeader.biPlanes = 1;
+        app.map_bmi.bmiHeader.biBitCount = 32;
+        app.map_bmi.bmiHeader.biCompression = BI_RGB;
+    }
+    if (!app.map_pixels) { EndPaint(hwnd, &ps); return; }
+
     EnterCriticalSection(&app.lock);
-    /* The source rect narrows as the zoom rises, so magnifying shows less of
-     * the screen rather than stretching what is there. */
-    StretchDIBits(dc,
-                  v.dst_x, v.dst_y, v.dst_w, v.dst_h,
-                  (int)(v.src_x + 0.5f), (int)(v.src_y + 0.5f),
-                  (int)(v.src_w + 0.5f), (int)(v.src_h + 0.5f),
+    gb_world_render(app.gb, app.map_pixels, cw, ch, cam_x, cam_y, scale);
+    LeaveCriticalSection(&app.lock);
+
+    /* The surrounding world fills the window, so a widescreen display shows
+     * more world across rather than bars. */
+    StretchDIBits(dc, 0, 0, cw, ch, 0, 0, cw, ch,
+                  app.map_pixels, &app.map_bmi, DIB_RGB_COLORS, SRCCOPY);
+
+    /* The live screen goes exactly where its room sits in the world, so the
+     * room being played is the real thing and its surroundings are context. */
+    float room_x = (room % GB_WORLD_COLS) * 160.0f;
+    float room_y = (room / GB_WORLD_COLS) * 128.0f;
+    float left = cam_x - (cw * 0.5f) / scale;
+    float top  = cam_y - (ch * 0.5f) / scale;
+
+    int lx = (int)((room_x - left) * scale);
+    int ly = (int)((room_y - top) * scale);
+    int lw = (int)(160.0f * scale + 0.5f);
+    int lh = (int)(128.0f * scale + 0.5f);
+    if (lw < 1) lw = 1;
+    if (lh < 1) lh = 1;
+
+    EnterCriticalSection(&app.lock);
+    /* Only the part of the screen showing the room; the rest is status. */
+    StretchDIBits(dc, lx, ly, lw, lh, 0, 0, GB_SCREEN_W, 128,
                   app.pixels, &app.bmi, DIB_RGB_COLORS, SRCCOPY);
     LeaveCriticalSection(&app.lock);
 
@@ -416,103 +431,36 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             PostMessage(hwnd, WM_CLOSE, 0, 0);
             return 0;
         }
+        /* Tab jumps between playing at normal size and pulled right back. */
         if (msg == WM_KEYDOWN && wp == VK_TAB) {
-            if (app.map_mode) app.map_mode = 0;
-            else              enter_map(hwnd);
+            app.zoom = (app.zoom < 0.999f) ? 1.0f : min_zoom(hwnd);
             InvalidateRect(hwnd, NULL, TRUE);
             return 0;
         }
 
-        if (app.map_mode && msg == WM_KEYDOWN) {
-            RECT rc; GetClientRect(hwnd, &rc);
-            /* Stop zooming out where the world still covers the window, so a
-             * widescreen display shows world rather than bars. Show-all mode
-             * goes the extra step to fit the whole thing. */
-            float fit = app.map_show_all
-                      ? gb_world_fit_scale(rc.right, rc.bottom)
-                      : gb_world_cover_scale(rc.right, rc.bottom);
-            float step = 24.0f / app.map_scale;
-            switch (wp) {
-            case VK_OEM_PLUS: case VK_ADD:
-                app.map_scale *= 1.25f;
-                /* Zooming in past the game's own scale returns to playing. */
-                if (app.map_scale > game_scale(hwnd)) {
-                    app.map_mode = 0;
-                    app.zoom = 1.0f;
-                }
-                break;
-            case VK_OEM_MINUS: case VK_SUBTRACT:
-                app.map_scale /= 1.25f;
-                /* Stop at the point where the whole world is on screen. */
-                if (app.map_scale < fit) app.map_scale = fit;
-                break;
-            case VK_ESCAPE:
-                app.map_mode = 0;
-                break;
-            case '0':
-                /* Toggle between filling the window and fitting the world. */
-                app.map_show_all = !app.map_show_all;
-                app.map_scale = app.map_show_all
-                              ? gb_world_fit_scale(rc.right, rc.bottom)
-                              : gb_world_cover_scale(rc.right, rc.bottom);
-                app.map_cam_x = GB_WORLD_W * 0.5f;
-                app.map_cam_y = GB_WORLD_H * 0.5f;
-                break;
-            case VK_LEFT:  app.map_cam_x -= step; break;
-            case VK_RIGHT: app.map_cam_x += step; break;
-            case VK_UP:    app.map_cam_y -= step; break;
-            case VK_DOWN:  app.map_cam_y += step; break;
-            default: break;
-            }
-            if (app.map_cam_x < 0) app.map_cam_x = 0;
-            if (app.map_cam_y < 0) app.map_cam_y = 0;
-            if (app.map_cam_x > GB_WORLD_W) app.map_cam_x = GB_WORLD_W;
-            if (app.map_cam_y > GB_WORLD_H) app.map_cam_y = GB_WORLD_H;
-            InvalidateRect(hwnd, NULL, TRUE);
-            return 0;
-        }
-
-        /* Zoom and pan. The Game Boy only ever renders 160x144, so zooming in
-         * magnifies and crops; there is nothing outside that to zoom out to,
-         * and 1.0 is the whole screen. */
+        /* One continuous range. Above 1 magnifies the hardware's screen;
+         * below it the camera pulls back and the surrounding world is drawn
+         * around the live one. The game keeps running throughout. */
         if (msg == WM_KEYDOWN && (wp == VK_OEM_PLUS || wp == VK_ADD)) {
-            app.zoom = gb_clamp_zoom(app.zoom * 1.25f);
+            app.zoom *= 1.25f;
+            if (app.zoom > 4.0f) app.zoom = 4.0f;
             InvalidateRect(hwnd, NULL, TRUE);
             return 0;
         }
         if (msg == WM_KEYDOWN && (wp == VK_OEM_MINUS || wp == VK_SUBTRACT)) {
-            if (app.zoom > 1.001f) {
-                app.zoom = gb_clamp_zoom(app.zoom / 1.25f);
-                if (app.zoom <= 1.001f) { app.zoom = 1.0f; app.pan_x = app.pan_y = 0; }
-            } else {
-                /* Already showing the whole screen. Beyond this the hardware
-                 * has nothing more to give, so continue into the world map,
-                 * which does - one zoom range from the character to the
-                 * whole of the world. */
-                enter_map(hwnd);
-                app.map_scale = game_scale(hwnd) / 1.25f;
-            }
+            app.zoom /= 1.25f;
+            float floor_z = min_zoom(hwnd);
+            if (app.zoom < floor_z) app.zoom = floor_z;
             InvalidateRect(hwnd, NULL, TRUE);
             return 0;
         }
         if (msg == WM_KEYDOWN && wp == '0') {
-            app.zoom = 1.0f; app.pan_x = app.pan_y = 0;
+            app.zoom = 1.0f;
+            app.pan_x = app.pan_y = 0;
             InvalidateRect(hwnd, NULL, TRUE);
             return 0;
         }
-        /* Ctrl with the arrows pans instead of moving the character. */
-        if (msg == WM_KEYDOWN && (GetKeyState(VK_CONTROL) & 0x8000)) {
-            float step = 8.0f / app.zoom;
-            int panned = 1;
-            switch (wp) {
-            case VK_LEFT:  app.pan_x -= step; break;
-            case VK_RIGHT: app.pan_x += step; break;
-            case VK_UP:    app.pan_y -= step; break;
-            case VK_DOWN:  app.pan_y += step; break;
-            default: panned = 0; break;
-            }
-            if (panned) { InvalidateRect(hwnd, NULL, TRUE); return 0; }
-        }
+
         if (msg == WM_KEYDOWN && wp == VK_F2) {
             InterlockedExchange(&app.want_diag, 1);
             return 0;
