@@ -95,15 +95,34 @@ float gb_world_cover_scale(int dst_w, int dst_h);
 /* The room the game currently has loaded, or -1 if it is not in this group. */
 int  gb_world_active_room(const gb_t *gb);
 
-/* Where the hardware's screen sits in the world, in world pixels, following
- * the game through a room transition rather than snapping between rooms.
- * Returns 0 if the position cannot be determined. */
-int  gb_world_screen_origin(const gb_t *gb, float *out_x, float *out_y);
+/* Where the view is, followed frame by frame.
+ *
+ * The hardware's scroll registers say where the screen is only to the nearest
+ * 256 pixels, so each reading has to be resolved against the last one. That
+ * only works if every frame is seen: skip enough of them and a reading
+ * resolves to the wrong multiple, putting the view a room and a half from
+ * where it belongs. So this is followed on the thread running the game, once
+ * per finished frame, and the result travels with the frame it describes -
+ * rather than being worked out when the window happens to redraw, which is
+ * neither every frame nor at a steady rate.
+ */
+typedef struct {
+    int   valid;
+    int   in_world;              /* the readings mean something */
+    float screen_x, screen_y;    /* where the hardware's screen is */
+    float anchor_x, anchor_y;    /* the room object coordinates are counted in */
+    float link_x, link_y;        /* where Link is; crosses rooms unbroken */
+    int   have_link;
 
-/* Where Link is standing, in world pixels. Unlike the screen, this never
- * jumps: it crosses a room boundary as one continuous line. Returns 0 if it
- * cannot be determined. */
-int  gb_world_link_position(const gb_t *gb, float *out_x, float *out_y);
+    /* The frame before: what the hardware has actually drawn is one frame
+     * behind what the game has computed. */
+    float last_screen_x, last_screen_y;
+    float last_link_x, last_link_y;
+    int   have_last;
+} gb_world_view_t;
+
+/* Call once for each finished frame, on the thread running the game. */
+void gb_world_track(gb_world_view_t *view, const gb_t *gb);
 
 /* Whether the game is somewhere the world data describes. Menus, cutscenes,
  * dungeons and interiors are not, and drawing overworld rooms around them

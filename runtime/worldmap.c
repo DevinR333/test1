@@ -24,6 +24,7 @@
 #define W_LOADED_TILESET 0xCD20
 #define W_SEASON         0xCC4E
 #define W_SCROLL_MODE    0xCD00   /* 8 while a screen transition scrolls */
+#define W_LINK_OBJECT    0xCC48   /* high byte of whichever object Link is */
 
 /* Metatile attribute bits, as the hardware reads them. */
 #define ATTR_PALETTE 0x07
@@ -351,11 +352,9 @@ int gb_world_scrolling(const gb_t *gb)
  * running the game can read it safely while the window is drawing. During a
  * crossing it moves steadily and does not wrap; the wrap happens on the frame
  * the crossing finishes, by which point the game is no longer scrolling. */
-#define W_LINK_OBJECT_ID 0xCC48
-
 int gb_world_link_step(const gb_t *gb, int *out_x, int *out_y)
 {
-    int object = gb->wram[W_LINK_OBJECT_ID - 0xC000];
+    int object = gb->wram[W_LINK_OBJECT - 0xC000];
     if (object < 0xD0 || object > 0xDF)
         return 0;
     const uint8_t *o = &gb->wram[0x1000 + ((object << 8) - 0xD000)];
@@ -492,130 +491,106 @@ void gb_world_draw_objects(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
 }
 
 
-/* Moving between rooms is a transition the game performs over many frames: it
- * scrolls the view while swapping which room is loaded. Placing the live
- * screen at the active room's corner therefore holds it still and then jumps a
- * whole room, which reads as the screen shifting.
+/* Following the view.
  *
- * The game tracks where its screen actually is while that happens, so the
- * screen can be placed at its real position instead and simply travel.
+ * Moving between rooms is a crossing the game performs over many frames: it
+ * scrolls the screen while swapping which room is loaded. Placing the live
+ * screen at the active room's corner holds it still and then jumps a whole
+ * room, so the real position is worked out here instead - the room the game
+ * counts its contents in, plus its camera within that room.
  */
 #define W_TRANSITION_STATE  0xCD04
 #define W_TRANSITION_STATE2 0xCD05
-#define R_SCY               0x42
-#define R_SCX               0x43
+#define H_CAMERA_Y          0xFFA8   /* sixteen bits, low byte first */
+#define H_CAMERA_X          0xFFAA
 
-/* Where the tracking stands. A scroll register only says where the screen is
- * to the nearest 256 pixels, so the full position is carried from frame to
- * frame and each new reading is resolved against it. */
-static struct {
-    int   valid;
-    int   kx, ky;      /* what to add to a reading to get a world position */
-    float x, y;
-    float anchor_x, anchor_y;   /* the room the objects' coordinates are in */
-} origin;
-
-/* The value congruent to `raw` modulo 256 that lies closest to `anchor`. A
- * transition covers less than a whole 256, so there is never a tie. */
-static float resolve(float anchor, int raw)
+void gb_world_track(gb_world_view_t *view, const gb_t *gb)
 {
-    float v = (float)raw;
-    while (v - anchor > 128.0f)  v -= 256.0f;
-    while (anchor - v > 128.0f)  v += 256.0f;
-    return v;
-}
+    if (!view) return;
 
-int gb_world_screen_origin(const gb_t *gb, float *out_x, float *out_y)
-{
     int room = gb_world_active_room(gb);
     if (room < 0 || !gb_world_in_overworld(gb)) {
-        origin.valid = 0;
-        return 0;
+        view->valid = 0;
+        view->in_world = 0;
+        view->have_link = 0;
+        view->have_last = 0;
+        return;
     }
 
-    int base_x = (room % GB_WORLD_COLS) * ROOM_PX_W;
-    int base_y = (room / GB_WORLD_COLS) * ROOM_PX_H;
-
-    /* The scroll the hardware is given is the camera's position within the
-     * area plus the offset of the area itself, and during a transition the
-     * camera moves a few pixels every frame. Reading only the offset gives a
-     * position that holds still for the whole transition and then jumps a
-     * whole room at the end of it, which is the shift the player sees. */
-    /* Read the scroll from the hardware registers, which is what the picture
-     * in hand was actually drawn with.
-     *
-     * The game keeps its own copy of where the screen is - a camera within
-     * the area plus the area's own offset - and updates it each frame, but
-     * the hardware does not see that until the next blanking period. So the
-     * game's copy is a frame ahead of the framebuffer, and during a crossing
-     * the screen moves four pixels a frame: composing the live screen at the
-     * game's copy put it four pixels from its own contents, which lurched in
-     * at the start of a crossing and back out at the end.
-     *
-     * The vertical register is offset because the game scrolls the room down
-     * by the height of the status bar to make room for it, so the row below
-     * the bar is the top of the room. */
-    int raw_x = gb->io[R_SCX];
-    int raw_y = (gb->io[R_SCY] + GB_STATUS_H) & 0xFF;
-
-    /* Both are counted from wherever the game last set them, so they say
-     * where the screen is only up to a whole multiple of 256 pixels. Standing
-     * still in a known room pins that multiple down; a transition then moves
-     * from there without ever needing it pinned down again. */
+    /* The room the game counts its contents in. It changes only when a
+     * crossing finishes, at the same moment the camera below resets, so the
+     * two always describe one position between them. */
     int settled = gb->wram[W_TRANSITION_STATE - 0xC000] == 0x02
                && gb->wram[W_TRANSITION_STATE2 - 0xC000] == 0x00;
-
-    if (settled || !origin.valid) {
-        origin.kx = (base_x - raw_x) & 0xFF;
-        origin.ky = (base_y - raw_y) & 0xFF;
-        origin.x  = (float)base_x;
-        origin.y  = (float)base_y;
-        origin.anchor_x = (float)base_x;
-        origin.anchor_y = (float)base_y;
-        origin.valid = 1;
-    } else {
-        origin.x = resolve(origin.x, (raw_x + origin.kx) & 0xFF);
-        origin.y = resolve(origin.y, (raw_y + origin.ky) & 0xFF);
+    if (settled || !view->valid) {
+        view->anchor_x = (float)((room % GB_WORLD_COLS) * ROOM_PX_W);
+        view->anchor_y = (float)((room / GB_WORLD_COLS) * ROOM_PX_H);
+        view->valid = 1;
     }
 
-    if (out_x) *out_x = origin.x;
-    if (out_y) *out_y = origin.y;
-    return 1;
-}
+    /* The camera within that room: sixteen bits, signed, and it does not
+     * wrap. During a crossing it runs from nothing to a whole room's width
+     * and the room it is counted against then moves on, so the two together
+     * are one unbroken position - no scroll register to read modulo 256, and
+     * so nothing to guess at. */
+    int cam_x = (int16_t)(gb->hram[H_CAMERA_X - 0xFF80]
+                          | (gb->hram[H_CAMERA_X + 1 - 0xFF80] << 8));
+    int cam_y = (int16_t)(gb->hram[H_CAMERA_Y - 0xFF80]
+                          | (gb->hram[H_CAMERA_Y + 1 - 0xFF80] << 8));
 
+    float screen_x = view->anchor_x + cam_x;
+    float screen_y = view->anchor_y + cam_y;
 
-/* Where Link is in the world.
- *
- * His own coordinates are measured within the room he started the transition
- * in, and stay that way for the whole of it: walking east they run past the
- * room's width - 154, 160, 169 - and only wrap to 9 when the transition
- * finishes and the room he is counted against becomes the new one. Added to
- * the room he is counted against, rather than to where the screen currently
- * is, that makes one unbroken line across the boundary: 1274, 1278, ... 1289,
- * and 1289 again on the far side.
- *
- * A camera on that line never jumps, so there is no shift from one screen to
- * the next - the world simply travels past as he walks.
- */
-#define W_LINK_OBJECT 0xCC48   /* high byte of whichever object Link is */
-
-int gb_world_link_position(const gb_t *gb, float *out_x, float *out_y)
-{
-    float sx, sy;
-    if (!gb_world_screen_origin(gb, &sx, &sy))   /* also updates the anchor */
-        return 0;
-
-    /* Riding an animal makes a different object the one being steered. */
+    /* Where Link is in the world.
+     *
+     * His own coordinates are measured within the room he started the
+     * crossing in, and stay that way for the whole of it: walking east they
+     * run past the room's width - 154, 160, 169 - and only wrap to 9 when the
+     * crossing finishes and the room he is counted against becomes the new
+     * one. Added to the room he is counted against rather than to wherever
+     * the screen currently is, that is one unbroken line across the boundary:
+     * 1274, 1278 ... 1289, and 1289 again on the far side.
+     *
+     * A camera on that line never jumps, so there is no shift from one screen
+     * to the next - the world simply travels past as he walks. */
+    float link_x = screen_x + 80.0f, link_y = screen_y + 64.0f;
+    int have_link = 0;
     int object = gb->wram[W_LINK_OBJECT - 0xC000];
-    if (object < 0xD0 || object > 0xDF)
-        return 0;
+    if (object >= 0xD0 && object <= 0xDF) {
+        /* Objects live in the second bank of work RAM. */
+        const uint8_t *o = &gb->wram[0x1000 + ((object << 8) - 0xD000)];
+        link_x = view->anchor_x + o[0x0D];
+        link_y = view->anchor_y + o[0x0B];
+        have_link = 1;
+    }
 
-    /* Objects live in the second bank of work RAM. */
-    const uint8_t *o = &gb->wram[0x1000 + ((object << 8) - 0xD000)];
+    /* Report the frame before this one.
+     *
+     * All of the above is what the game has just computed. The hardware does
+     * not see it until the next blanking period, so the picture in hand was
+     * drawn with the frame before's. Standing still that costs nothing;
+     * crossing between rooms the screen moves four pixels a frame, and
+     * composing the live screen a frame ahead of its own contents made it
+     * lurch in at the start of a crossing and back out at the end. */
+    if (view->have_last) {
+        view->screen_x = view->last_screen_x;
+        view->screen_y = view->last_screen_y;
+        view->link_x   = view->last_link_x;
+        view->link_y   = view->last_link_y;
+    } else {
+        view->screen_x = screen_x;
+        view->screen_y = screen_y;
+        view->link_x   = link_x;
+        view->link_y   = link_y;
+    }
+    view->have_link = have_link;
+    view->in_world = 1;
 
-    if (out_x) *out_x = origin.anchor_x + o[0x0D];   /* x, whole pixels */
-    if (out_y) *out_y = origin.anchor_y + o[0x0B];   /* y, whole pixels */
-    return 1;
+    view->last_screen_x = screen_x;
+    view->last_screen_y = screen_y;
+    view->last_link_x = link_x;
+    view->last_link_y = link_y;
+    view->have_last = 1;
 }
 
 

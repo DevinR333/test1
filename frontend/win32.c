@@ -44,6 +44,16 @@ static struct {
      * waiting on a redraw. */
     gb_t          snapshot;      /* written by the game thread */
     gb_t          view;          /* read by the window, under no lock */
+
+    /* Where the view is, followed once per finished frame on the game's own
+     * thread and carried across with the frame it describes. Working it out
+     * when the window happens to redraw instead means working it out from
+     * frames several apart, and the position is only known to the nearest
+     * 256 pixels - which is how the view used to land a room and a half
+     * away, showing somewhere else entirely. */
+    gb_world_view_t track;           /* the game thread's running position */
+    gb_world_view_t snapshot_track;  /* handed over with the snapshot */
+    gb_world_view_t view_track;      /* the window's copy */
     volatile LONG have_frame;
     uint32_t      pixels[GB_SCREEN_W * GB_SCREEN_H];   /* presented copy */
     BITMAPINFO    bmi;
@@ -103,8 +113,11 @@ static void on_frame(gb_t *gb, void *user)
      * that is exactly what "the parts outside the screen do not line up"
      * looks like. One copy, taken at one instant, cannot disagree with
      * itself. */
+    gb_world_track(&app.track, gb);
+
     EnterCriticalSection(&app.lock);
     memcpy(&app.snapshot, gb, sizeof(app.snapshot));
+    app.snapshot_track = app.track;
     app.have_frame = 1;
     LeaveCriticalSection(&app.lock);
 
@@ -408,10 +421,12 @@ static void paint(HWND hwnd)
     EnterCriticalSection(&app.lock);
     memcpy(&app.view, &app.snapshot, sizeof(app.view));
     memcpy(app.pixels, app.view.framebuffer, sizeof(app.pixels));
+    app.view_track = app.snapshot_track;
     int have = app.have_frame;
     LeaveCriticalSection(&app.lock);
 
     const gb_t *view = have ? &app.view : NULL;
+    const gb_world_view_t *where = &app.view_track;
 
     SetStretchBltMode(dc, COLORONCOLOR);
 
@@ -424,7 +439,7 @@ static void paint(HWND hwnd)
      * there anywhere the world data does not describe - menus, cutscenes and
      * the opening - where surrounding the screen with overworld scenery would
      * show somewhere the player is not. */
-    int world_ok = view && gb_world_in_overworld(view);
+    int world_ok = view && where->in_world;
     if (app.zoom > 1.001f || !world_ok) {
         app.cam_valid = 0;
         float z = app.zoom < 1.0f ? 1.0f : app.zoom;
@@ -457,14 +472,10 @@ static void paint(HWND hwnd)
      * drawn at the same scale. */
     float scale = base * app.zoom;
 
-    int room = gb_world_active_room(view);
-    if (room < 0) room = 0;
-
-    /* Where the screen actually is, which during a room transition is
-     * somewhere between two rooms rather than at either one's corner. */
-    float screen_x = (room % GB_WORLD_COLS) * 160.0f;
-    float screen_y = (room / GB_WORLD_COLS) * 128.0f;
-    gb_world_screen_origin(view, &screen_x, &screen_y);
+    /* Where the screen actually is, which during a room crossing is somewhere
+     * between two rooms rather than at either one's corner. */
+    float screen_x = where->screen_x;
+    float screen_y = where->screen_y;
 
     /* The camera follows Link, not the screen.
      *
@@ -478,12 +489,9 @@ static void paint(HWND hwnd)
      * stay lined up with the world drawn around them throughout. */
     float cam_x = screen_x + 80.0f;
     float cam_y = screen_y + 64.0f;
-    {
-        float lx, ly;
-        if (gb_world_link_position(view, &lx, &ly)) {
-            cam_x = lx;
-            cam_y = ly;
-        }
+    if (where->have_link) {
+        cam_x = where->link_x;
+        cam_y = where->link_y;
     }
     app.cam_x = cam_x;
     app.cam_y = cam_y;
