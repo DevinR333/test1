@@ -153,7 +153,13 @@ CHECK
 # World map data, when a disassembly checkout is present. The hardware only
 # renders one room, so a camera that shows more needs the room layouts.
 WORLD_SRC=""
+if [ -n "${NO_MAP:-}" ]; then
+    say "building without the map view (NO_MAP set)"
+    printf '#include "worldmap.h"\nconst int gb_world_group=0;\nconst uint8_t gb_world_rooms[GB_WORLD_ROOMS][GB_ROOM_TILES]={{0}};\nconst uint8_t gb_world_room_tileset[GB_WORLD_ROOMS]={0};\nconst uint8_t gb_world_mappings[1][GB_MAPPING_BYTES]={{0}};\nconst int gb_world_mapping_count=1;\nconst uint8_t gb_world_tileset_vram[1][GB_TILESET_VRAM]={{0}};\nconst uint8_t gb_world_tileset_palette[1][GB_TILESET_PALETTE]={{0}};\nconst int gb_world_tileset_count=0;\n' > "$OUT_DIR/world_data.c"
+    WORLD_SRC="$OUT_DIR/world_data.c runtime/worldmap.c"
+fi
 for d in external/oracles-disasm ../oracles-disasm; do
+    [ -n "$WORLD_SRC" ] && break
     if [ -d "$d/rooms" ]; then
         say "building world map data from $d"
         "$PY" tools/worldmap.py "$d" -o "$OUT_DIR/world_data.c"
@@ -162,9 +168,16 @@ for d in external/oracles-disasm ../oracles-disasm; do
     fi
 done
 if [ -z "$WORLD_SRC" ]; then
-    echo "  no disassembly checkout found; the map view will be unavailable"
-    printf '#include "worldmap.h"\nconst int gb_world_group=0;\nconst uint8_t gb_world_rooms[GB_WORLD_ROOMS][GB_ROOM_TILES]={{0}};\nconst uint8_t gb_world_room_tileset[GB_WORLD_ROOMS]={0};\nconst uint8_t gb_world_mappings[1][GB_MAPPING_BYTES]={{0}};\nconst int gb_world_mapping_count=1;\n' > "$OUT_DIR/world_data.c"
-    WORLD_SRC="$OUT_DIR/world_data.c runtime/worldmap.c"
+    # An empty table renders as a blank screen, which is indistinguishable
+    # from a bug. Refuse rather than build something that looks broken.
+    die "no disassembly checkout found, so the map view has no world data.
+
+  Looked for a rooms/ directory in:
+    external/oracles-disasm
+    ../oracles-disasm
+
+  Run ./scripts/setup-disasm.sh first, or pass NO_MAP=1 to build without
+  the map view."
 fi
 
 say "generating the interpreter fallback"
@@ -246,6 +259,11 @@ BUILD_REV="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 say "done"
 SIZE=$(( $(wc -c < "$EXE") / 1024 ))
 echo "  built $BUILD_STAMP from $BUILD_REV"
+if [ -n "${NO_MAP:-}" ]; then
+    echo "  map view:  DISABLED"
+else
+    echo "  map view:  world data compiled in ($(wc -c < "$OUT_DIR/world_data.c" | tr -d ' ') bytes)"
+fi
 cat <<NOTE
   $EXE  (${SIZE} KiB)
 

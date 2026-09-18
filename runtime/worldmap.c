@@ -76,6 +76,17 @@ void gb_world_render(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
     if (!dst || dst_w <= 0 || dst_h <= 0 || scale <= 0.0f)
         return;
 
+    /* No world data compiled in. Drawing nothing leaves a blank screen that
+     * looks exactly like a rendering bug, so draw something unmistakable
+     * instead. */
+    if (gb_world_tileset_count <= 0) {
+        for (int y = 0; y < dst_h; y++)
+            for (int x = 0; x < dst_w; x++)
+                dst[(size_t)y * dst_w + x] =
+                    (((x >> 4) ^ (y >> 4)) & 1) ? 0xFF803030u : 0xFF202020u;
+        return;
+    }
+
     const uint32_t backdrop = 0xFF101014u;
     const float inv = 1.0f / scale;
     const float left = cam_x - (dst_w * 0.5f) * inv;
