@@ -503,32 +503,30 @@ static void paint(HWND hwnd)
     }
     if (!app.map_pixels) { EndPaint(hwnd, &ps); return; }
 
+    /* World, then the live screen into it, then the status bar over the top -
+     * all into one image, which then goes to the window in a single blit.
+     *
+     * The live screen used to be a second blit, positioned separately. Two
+     * blits mean two different resamplers over one picture: at a window
+     * height that is not a whole multiple of 144 - most of them, and every
+     * 16:9 one - the screen landed a fraction of a pixel from the world drawn
+     * around it. Worse, the source rectangle of a top-down bitmap is not
+     * measured from the top, so asking for the 128 rows below the status bar
+     * actually fetched the 128 rows above it: the world was drawn sixteen
+     * pixels out of place with the hearts and rupees painted into it, and the
+     * status bar travelled around with the player. Sampling both here, by
+     * index, through one position and scale, none of that can happen. */
     gb_world_render(view, app.map_pixels, cw, ch, cam_x, cam_y, scale);
+    gb_world_draw_screen(view, app.map_pixels, cw, ch, cam_x, cam_y, scale,
+                         screen_x, screen_y);
 
-    /* The surrounding world fills the window, so a widescreen display shows
-     * more world across rather than bars. */
+    /* The status bar is the player's, not the world's: it stays across the
+     * top of the window at its natural size, whatever the camera is doing and
+     * however far out the view is pulled. */
+    gb_world_draw_status(view, app.map_pixels, cw, ch, base);
+
     StretchDIBits(dc, 0, 0, cw, ch, 0, 0, cw, ch,
                   app.map_pixels, &app.map_bmi, DIB_RGB_COLORS, SRCCOPY);
-
-    /* The live screen goes where the game says it is, so its content lines up
-     * with the world around it throughout a transition. */
-    float left = cam_x - (cw * 0.5f) / scale;
-    float top  = cam_y - (ch * 0.5f) / scale;
-
-    int lx = (int)((screen_x - left) * scale);
-    int ly = (int)((screen_y - top) * scale);
-    int lw = (int)(160.0f * scale + 0.5f);
-    int lh = (int)(128.0f * scale + 0.5f);
-    if (lw < 1) lw = 1;
-    if (lh < 1) lh = 1;
-
-    /* Only the part of the screen showing the room. The status bar covers the
-     * top sixteen rows - the game scrolls the room by sixteen less than its
-     * true position to make room for it - so the room starts on row 16, and
-     * taking it from row 0 puts the world sixteen pixels out and paints the
-     * hearts and rupees into it. */
-    StretchDIBits(dc, lx, ly, lw, lh, 0, GB_STATUS_H, GB_SCREEN_W, 128,
-                  app.pixels, &app.bmi, DIB_RGB_COLORS, SRCCOPY);
 
     EndPaint(hwnd, &ps);
 }

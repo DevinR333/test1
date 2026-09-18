@@ -73,6 +73,17 @@ int gb_world_season(const gb_t *gb);
 void gb_world_render(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
                      float cam_x, float cam_y, float scale);
 
+/* Composites the hardware's screen into the world at `screen_x, screen_y`,
+ * sampled exactly as the world around it is, so the two cannot disagree. */
+void gb_world_draw_screen(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
+                          float cam_x, float cam_y, float scale,
+                          float screen_x, float screen_y);
+
+/* Draws the status bar across the top of the view, where it stays whatever
+ * the camera is doing. */
+void gb_world_draw_status(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
+                          float scale);
+
 /* The scale at which the whole world fits in a view of this size, leaving
  * bars on the wider axis. */
 float gb_world_fit_scale(int dst_w, int dst_h);

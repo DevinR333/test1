@@ -121,7 +121,7 @@ void gb_world_render(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
      * fixed copy that would be frozen on one frame beside a live screen that
      * is not. Only worth trusting once a room is actually loaded. */
     int loaded_assets = -1;
-    if (gb_world_in_overworld(gb)) {
+    if (gb_world_in_overworld(gb) && !gb_world_scrolling(gb)) {
         int loaded = gb->wram[W_LOADED_TILESET - 0xC000] & 0x7F;
         loaded_assets = gb_world_tileset_asset[season][loaded];
     }
@@ -251,6 +251,80 @@ void gb_world_render(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
             if (attr & ATTR_XFLIP) px = 7 - px;
             int bit = 7 - px;
             row[dx] = shade_of[(((hi >> bit) & 1) << 1) | ((lo >> bit) & 1)];
+        }
+    }
+}
+
+
+/* Composites the hardware's own screen into the world, sampling it exactly as
+ * the world around it is sampled.
+ *
+ * Drawing it with a separate blit meant two different resamplers over one
+ * picture: at a window height that is not a whole multiple of 144 - which is
+ * most of them, and every 16:9 one - the live screen landed a fraction of a
+ * pixel away from the world drawn around it, and the join showed. Sampling it
+ * here, through the same position and scale, they cannot disagree.
+ *
+ * Only the room is taken. The top sixteen rows are the status bar, which is
+ * not part of the world and does not belong at the world's position.
+ */
+void gb_world_draw_screen(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
+                          float cam_x, float cam_y, float scale,
+                          float screen_x, float screen_y)
+{
+    if (!dst || dst_w <= 0 || dst_h <= 0 || scale <= 0.0f)
+        return;
+
+    const float inv = 1.0f / scale;
+    const float left = cam_x - (dst_w * 0.5f) * inv;
+    const float top  = cam_y - (dst_h * 0.5f) * inv;
+    const int room_h = GB_SCREEN_H - GB_STATUS_H;
+
+    for (int dy = 0; dy < dst_h; dy++) {
+        int sy = (int)((top + dy * inv) - screen_y);
+        if (sy < 0 || sy >= room_h)
+            continue;
+        const uint32_t *src = gb->framebuffer + (sy + GB_STATUS_H) * GB_SCREEN_W;
+        uint32_t *row = dst + (size_t)dy * dst_w;
+
+        long long wx_fx = (long long)((left - screen_x) * 65536.0f);
+        const long long step = (long long)(inv * 65536.0f);
+        for (int dx = 0; dx < dst_w; dx++, wx_fx += step) {
+            int sx = (int)(wx_fx >> 16);
+            if (sx >= 0 && sx < GB_SCREEN_W)
+                row[dx] = src[sx];
+        }
+    }
+}
+
+
+/* The status bar belongs to the player, not to the world, so it stays at the
+ * top of the window however the camera moves and whatever the zoom - rather
+ * than riding along with the screen and wandering off with it.
+ */
+void gb_world_draw_status(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
+                          float scale)
+{
+    if (!dst || dst_w <= 0 || dst_h <= 0 || scale <= 0.0f)
+        return;
+
+    int h = (int)(GB_STATUS_H * scale + 0.5f);
+    int w = (int)(GB_SCREEN_W * scale + 0.5f);
+    if (h < 1 || w < 1) return;
+    if (h > dst_h) h = dst_h;
+
+    /* The bar's own background, so the rest of the width belongs with it
+     * rather than cutting it off in the middle of the window. */
+    uint32_t back = gb->framebuffer[0];
+    int x0 = (dst_w - w) / 2;
+
+    for (int dy = 0; dy < h; dy++) {
+        int sy = dy * GB_STATUS_H / h;
+        const uint32_t *src = gb->framebuffer + sy * GB_SCREEN_W;
+        uint32_t *row = dst + (size_t)dy * dst_w;
+        for (int dx = 0; dx < dst_w; dx++) {
+            int sx = dx - x0;
+            row[dx] = (sx >= 0 && sx < w) ? src[sx * GB_SCREEN_W / w] : back;
         }
     }
 }
