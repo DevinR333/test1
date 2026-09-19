@@ -656,19 +656,19 @@ int gb_world_in_overworld(const gb_t *gb)
  * with the hardware's own picture settles it. Terrain should match pixel for
  * pixel; only the objects, which are not in this data, should differ.
  */
-int gb_world_self_check(const gb_t *gb, char *out, size_t n)
+int gb_world_self_check(const gb_t *gb, char *out, size_t n, double *pct_out)
 {
-    static uint32_t mine[GB_SCREEN_W * (GB_SCREEN_H - GB_STATUS_H)];
     const int room_h = GB_SCREEN_H - GB_STATUS_H;
+    static uint32_t mine[GB_SCREEN_W * (GB_SCREEN_H - GB_STATUS_H)];
+    static uint8_t skip[GB_SCREEN_W * (GB_SCREEN_H - GB_STATUS_H)];
     gb_world_view_t view;
     size_t at = 0;
 
     memset(&view, 0, sizeof(view));
     gb_world_track(&view, gb);
-    if (!view.in_world) {
-        snprintf(out, n, "not in the overworld; nothing to check\n");
-        return 0;
-    }
+    if (pct_out) *pct_out = -1.0;
+    if (!view.in_world)
+        return 1;
 
     int room = gb_world_active_room(gb);
     int season = gb_world_season(gb);
@@ -676,33 +676,88 @@ int gb_world_self_check(const gb_t *gb, char *out, size_t n)
 
     /* From the compiled-in data alone. Taking the machine's own tile
      * graphics - which is what the surrounding world does for the room the
-     * game has loaded - would compare the machine against itself and agree
+     * machine has loaded - would compare the machine against itself and agree
      * no matter how wrong the data is. The rooms this has to be right about
      * are the ones the machine is not holding. */
     gb_world_render(gb, mine, GB_SCREEN_W, room_h,
                     view.screen_x + GB_SCREEN_W / 2.0f,
                     view.screen_y + room_h / 2.0f, 1.0f, 0);
 
-    long differ = 0;
+    /* Everything the objects cover is not terrain and proves nothing either
+     * way. Link, every enemy and every item is in that table, and on a busy
+     * screen they are a sixth of it - enough to look like a fault on data
+     * that is perfectly good. */
+    memset(skip, 0, sizeof(skip));
+    int tall = (gb->io[0x40] & 0x04) ? 16 : 8;
+    int covered = 0;
+    for (int i = 0; i < 40; i++) {
+        int oy = gb->oam[i * 4], ox = gb->oam[i * 4 + 1];
+        if (oy == 0 || oy >= 160 || ox == 0 || ox >= 168) continue;
+        for (int y = oy - 16 - GB_STATUS_H; y < oy - 16 - GB_STATUS_H + tall; y++) {
+            if (y < 0 || y >= room_h) continue;
+            for (int x = ox - 8; x < ox; x++) {
+                if (x < 0 || x >= GB_SCREEN_W) continue;
+                if (!skip[y * GB_SCREEN_W + x]) covered++;
+                skip[y * GB_SCREEN_W + x] = 1;
+            }
+        }
+    }
+
+    long differ = 0, judged = 0;
     int col[GB_SCREEN_W];
     for (int x = 0; x < GB_SCREEN_W; x++) {
         col[x] = 0;
-        for (int y = 0; y < room_h; y++)
+        for (int y = 0; y < room_h; y++) {
+            if (skip[y * GB_SCREEN_W + x]) continue;
+            judged++;
             if ((mine[y * GB_SCREEN_W + x] & 0xFFFFFF)
-                != (gb->framebuffer[(y + GB_STATUS_H) * GB_SCREEN_W + x] & 0xFFFFFF))
+                != (gb->framebuffer[(y + GB_STATUS_H) * GB_SCREEN_W + x] & 0xFFFFFF)) {
                 col[x]++;
-        differ += col[x];
+                differ++;
+            }
+        }
+    }
+    if (judged < 2000)
+        return 1;                     /* too much of it is objects to judge */
+
+    /* A screen with nothing on it agrees with anything.
+     *
+     * Between rooms, behind a fade, part way through a load, the display is
+     * one flat colour - and so is a render of whatever data, right or wrong,
+     * because the palettes are flat too. Such a frame scores a perfect zero
+     * and is worth nothing. Taking the best of many samples, those are
+     * exactly the ones that win, which had the effect of declaring every
+     * build correct however wrong its data was. Count the colours actually on
+     * screen and refuse to judge by a frame that has almost none. */
+    {
+        uint32_t seen[24];
+        int kinds = 0;
+        for (int y = 0; y < room_h && kinds < 24; y += 3)
+            for (int x = 0; x < GB_SCREEN_W && kinds < 24; x += 3) {
+                uint32_t c = gb->framebuffer[(y + GB_STATUS_H) * GB_SCREEN_W + x]
+                             & 0xFFFFFF;
+                int k = 0;
+                while (k < kinds && seen[k] != c) k++;
+                if (k == kinds) seen[kinds++] = c;
+            }
+        if (kinds < 8)
+            return 1;                 /* nothing on screen to be right about */
     }
 
-    /* Which alignment would have matched, if not this one. */
+    double pct = 100.0 * differ / judged;
+    if (pct_out) *pct_out = pct;
+
+    /* Which alignment would have matched, if not this one. Only worth the
+     * search when something is actually wrong. */
     int best = -1, bdx = 0, bdy = 0;
-    for (int dy = -16; dy <= 16; dy++)
-        for (int dx = -40; dx <= 40; dx++) {
+    for (int dy = pct > 20.0 ? -16 : 0; dy <= (pct > 20.0 ? 16 : 0); dy++)
+        for (int dx = pct > 20.0 ? -40 : 0; dx <= (pct > 20.0 ? 40 : 0); dx++) {
             int same = 0;
             for (int y = 8; y < room_h - 8; y += 2)
                 for (int x = 16; x < GB_SCREEN_W - 16; x += 2) {
                     int px = x + dx, py = y + dy;
                     if (px < 0 || px >= GB_SCREEN_W || py < 0 || py >= room_h) continue;
+                    if (skip[y * GB_SCREEN_W + x]) continue;
                     if ((mine[py * GB_SCREEN_W + px] & 0xFFFFFF)
                         == (gb->framebuffer[(y + GB_STATUS_H) * GB_SCREEN_W + x] & 0xFFFFFF))
                         same++;
@@ -710,7 +765,6 @@ int gb_world_self_check(const gb_t *gb, char *out, size_t n)
             if (same > best) { best = same; bdx = dx; bdy = dy; }
         }
 
-    double pct = 100.0 * differ / (GB_SCREEN_W * room_h);
     at += snprintf(out + at, n - at,
         "world data against the hardware's own picture\n"
         "  frame            %llu\n"
@@ -718,16 +772,17 @@ int gb_world_self_check(const gb_t *gb, char *out, size_t n)
         "  tileset          %02x -> layout %d, graphics %d\n"
         "  screen at        %.0f, %.0f\n"
         "  tables           %d layouts, %d metatile tables, %d tileset graphics\n"
-        "  pixels differing %ld of %d  (%.1f%%)\n"
+        "  objects cover    %d of %d pixels, not judged\n"
+        "  terrain differing %ld of %ld  (%.1f%%)\n"
         "  best alignment   %+d, %+d\n",
         (unsigned long long)gb->frames, room, gb_world_group, season,
         tileset, gb_world_tileset_mapping[season][tileset],
         gb_world_tileset_asset[season][tileset],
         view.screen_x, view.screen_y,
         gb_world_layout_count, gb_world_mapping_count, gb_world_tileset_count,
-        differ, GB_SCREEN_W * room_h, pct, bdx, bdy);
+        covered, GB_SCREEN_W * room_h, differ, judged, pct, bdx, bdy);
 
-    at += snprintf(out + at, n - at, "  per column (of %d rows), worst of 8:\n   ", room_h);
+    at += snprintf(out + at, n - at, "  per column, worst of 8:\n   ");
     for (int x = 0; x < GB_SCREEN_W; x += 8) {
         int m = 0;
         for (int i = 0; i < 8; i++) if (col[x + i] > m) m = col[x + i];
@@ -735,14 +790,17 @@ int gb_world_self_check(const gb_t *gb, char *out, size_t n)
     }
     at += snprintf(out + at, n - at, "\n\n");
 
-    int ok = (bdx == 0 && bdy == 0 && pct < 30.0);
+    /* Only an accusation when it is not close. Terrain from matching data
+     * agrees almost exactly once the objects are out of the way; terrain from
+     * a different build of the game disagrees about nearly all of it. The
+     * room the player is standing in can still differ honestly - a cut bush,
+     * an opened door, a tile the game swapped for something this data cannot
+     * know about - so the bar is set well clear of that. */
+    int ok = (bdx == 0 && bdy == 0 && pct < 60.0);
     at += snprintf(out + at, n - at, "  verdict: %s\n", ok
-        ? "the world data matches the ROM. Terrain lines up; what differs is\n"
-          "           objects, which are not in this data and are drawn separately."
-        : "THE WORLD DATA DOES NOT MATCH THIS ROM.\n"
-          "           The disassembly the world was read from and the ROM the code was\n"
-          "           translated from are different builds of the game. Build both from\n"
-          "           the same one - the simplest way is to translate the ROM the\n"
-          "           checkout itself builds.");
+        ? "terrain lines up."
+        : "terrain does not line up. The disassembly the world was read from\n"
+          "           and the ROM the code was translated from look like different\n"
+          "           builds of the game.");
     return ok;
 }

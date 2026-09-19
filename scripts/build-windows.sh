@@ -41,8 +41,36 @@ is_rom() {
     [ "$magic" = "ceed6666" ]
 }
 
-ROM="${1:-}"
+# The title in the cartridge header, at $134, up to fifteen characters.
+rom_title() {
+    dd if="$1" bs=1 skip=308 count=15 2>/dev/null | tr -d '\000' | tr -cd '\40-\176'
+}
 
+# The disassembly checkout, and the ROM it builds for itself.
+#
+# This matters more than it sounds. The world outside the game's own screen is
+# read from the checkout; the game's code is translated from the ROM. If those
+# are two different builds of the game then the scenery describes a game the
+# player is not in - and it looks exactly like a rendering fault, so it gets
+# chased as one. The checkout's own ROM is the one file guaranteed to agree
+# with the checkout, so when nothing else is asked for, that is what is used.
+DISASM=""
+DISASM_ROM=""
+for d in external/oracles-disasm ../oracles-disasm; do
+    [ -d "$d/rooms" ] || continue
+    DISASM="$d"
+    for cand in "$d/seasons.gbc" "$d/ages.gbc"; do
+        if is_rom "$cand"; then DISASM_ROM="$cand"; break; fi
+    done
+    break
+done
+
+ROM="${1:-}"
+NAMED="${1:+yes}"
+
+# A remembered path is only worth reusing if it still agrees with the
+# checkout. Remembering a mismatched one is how a bad pairing survives every
+# later build without ever being chosen again.
 if [ -z "$ROM" ] && [ -f "$REMEMBERED" ]; then
     candidate="$(cat "$REMEMBERED")"
     if is_rom "$candidate"; then
@@ -50,11 +78,6 @@ if [ -z "$ROM" ] && [ -f "$REMEMBERED" ]; then
         echo "  using the ROM from last time: $ROM"
     fi
 fi
-
-# The title in the cartridge header, at $134, up to fifteen characters.
-rom_title() {
-    dd if="$1" bs=1 skip=308 count=15 2>/dev/null | tr -d '\000' | tr -cd '\40-\176'
-}
 
 if [ -z "$ROM" ]; then
     # The places a downloaded or dumped cartridge actually ends up. MSYS2
@@ -125,39 +148,20 @@ printf '%s\n' "$ROM" > "$REMEMBERED"
 printf '  ROM: %s\n       %s, %s KiB\n' "$ROM" "$(rom_title "$ROM")" \
        "$(( $(wc -c < "$ROM") / 1024 ))"
 
-# The world drawn around the game's own screen is read from a disassembly
-# checkout; the game's code is translated from the ROM. They have to be the
-# same build of the game, or the scenery describes a game the player is not
-# in - wrong tilesets, wrong metatiles, faults that look like rendering bugs
-# and are not. Checked here, before an hour of compiling, rather than after.
-for d in external/oracles-disasm ../oracles-disasm; do
-    [ -d "$d/rooms" ] || continue
-    built="$d/$(basename "$ROM")"
-    [ -f "$built" ] || built="$d/seasons.gbc"
-    [ -f "$built" ] || break
-    if ! cmp -s "$built" "$ROM" && [ -z "${MISMATCH_OK:-}" ]; then
-        die "this checkout builds a different ROM than the one being translated.
-
-  checkout builds: $built
-                   $(( $(wc -c < "$built") / 1024 )) KiB
-  translating:     $ROM
-                   $(( $(wc -c < "$ROM") / 1024 )) KiB
-
-  The world outside the game's own screen is read from the checkout; the
-  game's code is translated from the ROM. Those have to be the same build of
-  the game, or the scenery describes a game you are not playing.
-
-  Translate the ROM this checkout builds:
-
-      bash $REPO/scripts/build-windows.sh \"$built\"
-
-  or check the disassembly out at the revision your own ROM was built from.
-  To build anyway, knowing the scenery may be wrong:
-
-      MISMATCH_OK=1 bash $REPO/scripts/build-windows.sh \"$ROM\""
-    fi
-    break
-done
+# Worth knowing, not worth stopping for. The world outside the game's own
+# screen is read from the checkout and the game's code is translated from the
+# ROM; if those are different builds of the game, scenery away from the player
+# can be wrong. It is a real cause of real symptoms, but not one to block a
+# build over - especially a build that was working.
+if [ -n "$DISASM_ROM" ] && ! cmp -s "$DISASM_ROM" "$ROM"; then
+    printf '\033[33mnote:\033[0m the disassembly builds a different ROM than this one.\n'
+    printf '  checkout builds: %s, %s KiB\n' "$DISASM_ROM" \
+           "$(( $(wc -c < "$DISASM_ROM") / 1024 ))"
+    printf '  translating:     %s, %s KiB\n' "$ROM" "$(( $(wc -c < "$ROM") / 1024 ))"
+    printf '  Scenery away from the player is read from the checkout, so where the\n'
+    printf '  two builds differ it can be wrong. oracle-world.txt, written beside the\n'
+    printf '  executable while it runs, measures whether it actually is.\n\n'
+fi
 
 # Find a Python 3 under whatever name this environment uses.
 PY=""

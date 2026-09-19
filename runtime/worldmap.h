@@ -133,9 +133,16 @@ void gb_world_track(gb_world_view_t *view, const gb_t *gb);
  * shows scenery that has nothing to do with what is on screen. */
 int  gb_world_in_overworld(const gb_t *gb);
 
-/* Checks the compiled-in world against the hardware's own picture and writes
- * a report. Returns nonzero if they agree. */
-int gb_world_self_check(const gb_t *gb, char *out, size_t n);
+/* Checks the compiled-in world against the hardware's own picture for this
+ * one frame and writes a report. Returns nonzero if they agree, and hands
+ * back the share of terrain that differed, or -1 if this frame could not be
+ * judged at all.
+ *
+ * One frame is not a verdict. A cutscene, a fade, a room mid-load: any of
+ * those disagree completely on data that is perfectly good. Sample it
+ * repeatedly and keep the best - one frame that agrees proves the data is
+ * right, while data that is wrong disagrees on every frame there is. */
+int gb_world_self_check(const gb_t *gb, char *out, size_t n, double *pct_out);
 
 /* Outlines a room, so the player can see where they are on the map. */
 void gb_world_mark_room(uint32_t *dst, int dst_w, int dst_h,
