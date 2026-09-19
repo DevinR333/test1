@@ -135,7 +135,14 @@ var UI = (function () {
         g.fillRect(p.x, p.y, 24, 1); g.fillRect(p.x, p.y + 13, 24, 1);
         g.fillRect(p.x, p.y, 1, 14); g.fillRect(p.x + 23, p.y, 1, 14);
         Text.draw(g, open ? L.id : '??', p.x + 5, p.y + 4, open ? '#ffffff' : '#5a5170', 1);
-        if (d.bones[L.id]) g.drawImage(Art.BONE_GOLD, p.x + 26, p.y + 4);
+        if (!isBoss && open) {
+          var got = d.gems[L.id] || 0;
+          var gimg = Art.GEMS[L.theme] || Art.GEMS.meadow;
+          for (var gI = 0; gI < 3; gI++) {
+            if (gI < got) g.drawImage(gimg, p.x + 26 + gI * 8, p.y + 4);
+            else { g.fillStyle = '#3a3350'; g.fillRect(p.x + 27 + gI * 8, p.y + 5, 5, 5); }
+          }
+        }
         if (done) { g.fillStyle = '#7fe0a0'; g.fillRect(p.x + 2, p.y + 2, 2, 2); }
       }
       var sp = nodePos(G.sel);
@@ -145,8 +152,8 @@ var UI = (function () {
       var L2 = LEVELS[G.sel];
       panel(g, 8, VIEW_H - 44, VIEW_W - 16, 36);
       Text.draw(g, L2.id + ' ' + L2.name, 16, VIEW_H - 38, '#ffd75e', 1);
-      Text.draw(g, 'COINS ' + d.coins + '   BONES ' + Save.bonesFound() + '/' + LEVELS.length,
-        16, VIEW_H - 27, '#b8a8d8', 1);
+      Text.draw(g, 'COINS ' + d.coins + '   GEMS ' + Save.gemsFound() + '/' + Save.gemsTotal() +
+        '   CHESTS ' + Save.chestsFound(), 16, VIEW_H - 27, '#b8a8d8', 1);
       Text.draw(g, 'ENTER PLAY   X SHOP', VIEW_W - 130, VIEW_H - 16, '#7f72a0', 1);
     }
   };
@@ -229,16 +236,26 @@ var UI = (function () {
       if (Input.pressed('pause')) { Sfx.select(); G.state = 'play'; }
       if (Input.pressed('restart')) { Sfx.confirm(); G.startStage(G.world.index); }
       if (Input.pressed('confirm')) { Sfx.select(); G.go('map'); }
+      if (Input.pressed('down') || Input.pressed('up')) {
+        var d = Save.get();
+        var now = (d.touch === null) ? Input.hasTouch() : !!d.touch;
+        d.touch = !now;
+        Input.setTouchVisible(d.touch);
+        Save.flush(); Sfx.select();
+      }
     },
     draw: function (g, G) {
       G.world.draw(g);
       dim(g, 0.68);
-      panel(g, VIEW_W / 2 - 92, 62, 184, 92);
+      panel(g, VIEW_W / 2 - 96, 58, 192, 108);
       Text.centerShadow(g, 'PAUSED', VIEW_W / 2, 72, '#ffffff', 2);
       Text.center(g, 'ESC   RESUME', VIEW_W / 2, 98, '#d8cff0', 1);
       Text.center(g, 'R     RESTART STAGE', VIEW_W / 2, 112, '#d8cff0', 1);
       Text.center(g, 'ENTER QUIT TO MAP', VIEW_W / 2, 126, '#d8cff0', 1);
+      var td = Save.get().touch;
+      var tOn = (td === null) ? Input.hasTouch() : !!td;
       Text.center(g, Sfx.isEnabled() ? 'M  SOUND ON' : 'M  SOUND OFF', VIEW_W / 2, 140, '#8d80ad', 1);
+      Text.center(g, tOn ? '^v TOUCH PAD ON' : '^v TOUCH PAD OFF', VIEW_W / 2, 152, '#8d80ad', 1);
     }
   };
 
@@ -262,9 +279,14 @@ var UI = (function () {
       Text.draw(g, 'COIN', px0, 94, '#8d80ad', 1);
       g.drawImage(Art.COIN, pv - 2, 93);
       Text.draw(g, '+' + G.resultCoins, pv + 10, 94, '#ffe27a', 1);
-      Text.draw(g, 'BONE', px0, 112, '#8d80ad', 1);
-      g.drawImage(G.resultBone ? Art.BONE_GOLD : Art.BONE_GREY, pv - 2, 112);
-      Text.draw(g, G.resultBone ? 'FOUND' : 'STILL BURIED', pv + 12, 112, G.resultBone ? '#ffd75e' : '#6b6458', 1);
+      Text.draw(g, 'GEMS', px0, 112, '#8d80ad', 1);
+      var rg = Art.GEMS[LEVELS[G.lastStage].theme] || Art.GEMS.meadow;
+      for (var gI = 0; gI < 3; gI++) {
+        if (gI < G.resultGems) g.drawImage(rg, pv - 2 + gI * 9, 111);
+        else { g.fillStyle = '#332b44'; g.fillRect(pv - 1 + gI * 9, 112, 5, 5); }
+      }
+      Text.draw(g, G.resultChests + ' CHEST' + (G.resultChests === 1 ? '' : 'S'),
+        pv + 30, 112, G.resultChests ? '#e8c45c' : '#6b6458', 1);
       Text.draw(g, 'PURSE', px0, 130, '#8d80ad', 1);
       Text.draw(g, String(Save.get().coins), pv, 130, '#ffe27a', 1);
       if (G.resultT <= 0 && Math.floor(G.t / 24) % 2 === 0) {
@@ -302,8 +324,8 @@ var UI = (function () {
       Text.center(g, 'YOU HAVE EARNED THE NAP.', VIEW_W / 2, 84, '#d8cff0', 1);
       var bob = Math.round(Math.sin(G.t * 0.05) * 2);
       g.drawImage(Art.dog.right.sit, VIEW_W / 2 - 18, 106 + bob, 36, 28);
-      Text.center(g, 'BONES RECOVERED  ' + Save.bonesFound() + ' / ' + LEVELS.length,
-        VIEW_W / 2, 152, '#ffd75e', 1);
+      Text.center(g, 'GEMS  ' + Save.gemsFound() + ' / ' + Save.gemsTotal() +
+        '     CHESTS  ' + Save.chestsFound(), VIEW_W / 2, 152, '#a8e0ff', 1);
       Text.center(g, 'COIN IN THE PURSE  ' + Save.get().coins, VIEW_W / 2, 166, '#ffe27a', 1);
       if (Math.floor(G.t / 26) % 2 === 0) {
         Text.center(g, 'PRESS ENTER', VIEW_W / 2, VIEW_H - 16, '#ffffff', 1);

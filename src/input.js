@@ -30,9 +30,23 @@ var Input = (function () {
   });
   window.addEventListener('blur', function () { held = {}; });
 
+  var touchHost = null;
+
+  /* Touch controls are optional: shown automatically on a touchscreen,
+     and switchable from the pause menu on any device. */
+  function setTouchVisible(on) {
+    if (!touchHost) return;
+    if (on) touchHost.classList.remove('hidden');
+    else touchHost.classList.add('hidden');
+  }
+  function hasTouch() {
+    return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  }
+
   function bindTouch() {
     var host = document.getElementById('touch');
     if (!host) return;
+    touchHost = host;
     var btns = host.querySelectorAll('.tbtn');
     for (var i = 0; i < btns.length; i++) {
       (function (b) {
@@ -47,11 +61,12 @@ var Input = (function () {
         b.addEventListener('mouseleave', release);
       })(btns[i]);
     }
-    if ('ontouchstart' in window) host.classList.remove('hidden');
   }
 
   return {
     init: bindTouch,
+    setTouchVisible: setTouchVisible,
+    hasTouch: hasTouch,
     down: function (n) { return !!held[n]; },
     pressed: function (n) {
       if (fresh[n] && !consumed[n]) { consumed[n] = true; return true; }

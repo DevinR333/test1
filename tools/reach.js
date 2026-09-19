@@ -2,12 +2,56 @@
 const fs = require('fs');
 eval(fs.readFileSync(require('path').join(__dirname, '..', 'src', 'levels.js'), 'utf8'));
 
-const GRAV = 0.42;
-const JUMP = Number(process.argv[2] || 6.7);
-const SPEED = Number(process.argv[3] || 1.75);
-const air = 2 * JUMP / GRAV;
-const JUMP_DX = Math.floor((SPEED * air) / 16);        // tiles of horizontal reach
-const JUMP_UP = Math.floor((JUMP * JUMP / (2 * GRAV)) / 16); // tiles of height
+/* Physics is read straight out of src/entities.js so this audit can never
+   drift from the game. The jump is simulated (including the hold lift)
+   rather than approximated, then the reachable horizontal distance is
+   measured at each rise. */
+const ENT = fs.readFileSync(require('path').join(__dirname, '..', 'src', 'entities.js'), 'utf8');
+function konst(name, fallback) {
+  const m = ENT.match(new RegExp('var\\s+' + name + '\\s*=\\s*([0-9.]+)'));
+  if (!m && fallback === undefined) throw new Error('missing constant ' + name);
+  return m ? Number(m[1]) : fallback;
+}
+const GRAV = konst('GRAV');
+const MAXFALL = konst('MAXFALL');
+const SPEED = Number(process.argv[3] || konst('RUN_SPEED'));
+const JUMP = Number(process.argv[2] || konst('JUMP_IMPULSE'));
+const LIFT = konst('JUMP_LIFT');
+const LIFT_FRAMES = konst('JUMP_LIFT_FRAMES');
+
+/* Simulate one full held jump: peak height and the airtime available
+   before falling back to each height along the way. */
+function arc() {
+  let vy = -JUMP, y = 0, lift = LIFT_FRAMES;
+  const path = [];
+  for (let f = 0; f < 400; f++) {
+    if (lift > 0 && vy < 0) { vy -= LIFT; lift--; }
+    vy = Math.min(vy + GRAV, MAXFALL);
+    y += vy;
+    path.push(y);
+    if (y > 16 * 14) break;
+  }
+  return path;
+}
+const PATH = arc();
+const PEAK = -Math.min(...PATH);
+
+/* Horizontal tiles reachable when landing `rise` tiles above the start
+   (negative rise = landing lower down, which buys extra airtime). */
+function reachAt(rise) {
+  const targetY = -rise * 16;
+  let last = -1;
+  for (let f = 0; f < PATH.length; f++) if (PATH[f] <= targetY + 0.001) last = f;
+  if (rise > 0 && last < 0) return -1;         // cannot climb that high
+  if (rise <= 0) {
+    for (let f = 0; f < PATH.length; f++) if (PATH[f] >= targetY) { last = f; break; }
+  }
+  // a tile delta of n clears (n-1) tiles of air, so add one
+  return Math.floor((SPEED * last) / 16) + 1;
+}
+const air = PATH.length;
+const JUMP_UP = Math.floor(PEAK / 16);
+const JUMP_DX = reachAt(0);
 
 function analyze(L) {
   const w = Math.max(...L.rows.map(r => r.length));
@@ -72,19 +116,8 @@ function analyze(L) {
         // and grows when you get to fall on the way
         const rise = -dy;
         if (rise > up) continue;
-        // Horizontal travel still available after climbing `rise` tiles,
-        // from the real trajectory. A tile delta of n clears (n-1) tiles
-        // of air, so the reachable delta is one more than the tile span.
-        let travel;
-        if (rise > 0) {
-          const disc = JUMP * JUMP - 2 * GRAV * (rise * 16);
-          if (disc < 0) continue;
-          travel = SPEED * ((JUMP + Math.sqrt(disc)) / GRAV);
-        } else {
-          travel = SPEED * (air + Math.sqrt(Math.max(0, 2 * (-dy) * 16 / GRAV)));
-        }
-        const maxdx = Math.floor(travel / 16) + 1;
-        if (Math.abs(dx) > maxdx) continue;
+        const maxdx = (up > JUMP_UP) ? reachAt(rise) + 3 : reachAt(rise);  // springs carry further
+        if (maxdx < 0 || Math.abs(dx) > maxdx) continue;
         // don't path through hazard columns at the landing spot
         if (at(nx, ny - 1) === '%' || at(nx, ny - 1) === '^') continue;
         const k = key(nx, ny);
@@ -97,7 +130,7 @@ function analyze(L) {
   // which collectibles are stranded
   let stranded = [];
   for (let y = 0; y < H; y++) for (let x = 0; x < w; x++) {
-    if ('oBH'.includes(at(x, y))) {
+    if ('oGH'.includes(at(x, y))) {
       let reachable = false;
       for (let dy = 0; dy <= 4 && !reachable; dy++)
         for (let dx = -2; dx <= 2 && !reachable; dx++)
@@ -108,7 +141,10 @@ function analyze(L) {
   return { id: L.id, ok, stranded, reached: seen.size, total: nodes.length };
 }
 
-console.log('physics: jump reach ' + JUMP_DX + ' tiles across, ' + JUMP_UP + ' tiles up');
+console.log('physics (read from src/entities.js): impulse ' + JUMP + ', lift ' + LIFT +
+  ' x' + LIFT_FRAMES + 'f, speed ' + SPEED);
+console.log('simulated held jump: ' + PEAK.toFixed(1) + 'px peak (' + (PEAK / 16).toFixed(2) +
+  ' tiles), ' + JUMP_DX + ' tile delta across level ground');
 let fails = 0;
 for (const L of LEVELS) {
   const r = analyze(L);

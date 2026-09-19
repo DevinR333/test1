@@ -1,18 +1,20 @@
 /* Persistence + the shop catalogue. */
 var Save = (function () {
-  var KEY = 'blacklabblade.save.v1';
+  var KEY = 'blacklabblade.save.v2';
   var data = null;
 
   function fresh() {
     return {
       coins: 0,
       unlocked: 1,        /* how many stages are playable */
-      cleared: {},        /* stage id -> true */
-      bones: {},          /* stage id -> true */
+      cleared: {},        /* stage id -> true          */
+      gems: {},           /* stage id -> gems found 0-3 */
+      chests: {},         /* stage id -> chests found   */
       sword: 0,           /* index into Art.BLADES */
       collar: 0,          /* extra hearts */
       relics: {},         /* relic id -> true */
       sound: true,
+      touch: null,        /* null = auto-detect, else forced on/off */
       seenIntro: false
     };
   }
@@ -37,8 +39,8 @@ var Save = (function () {
       desc: '2 damage. A real blade.' },
     { id: 'collar1', kind: 'collar', tier: 1, name: 'Studded Collar', cost: 80,
       desc: '+1 heart.' },
-    { id: 'spring', kind: 'relic', name: 'Spring Collar', cost: 110,
-      desc: 'Double jump in mid-air.' },
+    { id: 'spring', kind: 'relic', name: 'Gale Collar', cost: 130,
+      desc: 'A third jump in mid-air.' },
     { id: 'swift', kind: 'relic', name: 'Swift Paws', cost: 90,
       desc: 'Run noticeably faster.' },
     { id: 'sword2', kind: 'sword', tier: 2, name: 'Emberblade', cost: 180,
@@ -82,16 +84,28 @@ var Save = (function () {
 
   function has(relicId) { return !!get().relics[relicId]; }
   function addCoins(n) { get().coins += n; }
-  function clearStage(index, gotBone) {
+  function clearStage(index, gems, chests) {
     var d = get(), L = LEVELS[index];
     d.cleared[L.id] = true;
-    if (gotBone) d.bones[L.id] = true;
+    /* keep the best haul across attempts */
+    d.gems[L.id] = Math.max(d.gems[L.id] || 0, gems || 0);
+    d.chests[L.id] = Math.max(d.chests[L.id] || 0, chests || 0);
     if (d.unlocked < index + 2) d.unlocked = Math.min(index + 2, LEVELS.length);
     flush();
   }
-  function bonesFound() {
+  function gemsFound() {
     var d = get(), n = 0;
-    for (var k in d.bones) if (d.bones[k]) n++;
+    for (var k in d.gems) n += d.gems[k] || 0;
+    return n;
+  }
+  function chestsFound() {
+    var d = get(), n = 0;
+    for (var k in d.chests) n += d.chests[k] || 0;
+    return n;
+  }
+  function gemsTotal() {
+    var n = 0;
+    for (var i = 0; i < LEVELS.length; i++) if (!LEVELS[i].boss) n += 3;
     return n;
   }
   function allCleared() {
@@ -103,6 +117,7 @@ var Save = (function () {
     load: load, get: get, flush: flush, wipe: wipe,
     SHOP: SHOP, owned: owned, available: available, buy: buy,
     has: has, addCoins: addCoins, clearStage: clearStage,
-    bonesFound: bonesFound, allCleared: allCleared
+    gemsFound: gemsFound, chestsFound: chestsFound, gemsTotal: gemsTotal,
+    allCleared: allCleared
   };
 })();

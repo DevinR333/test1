@@ -13,7 +13,8 @@ var Game = (function () {
     t: 0,
     lastStage: 0,
     resultCoins: 0,
-    resultBone: false,
+    resultGems: 0,
+    resultChests: 0,
     resultT: 0,
     fade: 0,          /* 0 = clear, 1 = black */
     fadeDir: 0,
@@ -54,9 +55,10 @@ var Game = (function () {
   G.onLevelClear = function () {
     var w = G.world;
     G.resultCoins = w.coinsRun;
-    G.resultBone = w.boneGot;
+    G.resultGems = w.gemsGot;
+    G.resultChests = w.chestsGot;
     G.resultT = 26;
-    Save.clearStage(w.index, w.boneGot);
+    Save.clearStage(w.index, w.gemsGot, w.chestsGot);
     Save.flush();
     G.go('clear');
   };
@@ -154,6 +156,8 @@ var Game = (function () {
     Save.load();
     Sfx.setEnabled(Save.get().sound !== false);
     Input.init();
+    var d0 = Save.get();
+    Input.setTouchVisible(d0.touch === null ? Input.hasTouch() : !!d0.touch);
     fitCanvas();
     window.addEventListener('resize', fitCanvas);
     /* audio contexts need a gesture before they will make noise */

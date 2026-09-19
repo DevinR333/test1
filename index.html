@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0b0a12">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Black Lab Blade">
 <title>Black Lab Blade</title>
 <link rel="stylesheet" href="src/style.css">
 </head>
@@ -11,13 +16,15 @@
     <canvas id="screen" width="400" height="224"></canvas>
     <div id="touch" class="hidden">
       <div class="pad">
-        <button class="tbtn" data-key="left">&#9664;</button>
-        <button class="tbtn" data-key="right">&#9654;</button>
+        <button class="tbtn dpad" data-key="left" aria-label="Left">&#9664;</button>
+        <button class="tbtn dpad" data-key="right" aria-label="Right">&#9654;</button>
+        <button class="tbtn small" data-key="down" aria-label="Down">&#9660;</button>
       </div>
       <div class="acts">
-        <button class="tbtn" data-key="attack">SWING</button>
-        <button class="tbtn" data-key="jump">JUMP</button>
+        <button class="tbtn act atk" data-key="attack" aria-label="Swing">SWING</button>
+        <button class="tbtn act jmp" data-key="jump" aria-label="Jump">JUMP</button>
       </div>
+      <button class="tbtn sys" data-key="pause" aria-label="Pause">II</button>
     </div>
   </div>
   <script src="src/util.js"></script>

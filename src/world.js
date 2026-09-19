@@ -1,6 +1,8 @@
 /* The playable level: tilemap, collision, camera and HUD. */
 var VIEW_W = 400, VIEW_H = 224;
 var T_EMPTY = 0, T_SOLID = 1, T_PLAT = 2, T_SPIKE = 3, T_HAZ = 4, T_CRATE = 5, T_SPRING = 6;
+/* Looks exactly like solid masonry, but you walk straight through it. */
+var T_FAKE = 7;
 
 function World(stageIndex) {
   var def = LEVELS[stageIndex];
@@ -16,7 +18,9 @@ function World(stageIndex) {
 
   this.tiles = [];
   this.enemies = []; this.pickups = []; this.shots = [];
-  this.parts = []; this.texts = []; this.movers = [];
+  this.parts = []; this.texts = []; this.movers = []; this.chests = [];
+  this.revealed = {};
+  this.gemsGot = 0; this.chestsGot = 0;
   this.door = null; this.boss = null; this.bossMelee = null;
   var spawn = { x: TILE * 2, y: TILE * 2 };
 
@@ -34,10 +38,17 @@ function World(stageIndex) {
         case '%': code = T_HAZ; break;
         case 'K': code = T_CRATE; break;
         case 'S': code = T_SPRING; break;
+        case 'F': code = T_FAKE; break;
+        case 'C': this.chests.push(new Chest(px + 1, py + 3)); break;
+        case 'G':
+          var gem = new Pickup(px + 5, py + 5, 'gem');
+          gem.theme = def.theme;
+          this.pickups.push(gem);
+          break;
         case 'P': spawn = { x: px + 2, y: py + 2 }; break;
         case 'D': this.door = { x: px, y: py - TILE, w: TILE, h: TILE * 2 }; break;
         case 'o': this.pickups.push(new Pickup(px + 4, py + 4, 'coin')); break;
-        case 'B': this.pickups.push(new Pickup(px + 3, py + 5, 'bone')); break;
+
         case 'H': this.pickups.push(new Pickup(px + 4, py + 4, 'meat')); break;
         case 'g': this.enemies.push(new Enemy(px + 2, py + 4, 'grub', def.world)); break;
         case 'b': this.enemies.push(new Enemy(px + 2, py + 4, 'bat', def.world)); break;
@@ -74,7 +85,7 @@ function World(stageIndex) {
   for (y = 0; y < this.rows; y++) {
     var drow = [];
     for (x = 0; x < this.cols; x++) {
-      if (!this.isSolidCode(this.tiles[y][x])) { drow.push(-1); continue; }
+      if (!this.isWallLooking(this.tiles[y][x])) { drow.push(-1); continue; }
       drow.push((y > 0 && this.depth[y - 1][x] >= 0) ? this.depth[y - 1][x] + 1 : 0);
     }
     this.depth.push(drow);
@@ -89,7 +100,7 @@ function World(stageIndex) {
   this.state = 'play';           /* play | dying | clear */
   this.stateTimer = 0;
   this.coinsRun = 0;
-  this.boneGot = false;
+  this.secretShown = false;
   this.bannerTimer = 150;
   this.hitStop = 0;
   Sfx.playSong(def.boss ? 'boss' : def.theme);
@@ -103,6 +114,10 @@ World.prototype.tileAt = function (tx, ty) {
 };
 World.prototype.isSolidCode = function (c) {
   return c === T_SOLID || c === T_CRATE || c === T_SPRING;
+};
+/* Drawn as masonry, so it has to be hashed like masonry too. */
+World.prototype.isWallLooking = function (c) {
+  return c === T_SOLID || c === T_FAKE;
 };
 World.prototype.solidAt = function (px, py) {
   return this.isSolidCode(this.tileAt(Math.floor(px / TILE), Math.floor(py / TILE)));
@@ -300,6 +315,27 @@ World.prototype.update = function () {
       }
     }
 
+    /* --- push into a false wall and it gives way --- */
+    var fx0 = Math.floor(p.x / TILE), fx1 = Math.floor((p.x + p.w - 1) / TILE);
+    var fy0 = Math.floor(p.y / TILE), fy1 = Math.floor((p.y + p.h - 1) / TILE);
+    for (var fty = fy0; fty <= fy1; fty++) {
+      for (var ftx = fx0; ftx <= fx1; ftx++) {
+        if (this.tileAt(ftx, fty) !== T_FAKE) continue;
+        var fkey = ftx + ',' + fty;
+        if (this.revealed[fkey]) continue;
+        this.revealed[fkey] = true;
+        Sfx.spring();
+        this.puff(ftx * TILE + 8, fty * TILE + 8, '#d8cbb8', 10);
+        if (!this.secretShown) {
+          this.secretShown = true;
+          this.texts.push(new FloatText(p.x - 12, p.y - 10, 'SECRET FOUND', '#e8c45c'));
+        }
+      }
+    }
+
+    /* --- chests --- */
+    for (i = 0; i < this.chests.length; i++) this.chests[i].update(this);
+
     /* --- the swing --- */
     var hb = p.hitbox();
     if (hb) {
@@ -318,6 +354,9 @@ World.prototype.update = function () {
         p.attackHit.push(this.boss);
         this.boss.hurt(p.damage(), p.facing, this);
         this.hitStop = 3; this.shake(4);
+      }
+      for (i = 0; i < this.chests.length; i++) {
+        if (!this.chests[i].open && Util.aabb(hb, this.chests[i])) this.chests[i].pop(this);
       }
       /* crates in the swing arc */
       var tx0 = Math.floor(hb.x / TILE), tx1 = Math.floor((hb.x + hb.w) / TILE);
@@ -376,11 +415,11 @@ World.prototype.update = function () {
         var val = Save.has('lucky') ? 2 : 1;
         this.coinsRun += val; Save.addCoins(val);
         Sfx.coin();
-      } else if (pk.kind === 'bone') {
-        this.boneGot = true;
+      } else if (pk.kind === 'gem') {
+        this.gemsGot++;
         Sfx.bone();
-        this.texts.push(new FloatText(pk.x - 10, pk.y - 8, 'GOLDEN BONE', '#ffd75e'));
-        this.puff(pk.x + 5, pk.y + 3, '#ffd75e', 14);
+        this.texts.push(new FloatText(pk.x - 6, pk.y - 8, 'GEM ' + this.gemsGot + '/3', '#a8e0ff'));
+        this.puff(pk.x + 3, pk.y + 3, '#a8e0ff', 14);
       } else {
         if (p.hp < p.maxHp) { p.hp++; this.texts.push(new FloatText(pk.x, pk.y - 6, '+1', '#e0424f')); }
         Sfx.buy();
@@ -505,18 +544,23 @@ World.prototype.draw = function (g) {
       var c = this.tiles[ty][tx];
       if (c === T_EMPTY) continue;
       var dx = tx * TILE - cam.x, dy = ty * TILE - cam.y;
-      if (c === T_SOLID) {
-        /* autotile: body or dressed cap, then trim on every exposed face */
-        var openUp = !this.isSolidCode(this.tileAt(tx, ty - 1));
+      if (c === T_SOLID || c === T_FAKE) {
+        /* Autotiled masonry. A false wall uses the identical variant hash,
+           depth shading and trim as the real thing, so nothing about it
+           reads as different until you walk into it. */
+        var found = (c === T_FAKE) && this.revealed[tx + ',' + ty];
+        if (found) g.globalAlpha = 0.30;
+        var openUp = !this.isWallLooking(this.tileAt(tx, ty - 1));
         g.drawImage(openUp ? Art.variant(ts.cap, tx, ty) : Art.variant(ts.solid, tx, ty), dx, dy);
         var dep = this.depth[ty][tx];
         if (dep > 0) {
           g.fillStyle = 'rgba(6,4,12,' + Math.min(0.62, dep * 0.17) + ')';
           g.fillRect(dx, dy, TILE, TILE);
         }
-        if (!this.isSolidCode(this.tileAt(tx - 1, ty))) g.drawImage(ts.trimL[ty % 2], dx, dy);
-        if (!this.isSolidCode(this.tileAt(tx + 1, ty))) g.drawImage(ts.trimR[ty % 2], dx, dy);
-        if (!this.isSolidCode(this.tileAt(tx, ty + 1))) g.drawImage(ts.trimB, dx, dy);
+        if (!this.isWallLooking(this.tileAt(tx - 1, ty))) g.drawImage(ts.trimL[ty % 2], dx, dy);
+        if (!this.isWallLooking(this.tileAt(tx + 1, ty))) g.drawImage(ts.trimR[ty % 2], dx, dy);
+        if (!this.isWallLooking(this.tileAt(tx, ty + 1))) g.drawImage(ts.trimB, dx, dy);
+        if (found) g.globalAlpha = 1;
       } else if (c === T_PLAT) {
         var pl = this.tileAt(tx - 1, ty) === T_PLAT, pr = this.tileAt(tx + 1, ty) === T_PLAT;
         g.drawImage(!pl ? ts.platL : (!pr ? ts.platR : ts.platM), dx, dy);
@@ -551,6 +595,7 @@ World.prototype.draw = function (g) {
     g.fillStyle = '#e8c45c'; g.fillRect(mx + 1, my + 2, 1, 1); g.fillRect(mx + m.w - 2, my + 2, 1, 1);
   }
 
+  for (i = 0; i < this.chests.length; i++) this.chests[i].draw(g, cam);
   for (i = 0; i < this.pickups.length; i++) this.pickups[i].draw(g, cam);
   for (i = 0; i < this.enemies.length; i++) this.enemies[i].draw(g, cam);
   if (this.boss && !this.boss.dead) this.boss.draw(g, cam);
@@ -565,6 +610,9 @@ World.prototype.draw = function (g) {
     if (vx > -8 && vx < VIEW_W + 8) Art.drawVine(g, vx, Math.round(v.y - cam.y), v.len, this.t, v.seed);
   }
   for (i = 0; i < this.texts.length; i++) this.texts[i].draw(g, cam);
+
+  Art.drawMotes(g, this.theme, cam.x, cam.y, this.t, VIEW_W, VIEW_H);
+  Art.drawForeground(g, this.theme, cam.x, cam.y, this.t, VIEW_W, VIEW_H);
 
   g.restore();
 
@@ -597,8 +645,23 @@ World.prototype.drawHud = function (g) {
   /* coins */
   g.drawImage(Art.COIN, VIEW_W - 52, 5);
   Text.shadow(g, String(Save.get().coins), VIEW_W - 42, 6, '#ffe27a', 1);
-  /* bone token */
-  g.drawImage(this.boneGot ? Art.BONE_GOLD : Art.BONE_GREY, VIEW_W - 16, 6);
+  /* gems found this run, then chests */
+  var gem = Art.GEMS[this.theme] || Art.GEMS.meadow;
+  for (i = 0; i < 3; i++) {
+    var gx = VIEW_W - 82 + i * 9;
+    if (i < this.gemsGot) g.drawImage(gem, gx, 17);
+    else {
+      g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(gx + 1, 18, 5, 5);
+      g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(gx + 1, 18, 5, 1);
+    }
+  }
+  for (i = 0; i < 2; i++) {
+    var kx = VIEW_W - 50 + i * 11;
+    g.save();
+    if (i >= this.chestsGot) g.globalAlpha = 0.30;
+    g.drawImage(Art.CHEST, kx, 15, 10, 9);
+    g.restore();
+  }
 
   /* boss bar */
   if (this.boss && !this.boss.dead) {

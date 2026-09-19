@@ -3,6 +3,18 @@ var TILE = 16;
 var GRAV = 0.42;
 var MAXFALL = 6.6;
 
+/* Jump feel. A tap gives a real jump that clears a two-tile ledge on its
+   own; holding adds lift for a few frames for roughly half again the
+   height. Tuned by simulation - see tools/reach.js, which reads these. */
+var RUN_SPEED = 1.75;
+var RUN_SPEED_SWIFT = 2.2;
+var JUMP_IMPULSE = 6.0;      /* tap  -> 40px (2.5 tiles) */
+var JUMP_LIFT = 0.14;        /* added per frame while held */
+var JUMP_LIFT_FRAMES = 12;   /* hold -> 57px (3.6 tiles)  */
+var DBL_JUMP_IMPULSE = 5.3;
+var BASE_JUMPS = 2;          /* ground jump + one in mid-air, always */
+var ATTACK_FRAMES = 17;
+
 /* ------------------------------------------------------------------ */
 function Particle(x, y, vx, vy, life, color, size) {
   this.x = x; this.y = y; this.vx = vx; this.vy = vy;
@@ -35,7 +47,7 @@ FloatText.prototype.draw = function (g, cam) {
 /* ------------------------------------------------------------------ */
 function Pickup(x, y, kind) {
   this.x = x; this.y = y; this.kind = kind;
-  this.w = kind === 'bone' ? 10 : 8;
+  this.w = kind === 'bone' ? 10 : 7;
   this.h = kind === 'bone' ? 6 : 7;
   this.vx = 0; this.vy = 0;
   this.t = Math.random() * 6.28;
@@ -65,14 +77,56 @@ Pickup.prototype.draw = function (g, cam) {
   var bob = this.loose && !this.grounded ? 0 : Math.round(Math.sin(this.t) * 1.4);
   var sx = Math.round(this.x - cam.x), sy = Math.round(this.y - cam.y + bob);
   if (this.kind === 'coin') g.drawImage(Art.COIN, sx, sy);
-  else if (this.kind === 'bone') {
+  else if (this.kind === 'gem') {
     g.save();
-    g.globalAlpha = 0.35;
-    g.fillStyle = '#ffd75e';
-    g.fillRect(sx - 3, sy - 3, this.w + 6, this.h + 6);
+    g.globalAlpha = 0.20 + 0.14 * Math.sin(this.t * 1.1);
+    g.fillStyle = '#ffffff';
+    g.fillRect(sx - 2, sy - 2, this.w + 4, this.h + 4);
     g.restore();
-    g.drawImage(Art.BONE_GOLD, sx, sy);
+    g.drawImage(Art.GEMS[this.theme] || Art.GEMS.meadow, sx, sy);
   } else g.drawImage(Art.MEAT, sx, sy);
+};
+
+/* ------------------------------------------------------------------
+   A strongbox walled up in a secret chamber. Break it open with the
+   blade, or just bump into it.
+------------------------------------------------------------------ */
+function Chest(x, y) {
+  this.x = x; this.y = y;
+  this.w = 14; this.h = 13;
+  this.open = false;
+  this.t = 0;
+  this.dead = false;
+}
+Chest.prototype.pop = function (w) {
+  if (this.open) return;
+  this.open = true;
+  Sfx.bone();
+  w.shake(4);
+  w.chestsGot++;
+  var cx = this.x + this.w / 2, cy = this.y + 2;
+  for (var i = 0; i < 16; i++) w.dropCoin(cx, cy);
+  for (var j = 0; j < 14; j++) {
+    w.parts.push(new Particle(cx, cy, Util.rand(-2, 2), Util.rand(-3.2, -0.6),
+      Util.randInt(20, 40), Util.pick(['#e8c45c', '#fff3bc', '#c08a42']), 2));
+  }
+  w.texts.push(new FloatText(this.x - 6, this.y - 8, 'TREASURE!', '#e8c45c'));
+};
+Chest.prototype.update = function (w) {
+  this.t++;
+  if (!this.open && Util.aabb(this, w.player)) this.pop(w);
+};
+Chest.prototype.draw = function (g, cam) {
+  var img = this.open ? Art.CHEST_OPEN : Art.CHEST;
+  var bob = this.open ? 0 : Math.round(Math.sin(this.t * 0.06) * 0.5);
+  g.drawImage(img, Math.round(this.x - cam.x), Math.round(this.y - cam.y + bob));
+  if (!this.open) {
+    g.save();
+    g.globalAlpha = 0.18 + 0.12 * Math.sin(this.t * 0.08);
+    g.fillStyle = '#e8c45c';
+    g.fillRect(Math.round(this.x - cam.x) + 5, Math.round(this.y - cam.y) + 6, 4, 3);
+    g.restore();
+  }
 };
 
 /* ------------------------------------------------------------------ */
@@ -246,7 +300,8 @@ Enemy.prototype.draw = function (g, cam) {
     var fr = this.facing > 0 ? Art.hound.right : Art.hound.left;
     if (this.state === 'crouch') img = fr.sit;
     else if (this.state === 'leap') img = fr.jump;
-    else img = fr.run[Math.floor(this.t / 6) % 4];
+    else if (Math.abs(this.vx) > 0.15) img = fr.run[Math.floor(this.t / 7) % 4];
+    else img = fr.idle;
     flashImg = this.facing > 0 ? Art.hound.flash.right : Art.hound.flash.left;
     sx -= 2; sy -= 1;
   } else {
@@ -493,10 +548,11 @@ function Player(x, y) {
   this.attackHit = [];    /* things already struck by this swing */
   this.coyote = 0;
   this.buffer = 0;
-  this.jumps = 0;
+  this.jumps = BASE_JUMPS;
   this.dead = false;
   this.runFrame = 0;
   this.landSquash = 0;
+  this.lift = 0;
 }
 Player.prototype.damage = function () { return 1 + Save.get().sword; };
 Player.prototype.reach = function () { return 13 + Save.get().sword * 2; };
@@ -531,7 +587,7 @@ Player.prototype.update = function (w) {
   }
 
   var ax = Input.axis();
-  var speed = Save.has('swift') ? 1.85 : 1.45;
+  var speed = Save.has('swift') ? RUN_SPEED_SWIFT : RUN_SPEED;
   var accel = this.grounded ? 0.42 : 0.26;
 
   if (this.attack > 0 && this.grounded) {
@@ -545,20 +601,22 @@ Player.prototype.update = function (w) {
   }
 
   /* jump, with coyote time and an input buffer */
-  if (this.grounded) { this.coyote = 7; this.jumps = Save.has('spring') ? 2 : 1; }
+  if (this.grounded) { this.coyote = 7; this.jumps = Save.has('spring') ? BASE_JUMPS + 1 : BASE_JUMPS; }
   else if (this.coyote > 0) this.coyote--;
   if (Input.pressed('jump')) this.buffer = 7;
   else if (this.buffer > 0) this.buffer--;
 
   if (this.buffer > 0) {
     if (this.coyote > 0 || this.grounded) {
-      this.vy = -6.35; this.buffer = 0; this.coyote = 0;
-      this.jumps = (Save.has('spring') ? 2 : 1) - 1;
+      this.vy = -JUMP_IMPULSE; this.buffer = 0; this.coyote = 0;
+      this.jumps = (Save.has('spring') ? BASE_JUMPS + 1 : BASE_JUMPS) - 1;
       this.grounded = false;
+      this.lift = JUMP_LIFT_FRAMES;
       Sfx.jump();
       w.puff(this.x + this.w / 2, this.y + this.h, '#e8e0cc', 4);
     } else if (this.jumps > 0) {
-      this.vy = -5.75; this.buffer = 0; this.jumps--;
+      this.vy = -DBL_JUMP_IMPULSE; this.buffer = 0; this.jumps--;
+      this.lift = JUMP_LIFT_FRAMES;
       Sfx.dbljump();
       for (var i = 0; i < 6; i++) {
         w.parts.push(new Particle(this.x + this.w / 2, this.y + this.h,
@@ -566,11 +624,18 @@ Player.prototype.update = function (w) {
       }
     }
   }
-  /* short hop when the button is released early */
-  if (!Input.down('jump') && this.vy < -2.2) this.vy *= 0.55;
+  /* Hold to rise further. Adding lift over several frames gives a smooth
+     range between a tap and a full jump, instead of the abrupt velocity
+     cut that made taps feel stunted and holds feel floaty. */
+  if (Input.down('jump') && this.lift > 0 && this.vy < 0) {
+    this.vy -= JUMP_LIFT;
+    this.lift--;
+  } else {
+    this.lift = 0;
+  }
 
   if (Input.pressed('attack') && this.attack <= 0) {
-    this.attack = 17;
+    this.attack = ATTACK_FRAMES;
     this.attackHit = [];
     Sfx.swing();
   }
@@ -584,7 +649,8 @@ Player.prototype.update = function (w) {
     if (Math.abs(this.vy) > 2) { Sfx.land(); w.puff(this.x + this.w / 2, this.y + this.h, '#e8e0cc', 3); }
   }
 
-  if (Math.abs(this.vx) > 0.3 && this.grounded) this.runFrame += Math.abs(this.vx) * 0.13;
+  if (Math.abs(this.vx) > 0.45 && this.grounded) this.runFrame += Math.abs(this.vx) * 0.11;
+  else if (this.grounded) this.runFrame = 0;   /* stand still, legs still */
 };
 
 /* Active blade rectangle during the middle of a swing, else null. */
@@ -598,10 +664,12 @@ Player.prototype.hitbox = function () {
   };
 };
 
+Player.prototype.bladeAngleAt = function (k) {
+  return -1.25 + Util.clamp(k * 1.35, 0, 1) * 2.25;
+};
 Player.prototype.bladeAngle = function () {
   if (this.attack <= 0) return -0.45;
-  var k = 1 - (this.attack / 17);           /* 0 -> 1 across the swing */
-  return -1.25 + Math.min(1, k * 1.35) * 2.25;
+  return this.bladeAngleAt(1 - (this.attack / ATTACK_FRAMES));
 };
 
 Player.prototype.draw = function (g, cam) {
@@ -611,7 +679,7 @@ Player.prototype.draw = function (g, cam) {
   if (this.dead) img = set.sit;
   else if (this.attack > 0) img = this.grounded ? set.swing : set.swingAir;
   else if (!this.grounded) img = this.vy < -0.6 ? set.jump : set.fall;
-  else if (Math.abs(this.vx) > 0.3) img = set.run[Math.floor(this.runFrame) % 4];
+  else if (Math.abs(this.vx) > 0.45) img = set.run[Math.floor(this.runFrame) % 4];
   else img = set.idle;
 
   var sx = Math.round(this.x - cam.x - 3);
@@ -623,16 +691,31 @@ Player.prototype.draw = function (g, cam) {
   g.drawImage(img, sx, sy);
   Art.drawBlade(g, bx, by, this.bladeAngle(), Save.get().sword, this.facing);
 
-  if (this.attack > 5 && this.attack < 15) {
-    /* swing arc smear */
-    g.save();
-    g.globalAlpha = 0.20;
-    g.strokeStyle = Save.get().sword >= 2 ? '#ffd08a' : '#ffffff';
-    g.lineWidth = 2;
-    g.beginPath();
-    g.arc(bx, by, this.reach() - 1, this.facing > 0 ? -1.1 : Math.PI + 0.3,
-      this.facing > 0 ? 0.7 : Math.PI + 2.1);
-    g.stroke();
-    g.restore();
+  /* Slash: a crescent that trails the blade through its arc and fades
+     out with the swing, rather than a static ring hanging in the air. */
+  if (this.attack > 2) {
+    var prog = 1 - (this.attack / ATTACK_FRAMES);
+    var a1 = this.bladeAngleAt(prog);
+    var a0 = this.bladeAngleAt(Math.max(0, prog - 0.34));
+    if (a1 - a0 > 0.03) {
+      var reach = this.reach();
+      var tier = Save.get().sword;
+      var col = tier >= 3 ? '210,250,255' : (tier >= 2 ? '255,208,138' : '255,255,255');
+      var fade = Util.clamp((this.attack - 2) / 9, 0, 1);
+      g.save();
+      g.translate(bx, by);
+      g.scale(this.facing, 1);
+      /* two nested wedges: a bright leading edge over a softer body */
+      var bands = [[reach * 0.52, reach * 1.0, 0.30], [reach * 0.78, reach * 0.99, 0.55]];
+      for (var bI = 0; bI < bands.length; bI++) {
+        g.beginPath();
+        g.arc(0, 0, bands[bI][1], a0, a1);
+        g.arc(0, 0, bands[bI][0], a1, a0, true);
+        g.closePath();
+        g.fillStyle = 'rgba(' + col + ',' + (bands[bI][2] * fade).toFixed(3) + ')';
+        g.fill();
+      }
+      g.restore();
+    }
   }
 };

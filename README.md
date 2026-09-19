@@ -33,6 +33,21 @@ are no image or audio files anywhere in the project.
 On the map screen `Enter` plays the selected stage and `X` opens the shop.
 Touch controls appear automatically on touch devices.
 
+## Playing on a phone
+
+The single file works on a phone as-is: copy `black-lab-blade.html` to the
+device and open it from the Files app. Everything is inlined, so it runs
+offline with no network and no install. On-screen controls appear
+automatically on a touchscreen, and can be switched on or off from the
+pause menu (`^v`) on any device.
+
+Want a real installable APK? Run `bash tools/make-apk.sh` **on your own
+machine** — it wraps the game with Cordova, locks it to landscape
+fullscreen and drops `black-lab-blade.apk` in the project root. It needs a
+JDK and the Android SDK (Android Studio installs both). It cannot be run
+in the Claude Code sandbox, whose proxy blocks `dl.google.com`, where both
+the Android SDK and the Android Gradle Plugin are hosted.
+
 ## The game
 
 Twelve stages across three worlds — Sunken Garden, Root Caverns, Kennel Keep
@@ -42,9 +57,15 @@ Twelve stages across three worlds — Sunken Garden, Root Caverns, Kennel Keep
 * **Gloomwing**, a bat that circles high and dives.
 * **The Kennel King**, an armoured hound with a greatsword and shockwaves.
 
-Every stage hides one **golden bone**. Coins persist between attempts and buy
+Every stage hides **3 gems** and **2 treasure chests**. The chests are walled
+up behind false masonry that is drawn with the same variant hash, depth
+shading and trim as real wall, so nothing marks it out — you find them by
+pushing into walls and dropping through floors that look solid. Gems and
+chests are tracked in the HUD and on the map.
+
+The hero double-jumps from the start. Coins persist between attempts and buy
 gear at the trading post: blade tiers, collars for extra hearts, and relics
-(double jump, extra speed, coin magnet, doubled coin value, longer mercy
+(a third jump, extra speed, coin magnet, doubled coin value, longer mercy
 invulnerability). Progress saves to `localStorage`.
 
 Falling in water or landing on spikes costs a heart and returns you to the

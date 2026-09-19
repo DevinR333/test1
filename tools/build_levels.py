@@ -112,6 +112,22 @@ class Builder:
         self.flat(7)
         return self
 
+    def secret_wall(self):
+        """A block of masonry with a chamber hollowed out inside it. The
+        approach face is false - walk into the wall and you pass through."""
+        x0 = self.x
+        self.jobs.append(('secret_wall', x0, self.y))
+        self.flat(7)
+        return self
+
+    def secret_floor(self):
+        """A chamber under the walkway, entered by falling through a
+        floor tile that looks like every other floor tile."""
+        x0 = self.x
+        self.jobs.append(('secret_floor', x0, self.y))
+        self.flat(6)
+        return self
+
     def spikes(self, n=3):
         x0 = self.x
         self.jobs.append(('spikes', x0, self.y, n))
@@ -163,10 +179,31 @@ class Builder:
                         self.put(py, c, '=', force=True)
                     self.flats.append((px, px + 4, py))
                     if t == tiers - 1 and bone:
-                        self.put(py - 1, px + 2, 'B', force=True)
+                        self.put(py - 1, px + 2, 'G', force=True)
                     else:
                         self.put(py - 1, px + 1, 'o', force=True)
                         self.put(py - 1, px + 3, 'o', force=True)
+            elif kind == 'secret_wall':
+                _, x0, row = job
+                for c in range(x0, x0 + 6):
+                    for r in range(row - 3, row):
+                        self.put(r, c, '#', force=True)
+                for c in range(x0 + 1, x0 + 5):       # hollow it out
+                    for r in range(row - 2, row):
+                        self.put(r, c, ' ', force=True)
+                for r in range(row - 2, row):          # false face
+                    self.put(r, x0, 'F', force=True)
+                self.put(row - 1, x0 + 2, 'C', force=True)
+                self.put(row - 1, x0 + 4, 'G', force=True)
+                self.flats.append((x0, x0 + 5, row - 3))
+            elif kind == 'secret_floor':
+                _, x0, row = job
+                for c in range(x0 + 1, x0 + 5):
+                    for r in range(row + 1, row + 3):
+                        self.put(r, c, ' ', force=True)
+                self.put(row, x0 + 2, 'F', force=True)  # the floor gives way
+                self.put(row + 2, x0 + 3, 'C', force=True)
+                self.put(row + 1, x0 + 1, 'G', force=True)
             elif kind == 'spikes':
                 _, x0, row, n = job
                 for c in range(x0 + 1, x0 + 1 + n):
@@ -279,19 +316,19 @@ LEVELS = [
     stage('1-1', 1, 'Backyard Gate', 'meadow', 'X swings the blade. Z jumps.',
           lambda b: (b.flat(6).tower(2).step(-1).flat(3).pit(2).flat(4).mesa(4)
                       .step(1).flat(3).pit(3).flat(3).tower(3, bone=True)
-                      .step(-1).flat(3).pit(2).flat(4).step(1).flat(5)),
+                      .step(-1).flat(3).pit(2).flat(4).secret_wall().step(1).secret_floor().flat(5)),
           [('g', 3), ('o', 9), ('K', 1)], []),
 
     stage('1-2', 1, 'Thistle Run', 'meadow', 'Hop the pillars. Mind the drop.',
           lambda b: (b.flat(5).pillars(3, 2, 2).step(-1).flat(3).pit(3).flat(3)
                       .tower(3, bone=True).step(1).flat(3).mesa(5).pit(3)
-                      .flat(3).arch().step(-1).flat(3).pit(2).flat(5)),
+                      .flat(3).arch().step(-1).secret_wall().flat(3).pit(2).secret_floor().flat(5)),
           [('g', 4), ('o', 10), ('K', 2), ('H', 1)], [('b', 3)]),
 
     stage('1-3', 1, 'The Old Well', 'meadow', 'Mind the water. Some things bite back.',
           lambda b: (b.flat(5).crossing(2).step(-1).flat(3).tower(3, bone=True)
-                      .step(1).flat(3).mesa(4).crossing(2).flat(3).arch()
-                      .step(-1).flat(5)),
+                      .step(1).flat(3).mesa(4).crossing(2).flat(3).arch().secret_wall()
+                      .step(-1).secret_floor().flat(5)),
           [('h', 2), ('g', 2), ('t', 1), ('o', 10), ('H', 1)], [('b', 3)]),
 
     arena('1-4', 1, 'Grumblegut', 'meadow', 'boar', 'He charges. Let him hit the wall.'),
@@ -300,20 +337,20 @@ LEVELS = [
           lambda b: (b.flat(5).spikes(3).step(-1).flat(3).tower(2).pit(3)
                       .flat(3).pillars(3, 2, 2).step(1).flat(3).mesa(5)
                       .spikes(3).step(-1).flat(3).tower(3, bone=True)
-                      .step(1).flat(3).pit(3).flat(5)),
+                      .step(1).secret_wall().flat(3).pit(3).secret_floor().flat(5)),
           [('g', 5), ('o', 11), ('K', 2), ('H', 1)], [('b', 4)]),
 
     stage('2-2', 2, 'Crystal Drop', 'cavern', 'Ride the stones. Do not rush.',
           lambda b: (b.flat(5).crossing(2).step(-1).flat(3).mesa(5).step(1)
                       .flat(3).tower(3, bone=True).crossing(2).step(-1)
-                      .flat(3).pillars(4, 2, 2).step(1).flat(5)),
+                      .flat(3).pillars(4, 2, 2).secret_wall().step(1).secret_floor().flat(5)),
           [('g', 4), ('t', 2), ('o', 11), ('K', 1), ('H', 1)], [('b', 4)]),
 
     stage('2-3', 2, 'Gnaw Tunnels', 'cavern', 'Bonehounds leap when you get close.',
           lambda b: (b.flat(4).arch().step(-1).flat(3).spikes(3)
                       .pillars(3, 2, 2).step(1).flat(3).tower(3, bone=True)
                       .pit(3).mesa(5).step(-1).flat(3).crossing(1).flat(3)
-                      .arch().step(1).flat(5)),
+                      .arch().step(1).secret_wall().secret_floor().flat(5)),
           [('h', 4), ('g', 3), ('t', 2), ('o', 12), ('K', 2), ('H', 1)], [('b', 4)]),
 
     arena('2-4', 2, 'Gloomwing', 'cavern', 'gloomwing', 'It dives. Swing when it drops low.'),
@@ -322,21 +359,21 @@ LEVELS = [
           lambda b: (b.flat(4).mesa(4).spikes(3).step(-1).flat(3)
                       .tower(3, bone=True).pillars(3, 2, 2).step(1).flat(3)
                       .arch().pit(3).flat(3).crossing(1).step(-1).flat(3)
-                      .mesa(5).step(1).flat(5)),
+                      .mesa(5).step(1).secret_wall().secret_floor().flat(5)),
           [('g', 5), ('h', 4), ('o', 12), ('K', 2), ('H', 1)], [('b', 4)]),
 
     stage('3-2', 3, 'Iron Halls', 'keep', 'Break the crates. Some hide coin.',
           lambda b: (b.flat(4).spikes(3).pillars(4, 2, 2).step(-1).flat(3)
                       .tower(3, bone=True).step(1).flat(3).arch().spikes(3)
-                      .mesa(5).crossing(1).step(-1).flat(3).tower(2)
-                      .step(1).flat(5)),
+                      .mesa(5).crossing(1).step(-1).flat(3).tower(2).secret_wall()
+                      .step(1).secret_floor().flat(5)),
           [('g', 5), ('h', 3), ('t', 3), ('o', 11), ('K', 4), ('H', 1)], [('b', 4)]),
 
     stage('3-3', 3, 'Throne Approach', 'keep', 'Last stretch. Everything at once.',
           lambda b: (b.flat(4).arch().spikes(3).pillars(3, 2, 3).step(-1)
                       .flat(3).tower(3, bone=True).crossing(2).mesa(5)
-                      .spikes(3).step(1).flat(3).arch().pillars(3, 2, 2)
-                      .step(-1).flat(5)),
+                      .spikes(3).step(1).flat(3).arch().pillars(3, 2, 2).secret_wall()
+                      .step(-1).secret_floor().flat(5)),
           [('g', 6), ('h', 5), ('t', 3), ('o', 13), ('K', 3), ('H', 1)], [('b', 5)]),
 
     arena('3-4', 3, 'The Kennel King', 'keep', 'king', 'Jump his shockwaves.')

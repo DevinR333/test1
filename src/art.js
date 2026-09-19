@@ -319,6 +319,64 @@ var Art = (function () {
   shade(MEAT, '#c8513f', ['#e87d5e', '#d0604a', '#a83f32', '#7c2c23']);
 
   /* ---------------------------------------------------------------
+     SECRET TREASURE - gems hidden around each stage, and chests
+     walled up behind false masonry.
+  --------------------------------------------------------------- */
+  function gemSprite(core, lite, edge) {
+    var c = S([
+      '..ooo..',
+      '.ollko.',
+      'ollkkko',
+      'olkkkko',
+      'okkkkko',
+      '.okkko.',
+      '..ooo..'
+    ], { o: edge, l: lite, k: core });
+    return c;
+  }
+  var GEMS = {
+    meadow: gemSprite('#2fa36b', '#9dffd0', '#0d3d28'),
+    cavern: gemSprite('#3f8fd6', '#a8e0ff', '#102d4d'),
+    keep:   gemSprite('#b03fd6', '#efb0ff', '#3a0d4d')
+  };
+
+  /* A banded strongbox, closed and sprung open. */
+  var CHEST_PAL = { o: '#241407', '#': '#8a5a28', w: '#c08a42', k: '#5f6b78',
+                    l: '#9aa6b4', g: '#e8c45c', y: '#fff3bc' };
+  var CHEST = S([
+    '..oooooooooo..',
+    '.o##########o.',
+    'o#wwwwwwwwww#o',
+    'o#wwwwwwwwww#o',
+    'okkkkkkkkkkkko',
+    'o############o',
+    'o##ww##gg##w#o',
+    'o############o',
+    'okkkkkkkkkkkko',
+    'o##wwww##ww##o',
+    'o############o',
+    '.oooooooooooo.',
+    '..............'
+  ], CHEST_PAL);
+  var CHEST_OPEN = S([
+    '.o##########o.',
+    'o#wwwwwwwwww#o',
+    'o############o',
+    '..............',
+    'okkkkkkkkkkkko',
+    'o#gggggggggg#o',
+    'o#gyyggyggyg#o',
+    'o############o',
+    'o##wwww##ww##o',
+    'o############o',
+    '.oooooooooooo.',
+    '..............',
+    '..............'
+  ], CHEST_PAL);
+  shade(CHEST, '#8a5a28', ['#b07a3e', '#96612c', '#75491f', '#553413']);
+  shade(CHEST_OPEN, '#8a5a28', ['#b07a3e', '#96612c', '#75491f', '#553413']);
+
+  /* ---------------------------------------------------------------
      THE BLADE
   --------------------------------------------------------------- */
   var BLADES = [
@@ -358,6 +416,7 @@ var Art = (function () {
     GRUB: GRUB, BATLING: [BATLING, BATLING2], THORN: THORN, THORN_L: F(THORN),
     THORNBALL: THORNBALL,
     COIN: COIN, BONE_GOLD: BONE_GOLD, BONE_GREY: BONE_GREY,
+    GEMS: GEMS, CHEST: CHEST, CHEST_OPEN: CHEST_OPEN,
     HEART_FULL: HEART_FULL, HEART_EMPTY: HEART_EMPTY, MEAT: MEAT,
     buildDog: buildDog, drawBlade: drawBlade
   };
@@ -929,6 +988,58 @@ Art.vignette = function (g, w, h, strength) {
   grad.addColorStop(1, 'rgba(4,2,10,' + (strength || 0.5) + ')');
   g.fillStyle = grad;
   g.fillRect(0, 0, w, h);
+};
+
+/* ===================================================================
+   FOREGROUND + ATMOSPHERE
+   A near layer that passes in front of the action, and drifting motes,
+   both parallaxed faster than the play field to give the scene depth.
+=================================================================== */
+Art.drawForeground = function (g, themeName, camX, camY, t, W, H) {
+  if (themeName === 'meadow') return;       /* outdoors stays open */
+  var T = Art.THEMES[themeName];
+  var par = 1.30, spacing = 336, colW = 11;
+  var first = Math.floor((camX * par - colW) / spacing);
+  for (var i = first; i < first + Math.ceil(W / spacing) + 2; i++) {
+    var x = Math.round(i * spacing - camX * par);
+    if (x < -colW - 4 || x > W + colW) continue;
+    g.save();
+    g.globalAlpha = 0.80;
+    /* shaft */
+    g.fillStyle = '#100c18'; g.fillRect(x, 0, colW, H);
+    g.fillStyle = '#1d1728'; g.fillRect(x + 1, 0, 2, H);
+    g.fillStyle = '#080610'; g.fillRect(x + colW - 3, 0, 3, H);
+    /* capital and base catch a little light */
+    g.fillStyle = '#241c32';
+    g.fillRect(x - 3, 14, colW + 6, 9);
+    g.fillRect(x - 3, H - 30, colW + 6, 10);
+    g.fillStyle = '#332942';
+    g.fillRect(x - 3, 14, colW + 6, 2);
+    g.fillRect(x - 3, H - 30, colW + 6, 2);
+    g.restore();
+  }
+};
+
+Art.drawMotes = function (g, themeName, camX, camY, t, W, H) {
+  var n = themeName === 'meadow' ? 16 : 22;
+  for (var i = 0; i < n; i++) {
+    var seed = i * 71.3;
+    var speed = 0.25 + (i % 5) * 0.08;
+    var x = ((seed * 7.1 - camX * 0.9 + t * (themeName === 'meadow' ? 0.35 : 0.12)) % (W + 40) + W + 40) % (W + 40) - 20;
+    var drift = Math.sin(t * 0.02 + seed) * 6;
+    var y = ((seed * 3.7 + t * speed) % (H + 30)) - 15 + drift;
+    var a = 0.16 + 0.24 * Math.abs(Math.sin(t * 0.03 + seed));
+    if (themeName === 'meadow') {
+      g.fillStyle = 'rgba(255,240,170,' + a + ')';
+      g.fillRect(Math.round(x), Math.round(y), 2, 1);
+    } else if (themeName === 'cavern') {
+      g.fillStyle = 'rgba(170,225,255,' + a + ')';
+      g.fillRect(Math.round(x), Math.round(y), 1, 1);
+    } else {
+      g.fillStyle = 'rgba(255,190,120,' + (a * 0.8) + ')';
+      g.fillRect(Math.round(x), Math.round(y), 1, 1);
+    }
+  }
 };
 
 /* ===================================================================

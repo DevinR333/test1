@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0b0a12">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Black Lab Blade">
 <title>Black Lab Blade</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -10,6 +15,7 @@ html, body {
   width:100%; height:100%; background:#07060a; overflow:hidden;
   font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent;
+  overscroll-behavior:none; touch-action:none;
 }
 #wrap { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
 #screen {
@@ -17,16 +23,39 @@ html, body {
   background:#0b0a12; display:block;
   box-shadow: 0 0 0 2px #1b1826, 0 10px 50px rgba(0,0,0,.8);
 }
-#touch { position:fixed; inset:auto 0 0 0; display:flex; justify-content:space-between;
-  padding:12px 16px calc(12px + env(safe-area-inset-bottom)); pointer-events:none; }
+
+/* ---- touch controls: hidden unless the device has a touchscreen,
+        and switchable from the pause menu ---- */
+#touch { position:fixed; inset:0; pointer-events:none; z-index:5; }
 #touch.hidden { display:none; }
-.pad, .acts { display:flex; gap:12px; pointer-events:auto; }
-.tbtn {
-  min-width:64px; height:64px; border-radius:14px; border:2px solid #4a4360;
-  background:rgba(28,24,40,.72); color:#ded7f0; font:600 13px/1 ui-monospace,monospace;
-  padding:0 14px; touch-action:none;
+#touch .pad, #touch .acts {
+  position:absolute; bottom:calc(14px + env(safe-area-inset-bottom));
+  display:flex; gap:10px; pointer-events:auto; align-items:flex-end;
 }
-.tbtn:active { background:rgba(96,84,140,.85); }
+#touch .pad  { left:calc(14px + env(safe-area-inset-left)); }
+#touch .acts { right:calc(14px + env(safe-area-inset-right)); }
+.tbtn {
+  border-radius:16px; border:2px solid rgba(150,135,190,.55);
+  background:rgba(24,20,36,.55); color:#e6dcf7;
+  font:700 13px/1 ui-monospace,monospace; touch-action:none;
+  backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px);
+  display:flex; align-items:center; justify-content:center;
+}
+.tbtn:active { background:rgba(120,100,175,.8); border-color:#cbbdf0; transform:translateY(1px); }
+.dpad  { width:74px; height:74px; font-size:22px; }
+.small { width:58px; height:58px; font-size:16px; opacity:.8; }
+.act   { width:80px; height:80px; font-size:12px; }
+.jmp   { background:rgba(58,40,96,.62); }
+.atk   { background:rgba(96,36,48,.62); margin-bottom:22px; }
+.sys {
+  position:absolute; top:calc(10px + env(safe-area-inset-top));
+  right:calc(12px + env(safe-area-inset-right));
+  width:46px; height:38px; font-size:13px; pointer-events:auto; opacity:.75;
+}
+@media (max-height:420px) {
+  .dpad { width:64px; height:64px; } .act { width:70px; height:70px; }
+  .small { width:50px; height:50px; }
+}
 </style>
 </head>
 <body>
@@ -34,13 +63,15 @@ html, body {
     <canvas id="screen" width="400" height="224"></canvas>
     <div id="touch" class="hidden">
       <div class="pad">
-        <button class="tbtn" data-key="left">&#9664;</button>
-        <button class="tbtn" data-key="right">&#9654;</button>
+        <button class="tbtn dpad" data-key="left" aria-label="Left">&#9664;</button>
+        <button class="tbtn dpad" data-key="right" aria-label="Right">&#9654;</button>
+        <button class="tbtn small" data-key="down" aria-label="Down">&#9660;</button>
       </div>
       <div class="acts">
-        <button class="tbtn" data-key="attack">SWING</button>
-        <button class="tbtn" data-key="jump">JUMP</button>
+        <button class="tbtn act atk" data-key="attack" aria-label="Swing">SWING</button>
+        <button class="tbtn act jmp" data-key="jump" aria-label="Jump">JUMP</button>
       </div>
+      <button class="tbtn sys" data-key="pause" aria-label="Pause">II</button>
     </div>
   </div>
   <script>
@@ -154,9 +185,23 @@ var Input = (function () {
   });
   window.addEventListener('blur', function () { held = {}; });
 
+  var touchHost = null;
+
+  /* Touch controls are optional: shown automatically on a touchscreen,
+     and switchable from the pause menu on any device. */
+  function setTouchVisible(on) {
+    if (!touchHost) return;
+    if (on) touchHost.classList.remove('hidden');
+    else touchHost.classList.add('hidden');
+  }
+  function hasTouch() {
+    return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  }
+
   function bindTouch() {
     var host = document.getElementById('touch');
     if (!host) return;
+    touchHost = host;
     var btns = host.querySelectorAll('.tbtn');
     for (var i = 0; i < btns.length; i++) {
       (function (b) {
@@ -171,11 +216,12 @@ var Input = (function () {
         b.addEventListener('mouseleave', release);
       })(btns[i]);
     }
-    if ('ontouchstart' in window) host.classList.remove('hidden');
   }
 
   return {
     init: bindTouch,
+    setTouchVisible: setTouchVisible,
+    hasTouch: hasTouch,
     down: function (n) { return !!held[n]; },
     pressed: function (n) {
       if (fresh[n] && !consumed[n]) { consumed[n] = true; return true; }
@@ -781,6 +827,64 @@ var Art = (function () {
   shade(MEAT, '#c8513f', ['#e87d5e', '#d0604a', '#a83f32', '#7c2c23']);
 
   /* ---------------------------------------------------------------
+     SECRET TREASURE - gems hidden around each stage, and chests
+     walled up behind false masonry.
+  --------------------------------------------------------------- */
+  function gemSprite(core, lite, edge) {
+    var c = S([
+      '..ooo..',
+      '.ollko.',
+      'ollkkko',
+      'olkkkko',
+      'okkkkko',
+      '.okkko.',
+      '..ooo..'
+    ], { o: edge, l: lite, k: core });
+    return c;
+  }
+  var GEMS = {
+    meadow: gemSprite('#2fa36b', '#9dffd0', '#0d3d28'),
+    cavern: gemSprite('#3f8fd6', '#a8e0ff', '#102d4d'),
+    keep:   gemSprite('#b03fd6', '#efb0ff', '#3a0d4d')
+  };
+
+  /* A banded strongbox, closed and sprung open. */
+  var CHEST_PAL = { o: '#241407', '#': '#8a5a28', w: '#c08a42', k: '#5f6b78',
+                    l: '#9aa6b4', g: '#e8c45c', y: '#fff3bc' };
+  var CHEST = S([
+    '..oooooooooo..',
+    '.o##########o.',
+    'o#wwwwwwwwww#o',
+    'o#wwwwwwwwww#o',
+    'okkkkkkkkkkkko',
+    'o############o',
+    'o##ww##gg##w#o',
+    'o############o',
+    'okkkkkkkkkkkko',
+    'o##wwww##ww##o',
+    'o############o',
+    '.oooooooooooo.',
+    '..............'
+  ], CHEST_PAL);
+  var CHEST_OPEN = S([
+    '.o##########o.',
+    'o#wwwwwwwwww#o',
+    'o############o',
+    '..............',
+    'okkkkkkkkkkkko',
+    'o#gggggggggg#o',
+    'o#gyyggyggyg#o',
+    'o############o',
+    'o##wwww##ww##o',
+    'o############o',
+    '.oooooooooooo.',
+    '..............',
+    '..............'
+  ], CHEST_PAL);
+  shade(CHEST, '#8a5a28', ['#b07a3e', '#96612c', '#75491f', '#553413']);
+  shade(CHEST_OPEN, '#8a5a28', ['#b07a3e', '#96612c', '#75491f', '#553413']);
+
+  /* ---------------------------------------------------------------
      THE BLADE
   --------------------------------------------------------------- */
   var BLADES = [
@@ -820,6 +924,7 @@ var Art = (function () {
     GRUB: GRUB, BATLING: [BATLING, BATLING2], THORN: THORN, THORN_L: F(THORN),
     THORNBALL: THORNBALL,
     COIN: COIN, BONE_GOLD: BONE_GOLD, BONE_GREY: BONE_GREY,
+    GEMS: GEMS, CHEST: CHEST, CHEST_OPEN: CHEST_OPEN,
     HEART_FULL: HEART_FULL, HEART_EMPTY: HEART_EMPTY, MEAT: MEAT,
     buildDog: buildDog, drawBlade: drawBlade
   };
@@ -1394,6 +1499,58 @@ Art.vignette = function (g, w, h, strength) {
 };
 
 /* ===================================================================
+   FOREGROUND + ATMOSPHERE
+   A near layer that passes in front of the action, and drifting motes,
+   both parallaxed faster than the play field to give the scene depth.
+=================================================================== */
+Art.drawForeground = function (g, themeName, camX, camY, t, W, H) {
+  if (themeName === 'meadow') return;       /* outdoors stays open */
+  var T = Art.THEMES[themeName];
+  var par = 1.30, spacing = 336, colW = 11;
+  var first = Math.floor((camX * par - colW) / spacing);
+  for (var i = first; i < first + Math.ceil(W / spacing) + 2; i++) {
+    var x = Math.round(i * spacing - camX * par);
+    if (x < -colW - 4 || x > W + colW) continue;
+    g.save();
+    g.globalAlpha = 0.80;
+    /* shaft */
+    g.fillStyle = '#100c18'; g.fillRect(x, 0, colW, H);
+    g.fillStyle = '#1d1728'; g.fillRect(x + 1, 0, 2, H);
+    g.fillStyle = '#080610'; g.fillRect(x + colW - 3, 0, 3, H);
+    /* capital and base catch a little light */
+    g.fillStyle = '#241c32';
+    g.fillRect(x - 3, 14, colW + 6, 9);
+    g.fillRect(x - 3, H - 30, colW + 6, 10);
+    g.fillStyle = '#332942';
+    g.fillRect(x - 3, 14, colW + 6, 2);
+    g.fillRect(x - 3, H - 30, colW + 6, 2);
+    g.restore();
+  }
+};
+
+Art.drawMotes = function (g, themeName, camX, camY, t, W, H) {
+  var n = themeName === 'meadow' ? 16 : 22;
+  for (var i = 0; i < n; i++) {
+    var seed = i * 71.3;
+    var speed = 0.25 + (i % 5) * 0.08;
+    var x = ((seed * 7.1 - camX * 0.9 + t * (themeName === 'meadow' ? 0.35 : 0.12)) % (W + 40) + W + 40) % (W + 40) - 20;
+    var drift = Math.sin(t * 0.02 + seed) * 6;
+    var y = ((seed * 3.7 + t * speed) % (H + 30)) - 15 + drift;
+    var a = 0.16 + 0.24 * Math.abs(Math.sin(t * 0.03 + seed));
+    if (themeName === 'meadow') {
+      g.fillStyle = 'rgba(255,240,170,' + a + ')';
+      g.fillRect(Math.round(x), Math.round(y), 2, 1);
+    } else if (themeName === 'cavern') {
+      g.fillStyle = 'rgba(170,225,255,' + a + ')';
+      g.fillRect(Math.round(x), Math.round(y), 1, 1);
+    } else {
+      g.fillStyle = 'rgba(255,190,120,' + (a * 0.8) + ')';
+      g.fillRect(Math.round(x), Math.round(y), 1, 1);
+    }
+  }
+};
+
+/* ===================================================================
    BACKDROPS
    Interiors get real architecture: fluted columns with capitals and
    bases, arched niches between them, a belt course and hung banners.
@@ -1731,60 +1888,60 @@ var LEVELS = [
     id: '1-1', world: 1, name: 'Backyard Gate', theme: 'meadow',
     hint: 'X swings the blade. Z jumps.',
     rows: [
-      '                                                                            ',
-      '                                                                            ',
-      '                                                                            ',
-      '                                                     B                      ',
-      '                                                   =====                    ',
-      '        oooK                                       o o                      ',
-      '       =====                                      =====                     ',
-      '       o o                 ######                 o o                       ',
-      '      =====     o    o   ##########              =====     o o     g        ',
-      ' P  g   g o  ######  ################              o  o ######  ####      Do',
-      '###################%%######################%%%################%%############',
-      '###################%%######################%%%################%%############',
-      '###################%%######################%%%################%%############',
-      '###################%%######################%%%################%%############'
+      '                                                                                         ',
+      '                                                                                         ',
+      '                                                                                         ',
+      '                                                     G                                   ',
+      '                                                   =====                                 ',
+      '       ooKo                                       oo o                  go               ',
+      '       =====                   o                  =====             ######               ',
+      '       o o                 ######                 o o               F    #               ',
+      '      =====     o     o  ##########              =====              F CoG#               ',
+      ' P      go   ######  ################               g   ######  ###########   o        D ',
+      '###################%%######################%%%################%%################F########',
+      '###################%%######################%%%################%%###############G   ######',
+      '###################%%######################%%%################%%###############  C ######',
+      '###################%%######################%%%################%%#########################'
     ]
   },
   {
     id: '1-2', world: 1, name: 'Thistle Run', theme: 'meadow',
     hint: 'Hop the pillars. Mind the drop.',
     rows: [
-      '                                                                            ',
-      '                                                                            ',
-      '                              B           b                                 ',
-      '                            =====      b        b                           ',
-      '                            o o                                             ',
-      '                           =====                                            ',
-      '                           o oo                           o oo              ',
-      '        K                 =====             Hg            #####             ',
-      '     #  #  #      o           g o        #######          #   #        o  Dg',
-      ' P  o#  #  #  ######   ##########   o g###########        #K o#######  #####',
-      '####################%%%#############################%%%##############%%#####',
-      '####################%%%#############################%%%##############%%#####',
-      '####################%%%#############################%%%##############%%#####',
-      '####################%%%#############################%%%##############%%#####'
+      '                                                                                         ',
+      '                                                                                         ',
+      '                              G           b  b                                           ',
+      '                            =====                                 b                      ',
+      '                            o o                                                          ',
+      '                           =====                                  o o Ko                 ',
+      '                           o o                                    ######                 ',
+      '        o                 =====              o K          #####   F    #                 ',
+      '     #  #  #      o    o       o         #######          #   #   FgC G#   g   H     o D ',
+      ' P  g#  #  #  ######   ##########    g ###########        #o  ##############  ##F########',
+      '####################%%%#############################%%%#####################%%#G   ######',
+      '####################%%%#############################%%%#####################%%#  C ######',
+      '####################%%%#############################%%%#####################%%###########',
+      '####################%%%#############################%%%#####################%%###########'
     ]
   },
   {
     id: '1-3', world: 1, name: 'The Old Well', theme: 'meadow',
     hint: 'Mind the water. Some things bite back.',
     rows: [
-      '                                                                              ',
-      '                                                                              ',
-      '                           oB          b                                      ',
-      '                     b    =====                                               ',
-      '                          o oH                                 b              ',
-      '                         =====                                                ',
-      '                        oooo                                                  ',
-      '                        =====            o                       #####        ',
-      '              t               o        ######             o      #   #    ohD ',
-      ' P  o   ==   ==   #############   og ##########     ==   ==    ho# g #########',
-      '#####%%%%%%%%%%%%%###############################%%%%%%%%%%%%%################',
-      '#####%%%%%%%%%%%%%###############################%%%%%%%%%%%%%################',
-      '#####%%%%%%%%%%%%%###############################%%%%%%%%%%%%%################',
-      '#####%%%%%%%%%%%%%###############################%%%%%%%%%%%%%################'
+      '                                                                                           ',
+      '                                                                                           ',
+      '                           gGo            b                                                ',
+      '                          =====                                                  b         ',
+      '                          ooo b                                                            ',
+      '                         =====                                                             ',
+      '                         ooo                                      g    h oo                ',
+      '                        =====             o                      ###########               ',
+      '         H              t              ######                    #   #F    #     o o     D ',
+      ' P      ==   ==   #############     o##########     ==   ==      #   #FhC G#o#####F########',
+      '#####%%%%%%%%%%%%%###############################%%%%%%%%%%%%%###################G   ######',
+      '#####%%%%%%%%%%%%%###############################%%%%%%%%%%%%%###################  C ######',
+      '#####%%%%%%%%%%%%%###############################%%%%%%%%%%%%%#############################',
+      '#####%%%%%%%%%%%%%###############################%%%%%%%%%%%%%#############################'
     ]
   },
   {
@@ -1811,60 +1968,60 @@ var LEVELS = [
     id: '2-1', world: 2, name: 'Dripstone Deep', theme: 'cavern',
     hint: 'Spikes hurt. Everything down here hurts.',
     rows: [
-      '#########################################################################################',
-      '         #          #          #          #          #          #          #          #  ',
-      '                                                                        B o              ',
-      '                                                                  b   =====              ',
-      '                 oo oo                 b  b                 b         o og               ',
-      '                 =====                                               =====               ',
-      '                gogoo                                                o o                 ',
-      '                =====        #  #  #             o                  =====                ',
-      '                g  o      K o#  #  #          #######            o  oo                   ',
-      ' P    ^^^ #############   ############   ogH###########   ^^^ #############           KD ',
-      '#######################%%%#######################################################%%%#####',
-      '#######################%%%#######################################################%%%#####',
-      '#######################%%%#######################################################%%%#####',
-      '#######################%%%#######################################################%%%#####'
+      '######################################################################################################',
+      '         #          #          #          #          #          #          #          #          #    ',
+      '                                                                      o G g                           ',
+      '                  b                                            b      =====                           ',
+      '         b        o o                                                oo o        b                    ',
+      '                 =====                                               =====                            ',
+      '                 o o               o                                 o o      g o                     ',
+      '                =====        #  #  #             K                  =====     ######                  ',
+      '                o H         o#  #  #          #######              o  Kg g    F    #                  ',
+      ' P    ^^^ #############   ############    oo###########   ^^^ #############   F C G#g o       o     D ',
+      '#######################%%%##############################################################%%%##F########',
+      '#######################%%%##############################################################%%%#G   ######',
+      '#######################%%%##############################################################%%%#  C ######',
+      '#######################%%%##############################################################%%%###########'
     ]
   },
   {
     id: '2-2', world: 2, name: 'Crystal Drop', theme: 'cavern',
     hint: 'Ride the stones. Do not rush.',
     rows: [
-      '#########################################################################################',
-      '         #          #          #          #          #          #          #          #  ',
-      '                                 b                                                       ',
-      '                                             o B               b                         ',
-      '                                       b     =====                               b       ',
-      '                                            oo oo                                        ',
-      '                             o  o           =====                       o                ',
-      '                          #######           oKo                      #  #  #  #          ',
-      '        o    o       oo ###########        =====      g   g       t  #  #  #  #          ',
-      ' P      ==   ==   ###################    og   t  g   ==   ==   ##################   H  D ',
-      '#####%%%%%%%%%%%%%################################%%%%%%%%%%%%%##########################',
-      '#####%%%%%%%%%%%%%################################%%%%%%%%%%%%%##########################',
-      '#####%%%%%%%%%%%%%################################%%%%%%%%%%%%%##########################',
-      '#####%%%%%%%%%%%%%################################%%%%%%%%%%%%%##########################'
+      '######################################################################################################',
+      '         #          #          #          #          #          #          #          #          #    ',
+      '                              b                                                                       ',
+      '                                    b         tG                           b                          ',
+      '                                             =====                                                    ',
+      '                                             ogoo                                  o                  ',
+      '                            o  o            =====                                ######               ',
+      '                          #######           o oob                    #  #  #  #  F    #               ',
+      '              g      g  ###########        =====           o         #  #  #  #  F CoG#               ',
+      ' P      ==   ==   ###################    g  oKoo     ==   ==   #########################      t   HoD ',
+      '#####%%%%%%%%%%%%%################################%%%%%%%%%%%%%##############################F########',
+      '#####%%%%%%%%%%%%%################################%%%%%%%%%%%%%#############################G   ######',
+      '#####%%%%%%%%%%%%%################################%%%%%%%%%%%%%#############################  C ######',
+      '#####%%%%%%%%%%%%%################################%%%%%%%%%%%%%#######################################'
     ]
   },
   {
     id: '2-3', world: 2, name: 'Gnaw Tunnels', theme: 'cavern',
     hint: 'Bonehounds leap when you get close.',
     rows: [
-      '########################################################################################',
-      '         #          #          #          #          #          #          #          # ',
-      '                                                                                        ',
-      '                           b           B                    b           b               ',
-      '                                     =====                                       b      ',
-      '                                    oo o                                    o  h        ',
-      '    ghgh            o               =====                                  #####        ',
-      '    #####           #  #  #        ho o            o                       #   #        ',
-      '    #   #   H   ^^^ #  #  #        =====       #######       t o   ==   Ko # o #        ',
-      ' P  #o t#####################   o Kg   o o   ###########  ######        ########     oD ',
-      '##########################################%%%###################%%%%%%%%################',
-      '##########################################%%%###################%%%%%%%%################',
-      '##########################################%%%###################%%%%%%%%################',
-      '##########################################%%%###################%%%%%%%%################'
+      '#####################################################################################################',
+      '         #          #          #          #          #          #          #          #          #   ',
+      '                                                                                                     ',
+      '         b           b     b           G h                  b                                        ',
+      '                                     =====                                                           ',
+      '                                    oo oo                                  g K                       ',
+      '     K  o                           =====                                  #####    hhh              ',
+      '    #####           #  #  #         otog         o  o              o       #   #   ######            ',
+      '    #   #       ^^^ #  #  #        =====       #######        g    ==    oo# o #   F    #            ',
+      ' P  #  H#####################       o        ###########  ######        ########   F C G#ot     o  D ',
+      '##########################################%%%###################%%%%%%%%####################F########',
+      '##########################################%%%###################%%%%%%%%###################G   ######',
+      '##########################################%%%###################%%%%%%%%###################  C ######',
+      '##########################################%%%###################%%%%%%%%#############################'
     ]
   },
   {
@@ -1891,60 +2048,60 @@ var LEVELS = [
     id: '3-1', world: 3, name: 'The Ramparts', theme: 'keep',
     hint: 'The keep is awake.',
     rows: [
-      '###############################################################################################',
-      '         #          #          #          #          #          #          #          #        ',
-      '                              gB K                                         b                   ',
-      '                        b    =====        b                                                    ',
-      '                             o o                                                       b       ',
-      '                            =====                                                              ',
-      '                            o o         g          o                          g h              ',
-      '        o  o               =====  #  #  #        #####                      #######            ',
-      '      ######             ho oo ooo#  #  #        #   #         H       g o###########          ',
-      ' P  ##########   ^^^ ######################   h g#h  #   oK    ==   ###################      Do',
-      '######################################################%%%###%%%%%%%%###########################',
-      '######################################################%%%###%%%%%%%%###########################',
-      '######################################################%%%###%%%%%%%%###########################',
-      '######################################################%%%###%%%%%%%%###########################'
+      '############################################################################################################',
+      '         #          #          #          #          #          #          #          #          #          ',
+      '      b  b                   o Gg                                          b                                ',
+      '                             =====                                                                          ',
+      '                             o oh            b                                                              ',
+      '                            =====                                                                           ',
+      '                           Ko o         o                                      g oo         hg              ',
+      '          g                =====  #  #  #        #####                      #######       ######            ',
+      '      ######            Ko  o   h #  #  #        #   #          o        o###########     F    #            ',
+      ' P  ##########   ^^^ ######################   oH #og #         ==   ###################   F C G#  o h    oD ',
+      '######################################################%%%###%%%%%%%%###############################F########',
+      '######################################################%%%###%%%%%%%%##############################G   ######',
+      '######################################################%%%###%%%%%%%%##############################  C ######',
+      '######################################################%%%###%%%%%%%%########################################'
     ]
   },
   {
     id: '3-2', world: 3, name: 'Iron Halls', theme: 'keep',
     hint: 'Break the crates. Some hide coin.',
     rows: [
-      '############################################################################################',
-      '         #          #          #          #          #          #          #          #     ',
-      '                               B h                                                          ',
-      '                     b       =====                                         b                ',
-      '            b               Kooo          b                                    o o          ',
-      '                            =====                                             =====         ',
-      '                           tooo           o                                   o ot          ',
-      '         t     g           =====        #####         Ko  K                  =====          ',
-      '         #  #  #  #      o  go g g      #   #       #######       oh          o o oh        ',
-      ' P   ^^^ #  #  #  #  #############    gK# Ho# ^^^ ###########     ==   #############      D ',
-      '###############################################################%%%%%%%%#####################',
-      '###############################################################%%%%%%%%#####################',
-      '###############################################################%%%%%%%%#####################',
-      '###############################################################%%%%%%%%#####################'
+      '#########################################################################################################',
+      '         #          #          #          #          #          #          #          #          #       ',
+      '                             t G                      b                                                  ',
+      '                             =====                                         b                             ',
+      '               b  b         oo ot                                             oo o                       ',
+      '                            =====                                             =====  g                   ',
+      '                            ogoo        gg  o                                 ohoK  ######               ',
+      '         g  t  h  o        =====        #####         K K                    =====  F    #               ',
+      '         #  #  #  #             h       #   #       #######       K       H o       F C G#               ',
+      ' P   ^^^ #  #  #  #  #############      #   # ^^^ ###########     ==   ####################   oo   oo oD ',
+      '###############################################################%%%%%%%%#########################F########',
+      '###############################################################%%%%%%%%########################G   ######',
+      '###############################################################%%%%%%%%########################  C ######',
+      '###############################################################%%%%%%%%##################################'
     ]
   },
   {
     id: '3-3', world: 3, name: 'Throne Approach', theme: 'keep',
     hint: 'Last stretch. Everything at once.',
     rows: [
-      '###############################################################################################',
-      '         #          #          #          #          #          #          #          #        ',
-      '                                gB                                                             ',
-      '                        b      =====                                                   b       ',
-      '      b                       oo o                                            b  b             ',
-      '                              =====                                                            ',
-      '     HhoK        o  t        oo o                    go oK               ho                    ',
-      '    #####     #  #  #        =====     h           #######               #####K                ',
-      '    #   #     #  #  #     thooooog     ==   ==   ###########   ^^^       #   ##  #  #     gt D ',
-      ' P  # g # ^^^ #  #  #  #############             ##################    h # go##  #  #  ########',
-      '####################################%%%%%%%%%%%%%##############################################',
-      '####################################%%%%%%%%%%%%%##############################################',
-      '####################################%%%%%%%%%%%%%##############################################',
-      '####################################%%%%%%%%%%%%%##############################################'
+      '############################################################################################################',
+      '         #          #          #          #          #          #          #          #          #          ',
+      '                               ghG                                                                          ',
+      '                               =====                        b                                               ',
+      '      b  b                    ho oo                                        b  b                             ',
+      '                              =====                                                                         ',
+      '    tto o        o            oho                     KhK                K   o           o  o               ',
+      '    #####     #  #  #        =====     g           #######               #####         ######               ',
+      '    #   #     #  #  #         h o o    ==   ==   ###########   ^^^       #   ##  #  #  F    #    go o to gD ',
+      ' P  # g # ^^^ #  #  #  #############             ##################   H o#   ##  #  #  FgC G# #####F########',
+      '####################################%%%%%%%%%%%%%#################################################G   ######',
+      '####################################%%%%%%%%%%%%%#################################################  C ######',
+      '####################################%%%%%%%%%%%%%###########################################################',
+      '####################################%%%%%%%%%%%%%###########################################################'
     ]
   },
   {
@@ -1976,7 +2133,7 @@ var MOVERS = {
     { tx: 8, ty: 4, tw: 3, dx: 0, dy: 0.45, span: 48 }
   ],
   '2-1': [
-    { tx: 8, ty: 4, tw: 3, dx: 0, dy: 0.45, span: 48 }
+    { tx: 8, ty: 5, tw: 3, dx: 0, dy: 0.45, span: 48 }
   ],
   '2-2': [
     { tx: 8, ty: 4, tw: 3, dx: 0.5, dy: 0, span: 48 }
@@ -1985,13 +2142,13 @@ var MOVERS = {
     { tx: 9, ty: 4, tw: 3, dx: 0, dy: 0.45, span: 48 }
   ],
   '3-1': [
-    { tx: 12, ty: 4, tw: 3, dx: 0, dy: 0.45, span: 48 }
+    { tx: 11, ty: 4, tw: 3, dx: 0, dy: 0.45, span: 48 }
   ],
   '3-2': [
-    { tx: 8, ty: 5, tw: 3, dx: 0.5, dy: 0, span: 48 }
+    { tx: 8, ty: 4, tw: 3, dx: 0.5, dy: 0, span: 48 }
   ],
   '3-3': [
-    { tx: 9, ty: 4, tw: 3, dx: 0, dy: 0.45, span: 48 }
+    { tx: 9, ty: 5, tw: 3, dx: 0, dy: 0.45, span: 48 }
   ]
 };
 
@@ -2004,19 +2161,21 @@ var WORLDS = [
 /* ===== save.js ===== */
 /* Persistence + the shop catalogue. */
 var Save = (function () {
-  var KEY = 'blacklabblade.save.v1';
+  var KEY = 'blacklabblade.save.v2';
   var data = null;
 
   function fresh() {
     return {
       coins: 0,
       unlocked: 1,        /* how many stages are playable */
-      cleared: {},        /* stage id -> true */
-      bones: {},          /* stage id -> true */
+      cleared: {},        /* stage id -> true          */
+      gems: {},           /* stage id -> gems found 0-3 */
+      chests: {},         /* stage id -> chests found   */
       sword: 0,           /* index into Art.BLADES */
       collar: 0,          /* extra hearts */
       relics: {},         /* relic id -> true */
       sound: true,
+      touch: null,        /* null = auto-detect, else forced on/off */
       seenIntro: false
     };
   }
@@ -2041,8 +2200,8 @@ var Save = (function () {
       desc: '2 damage. A real blade.' },
     { id: 'collar1', kind: 'collar', tier: 1, name: 'Studded Collar', cost: 80,
       desc: '+1 heart.' },
-    { id: 'spring', kind: 'relic', name: 'Spring Collar', cost: 110,
-      desc: 'Double jump in mid-air.' },
+    { id: 'spring', kind: 'relic', name: 'Gale Collar', cost: 130,
+      desc: 'A third jump in mid-air.' },
     { id: 'swift', kind: 'relic', name: 'Swift Paws', cost: 90,
       desc: 'Run noticeably faster.' },
     { id: 'sword2', kind: 'sword', tier: 2, name: 'Emberblade', cost: 180,
@@ -2086,16 +2245,28 @@ var Save = (function () {
 
   function has(relicId) { return !!get().relics[relicId]; }
   function addCoins(n) { get().coins += n; }
-  function clearStage(index, gotBone) {
+  function clearStage(index, gems, chests) {
     var d = get(), L = LEVELS[index];
     d.cleared[L.id] = true;
-    if (gotBone) d.bones[L.id] = true;
+    /* keep the best haul across attempts */
+    d.gems[L.id] = Math.max(d.gems[L.id] || 0, gems || 0);
+    d.chests[L.id] = Math.max(d.chests[L.id] || 0, chests || 0);
     if (d.unlocked < index + 2) d.unlocked = Math.min(index + 2, LEVELS.length);
     flush();
   }
-  function bonesFound() {
+  function gemsFound() {
     var d = get(), n = 0;
-    for (var k in d.bones) if (d.bones[k]) n++;
+    for (var k in d.gems) n += d.gems[k] || 0;
+    return n;
+  }
+  function chestsFound() {
+    var d = get(), n = 0;
+    for (var k in d.chests) n += d.chests[k] || 0;
+    return n;
+  }
+  function gemsTotal() {
+    var n = 0;
+    for (var i = 0; i < LEVELS.length; i++) if (!LEVELS[i].boss) n += 3;
     return n;
   }
   function allCleared() {
@@ -2107,7 +2278,8 @@ var Save = (function () {
     load: load, get: get, flush: flush, wipe: wipe,
     SHOP: SHOP, owned: owned, available: available, buy: buy,
     has: has, addCoins: addCoins, clearStage: clearStage,
-    bonesFound: bonesFound, allCleared: allCleared
+    gemsFound: gemsFound, chestsFound: chestsFound, gemsTotal: gemsTotal,
+    allCleared: allCleared
   };
 })();
 
@@ -2116,6 +2288,18 @@ var Save = (function () {
 var TILE = 16;
 var GRAV = 0.42;
 var MAXFALL = 6.6;
+
+/* Jump feel. A tap gives a real jump that clears a two-tile ledge on its
+   own; holding adds lift for a few frames for roughly half again the
+   height. Tuned by simulation - see tools/reach.js, which reads these. */
+var RUN_SPEED = 1.75;
+var RUN_SPEED_SWIFT = 2.2;
+var JUMP_IMPULSE = 6.0;      /* tap  -> 40px (2.5 tiles) */
+var JUMP_LIFT = 0.14;        /* added per frame while held */
+var JUMP_LIFT_FRAMES = 12;   /* hold -> 57px (3.6 tiles)  */
+var DBL_JUMP_IMPULSE = 5.3;
+var BASE_JUMPS = 2;          /* ground jump + one in mid-air, always */
+var ATTACK_FRAMES = 17;
 
 /* ------------------------------------------------------------------ */
 function Particle(x, y, vx, vy, life, color, size) {
@@ -2149,7 +2333,7 @@ FloatText.prototype.draw = function (g, cam) {
 /* ------------------------------------------------------------------ */
 function Pickup(x, y, kind) {
   this.x = x; this.y = y; this.kind = kind;
-  this.w = kind === 'bone' ? 10 : 8;
+  this.w = kind === 'bone' ? 10 : 7;
   this.h = kind === 'bone' ? 6 : 7;
   this.vx = 0; this.vy = 0;
   this.t = Math.random() * 6.28;
@@ -2179,14 +2363,56 @@ Pickup.prototype.draw = function (g, cam) {
   var bob = this.loose && !this.grounded ? 0 : Math.round(Math.sin(this.t) * 1.4);
   var sx = Math.round(this.x - cam.x), sy = Math.round(this.y - cam.y + bob);
   if (this.kind === 'coin') g.drawImage(Art.COIN, sx, sy);
-  else if (this.kind === 'bone') {
+  else if (this.kind === 'gem') {
     g.save();
-    g.globalAlpha = 0.35;
-    g.fillStyle = '#ffd75e';
-    g.fillRect(sx - 3, sy - 3, this.w + 6, this.h + 6);
+    g.globalAlpha = 0.20 + 0.14 * Math.sin(this.t * 1.1);
+    g.fillStyle = '#ffffff';
+    g.fillRect(sx - 2, sy - 2, this.w + 4, this.h + 4);
     g.restore();
-    g.drawImage(Art.BONE_GOLD, sx, sy);
+    g.drawImage(Art.GEMS[this.theme] || Art.GEMS.meadow, sx, sy);
   } else g.drawImage(Art.MEAT, sx, sy);
+};
+
+/* ------------------------------------------------------------------
+   A strongbox walled up in a secret chamber. Break it open with the
+   blade, or just bump into it.
+------------------------------------------------------------------ */
+function Chest(x, y) {
+  this.x = x; this.y = y;
+  this.w = 14; this.h = 13;
+  this.open = false;
+  this.t = 0;
+  this.dead = false;
+}
+Chest.prototype.pop = function (w) {
+  if (this.open) return;
+  this.open = true;
+  Sfx.bone();
+  w.shake(4);
+  w.chestsGot++;
+  var cx = this.x + this.w / 2, cy = this.y + 2;
+  for (var i = 0; i < 16; i++) w.dropCoin(cx, cy);
+  for (var j = 0; j < 14; j++) {
+    w.parts.push(new Particle(cx, cy, Util.rand(-2, 2), Util.rand(-3.2, -0.6),
+      Util.randInt(20, 40), Util.pick(['#e8c45c', '#fff3bc', '#c08a42']), 2));
+  }
+  w.texts.push(new FloatText(this.x - 6, this.y - 8, 'TREASURE!', '#e8c45c'));
+};
+Chest.prototype.update = function (w) {
+  this.t++;
+  if (!this.open && Util.aabb(this, w.player)) this.pop(w);
+};
+Chest.prototype.draw = function (g, cam) {
+  var img = this.open ? Art.CHEST_OPEN : Art.CHEST;
+  var bob = this.open ? 0 : Math.round(Math.sin(this.t * 0.06) * 0.5);
+  g.drawImage(img, Math.round(this.x - cam.x), Math.round(this.y - cam.y + bob));
+  if (!this.open) {
+    g.save();
+    g.globalAlpha = 0.18 + 0.12 * Math.sin(this.t * 0.08);
+    g.fillStyle = '#e8c45c';
+    g.fillRect(Math.round(this.x - cam.x) + 5, Math.round(this.y - cam.y) + 6, 4, 3);
+    g.restore();
+  }
 };
 
 /* ------------------------------------------------------------------ */
@@ -2360,7 +2586,8 @@ Enemy.prototype.draw = function (g, cam) {
     var fr = this.facing > 0 ? Art.hound.right : Art.hound.left;
     if (this.state === 'crouch') img = fr.sit;
     else if (this.state === 'leap') img = fr.jump;
-    else img = fr.run[Math.floor(this.t / 6) % 4];
+    else if (Math.abs(this.vx) > 0.15) img = fr.run[Math.floor(this.t / 7) % 4];
+    else img = fr.idle;
     flashImg = this.facing > 0 ? Art.hound.flash.right : Art.hound.flash.left;
     sx -= 2; sy -= 1;
   } else {
@@ -2607,10 +2834,11 @@ function Player(x, y) {
   this.attackHit = [];    /* things already struck by this swing */
   this.coyote = 0;
   this.buffer = 0;
-  this.jumps = 0;
+  this.jumps = BASE_JUMPS;
   this.dead = false;
   this.runFrame = 0;
   this.landSquash = 0;
+  this.lift = 0;
 }
 Player.prototype.damage = function () { return 1 + Save.get().sword; };
 Player.prototype.reach = function () { return 13 + Save.get().sword * 2; };
@@ -2645,7 +2873,7 @@ Player.prototype.update = function (w) {
   }
 
   var ax = Input.axis();
-  var speed = Save.has('swift') ? 1.85 : 1.45;
+  var speed = Save.has('swift') ? RUN_SPEED_SWIFT : RUN_SPEED;
   var accel = this.grounded ? 0.42 : 0.26;
 
   if (this.attack > 0 && this.grounded) {
@@ -2659,20 +2887,22 @@ Player.prototype.update = function (w) {
   }
 
   /* jump, with coyote time and an input buffer */
-  if (this.grounded) { this.coyote = 7; this.jumps = Save.has('spring') ? 2 : 1; }
+  if (this.grounded) { this.coyote = 7; this.jumps = Save.has('spring') ? BASE_JUMPS + 1 : BASE_JUMPS; }
   else if (this.coyote > 0) this.coyote--;
   if (Input.pressed('jump')) this.buffer = 7;
   else if (this.buffer > 0) this.buffer--;
 
   if (this.buffer > 0) {
     if (this.coyote > 0 || this.grounded) {
-      this.vy = -6.35; this.buffer = 0; this.coyote = 0;
-      this.jumps = (Save.has('spring') ? 2 : 1) - 1;
+      this.vy = -JUMP_IMPULSE; this.buffer = 0; this.coyote = 0;
+      this.jumps = (Save.has('spring') ? BASE_JUMPS + 1 : BASE_JUMPS) - 1;
       this.grounded = false;
+      this.lift = JUMP_LIFT_FRAMES;
       Sfx.jump();
       w.puff(this.x + this.w / 2, this.y + this.h, '#e8e0cc', 4);
     } else if (this.jumps > 0) {
-      this.vy = -5.75; this.buffer = 0; this.jumps--;
+      this.vy = -DBL_JUMP_IMPULSE; this.buffer = 0; this.jumps--;
+      this.lift = JUMP_LIFT_FRAMES;
       Sfx.dbljump();
       for (var i = 0; i < 6; i++) {
         w.parts.push(new Particle(this.x + this.w / 2, this.y + this.h,
@@ -2680,11 +2910,18 @@ Player.prototype.update = function (w) {
       }
     }
   }
-  /* short hop when the button is released early */
-  if (!Input.down('jump') && this.vy < -2.2) this.vy *= 0.55;
+  /* Hold to rise further. Adding lift over several frames gives a smooth
+     range between a tap and a full jump, instead of the abrupt velocity
+     cut that made taps feel stunted and holds feel floaty. */
+  if (Input.down('jump') && this.lift > 0 && this.vy < 0) {
+    this.vy -= JUMP_LIFT;
+    this.lift--;
+  } else {
+    this.lift = 0;
+  }
 
   if (Input.pressed('attack') && this.attack <= 0) {
-    this.attack = 17;
+    this.attack = ATTACK_FRAMES;
     this.attackHit = [];
     Sfx.swing();
   }
@@ -2698,7 +2935,8 @@ Player.prototype.update = function (w) {
     if (Math.abs(this.vy) > 2) { Sfx.land(); w.puff(this.x + this.w / 2, this.y + this.h, '#e8e0cc', 3); }
   }
 
-  if (Math.abs(this.vx) > 0.3 && this.grounded) this.runFrame += Math.abs(this.vx) * 0.13;
+  if (Math.abs(this.vx) > 0.45 && this.grounded) this.runFrame += Math.abs(this.vx) * 0.11;
+  else if (this.grounded) this.runFrame = 0;   /* stand still, legs still */
 };
 
 /* Active blade rectangle during the middle of a swing, else null. */
@@ -2712,10 +2950,12 @@ Player.prototype.hitbox = function () {
   };
 };
 
+Player.prototype.bladeAngleAt = function (k) {
+  return -1.25 + Util.clamp(k * 1.35, 0, 1) * 2.25;
+};
 Player.prototype.bladeAngle = function () {
   if (this.attack <= 0) return -0.45;
-  var k = 1 - (this.attack / 17);           /* 0 -> 1 across the swing */
-  return -1.25 + Math.min(1, k * 1.35) * 2.25;
+  return this.bladeAngleAt(1 - (this.attack / ATTACK_FRAMES));
 };
 
 Player.prototype.draw = function (g, cam) {
@@ -2725,7 +2965,7 @@ Player.prototype.draw = function (g, cam) {
   if (this.dead) img = set.sit;
   else if (this.attack > 0) img = this.grounded ? set.swing : set.swingAir;
   else if (!this.grounded) img = this.vy < -0.6 ? set.jump : set.fall;
-  else if (Math.abs(this.vx) > 0.3) img = set.run[Math.floor(this.runFrame) % 4];
+  else if (Math.abs(this.vx) > 0.45) img = set.run[Math.floor(this.runFrame) % 4];
   else img = set.idle;
 
   var sx = Math.round(this.x - cam.x - 3);
@@ -2737,17 +2977,32 @@ Player.prototype.draw = function (g, cam) {
   g.drawImage(img, sx, sy);
   Art.drawBlade(g, bx, by, this.bladeAngle(), Save.get().sword, this.facing);
 
-  if (this.attack > 5 && this.attack < 15) {
-    /* swing arc smear */
-    g.save();
-    g.globalAlpha = 0.20;
-    g.strokeStyle = Save.get().sword >= 2 ? '#ffd08a' : '#ffffff';
-    g.lineWidth = 2;
-    g.beginPath();
-    g.arc(bx, by, this.reach() - 1, this.facing > 0 ? -1.1 : Math.PI + 0.3,
-      this.facing > 0 ? 0.7 : Math.PI + 2.1);
-    g.stroke();
-    g.restore();
+  /* Slash: a crescent that trails the blade through its arc and fades
+     out with the swing, rather than a static ring hanging in the air. */
+  if (this.attack > 2) {
+    var prog = 1 - (this.attack / ATTACK_FRAMES);
+    var a1 = this.bladeAngleAt(prog);
+    var a0 = this.bladeAngleAt(Math.max(0, prog - 0.34));
+    if (a1 - a0 > 0.03) {
+      var reach = this.reach();
+      var tier = Save.get().sword;
+      var col = tier >= 3 ? '210,250,255' : (tier >= 2 ? '255,208,138' : '255,255,255');
+      var fade = Util.clamp((this.attack - 2) / 9, 0, 1);
+      g.save();
+      g.translate(bx, by);
+      g.scale(this.facing, 1);
+      /* two nested wedges: a bright leading edge over a softer body */
+      var bands = [[reach * 0.52, reach * 1.0, 0.30], [reach * 0.78, reach * 0.99, 0.55]];
+      for (var bI = 0; bI < bands.length; bI++) {
+        g.beginPath();
+        g.arc(0, 0, bands[bI][1], a0, a1);
+        g.arc(0, 0, bands[bI][0], a1, a0, true);
+        g.closePath();
+        g.fillStyle = 'rgba(' + col + ',' + (bands[bI][2] * fade).toFixed(3) + ')';
+        g.fill();
+      }
+      g.restore();
+    }
   }
 };
 
@@ -2755,6 +3010,8 @@ Player.prototype.draw = function (g, cam) {
 /* The playable level: tilemap, collision, camera and HUD. */
 var VIEW_W = 400, VIEW_H = 224;
 var T_EMPTY = 0, T_SOLID = 1, T_PLAT = 2, T_SPIKE = 3, T_HAZ = 4, T_CRATE = 5, T_SPRING = 6;
+/* Looks exactly like solid masonry, but you walk straight through it. */
+var T_FAKE = 7;
 
 function World(stageIndex) {
   var def = LEVELS[stageIndex];
@@ -2770,7 +3027,9 @@ function World(stageIndex) {
 
   this.tiles = [];
   this.enemies = []; this.pickups = []; this.shots = [];
-  this.parts = []; this.texts = []; this.movers = [];
+  this.parts = []; this.texts = []; this.movers = []; this.chests = [];
+  this.revealed = {};
+  this.gemsGot = 0; this.chestsGot = 0;
   this.door = null; this.boss = null; this.bossMelee = null;
   var spawn = { x: TILE * 2, y: TILE * 2 };
 
@@ -2788,10 +3047,17 @@ function World(stageIndex) {
         case '%': code = T_HAZ; break;
         case 'K': code = T_CRATE; break;
         case 'S': code = T_SPRING; break;
+        case 'F': code = T_FAKE; break;
+        case 'C': this.chests.push(new Chest(px + 1, py + 3)); break;
+        case 'G':
+          var gem = new Pickup(px + 5, py + 5, 'gem');
+          gem.theme = def.theme;
+          this.pickups.push(gem);
+          break;
         case 'P': spawn = { x: px + 2, y: py + 2 }; break;
         case 'D': this.door = { x: px, y: py - TILE, w: TILE, h: TILE * 2 }; break;
         case 'o': this.pickups.push(new Pickup(px + 4, py + 4, 'coin')); break;
-        case 'B': this.pickups.push(new Pickup(px + 3, py + 5, 'bone')); break;
+
         case 'H': this.pickups.push(new Pickup(px + 4, py + 4, 'meat')); break;
         case 'g': this.enemies.push(new Enemy(px + 2, py + 4, 'grub', def.world)); break;
         case 'b': this.enemies.push(new Enemy(px + 2, py + 4, 'bat', def.world)); break;
@@ -2828,7 +3094,7 @@ function World(stageIndex) {
   for (y = 0; y < this.rows; y++) {
     var drow = [];
     for (x = 0; x < this.cols; x++) {
-      if (!this.isSolidCode(this.tiles[y][x])) { drow.push(-1); continue; }
+      if (!this.isWallLooking(this.tiles[y][x])) { drow.push(-1); continue; }
       drow.push((y > 0 && this.depth[y - 1][x] >= 0) ? this.depth[y - 1][x] + 1 : 0);
     }
     this.depth.push(drow);
@@ -2843,7 +3109,7 @@ function World(stageIndex) {
   this.state = 'play';           /* play | dying | clear */
   this.stateTimer = 0;
   this.coinsRun = 0;
-  this.boneGot = false;
+  this.secretShown = false;
   this.bannerTimer = 150;
   this.hitStop = 0;
   Sfx.playSong(def.boss ? 'boss' : def.theme);
@@ -2857,6 +3123,10 @@ World.prototype.tileAt = function (tx, ty) {
 };
 World.prototype.isSolidCode = function (c) {
   return c === T_SOLID || c === T_CRATE || c === T_SPRING;
+};
+/* Drawn as masonry, so it has to be hashed like masonry too. */
+World.prototype.isWallLooking = function (c) {
+  return c === T_SOLID || c === T_FAKE;
 };
 World.prototype.solidAt = function (px, py) {
   return this.isSolidCode(this.tileAt(Math.floor(px / TILE), Math.floor(py / TILE)));
@@ -3054,6 +3324,27 @@ World.prototype.update = function () {
       }
     }
 
+    /* --- push into a false wall and it gives way --- */
+    var fx0 = Math.floor(p.x / TILE), fx1 = Math.floor((p.x + p.w - 1) / TILE);
+    var fy0 = Math.floor(p.y / TILE), fy1 = Math.floor((p.y + p.h - 1) / TILE);
+    for (var fty = fy0; fty <= fy1; fty++) {
+      for (var ftx = fx0; ftx <= fx1; ftx++) {
+        if (this.tileAt(ftx, fty) !== T_FAKE) continue;
+        var fkey = ftx + ',' + fty;
+        if (this.revealed[fkey]) continue;
+        this.revealed[fkey] = true;
+        Sfx.spring();
+        this.puff(ftx * TILE + 8, fty * TILE + 8, '#d8cbb8', 10);
+        if (!this.secretShown) {
+          this.secretShown = true;
+          this.texts.push(new FloatText(p.x - 12, p.y - 10, 'SECRET FOUND', '#e8c45c'));
+        }
+      }
+    }
+
+    /* --- chests --- */
+    for (i = 0; i < this.chests.length; i++) this.chests[i].update(this);
+
     /* --- the swing --- */
     var hb = p.hitbox();
     if (hb) {
@@ -3072,6 +3363,9 @@ World.prototype.update = function () {
         p.attackHit.push(this.boss);
         this.boss.hurt(p.damage(), p.facing, this);
         this.hitStop = 3; this.shake(4);
+      }
+      for (i = 0; i < this.chests.length; i++) {
+        if (!this.chests[i].open && Util.aabb(hb, this.chests[i])) this.chests[i].pop(this);
       }
       /* crates in the swing arc */
       var tx0 = Math.floor(hb.x / TILE), tx1 = Math.floor((hb.x + hb.w) / TILE);
@@ -3130,11 +3424,11 @@ World.prototype.update = function () {
         var val = Save.has('lucky') ? 2 : 1;
         this.coinsRun += val; Save.addCoins(val);
         Sfx.coin();
-      } else if (pk.kind === 'bone') {
-        this.boneGot = true;
+      } else if (pk.kind === 'gem') {
+        this.gemsGot++;
         Sfx.bone();
-        this.texts.push(new FloatText(pk.x - 10, pk.y - 8, 'GOLDEN BONE', '#ffd75e'));
-        this.puff(pk.x + 5, pk.y + 3, '#ffd75e', 14);
+        this.texts.push(new FloatText(pk.x - 6, pk.y - 8, 'GEM ' + this.gemsGot + '/3', '#a8e0ff'));
+        this.puff(pk.x + 3, pk.y + 3, '#a8e0ff', 14);
       } else {
         if (p.hp < p.maxHp) { p.hp++; this.texts.push(new FloatText(pk.x, pk.y - 6, '+1', '#e0424f')); }
         Sfx.buy();
@@ -3259,18 +3553,23 @@ World.prototype.draw = function (g) {
       var c = this.tiles[ty][tx];
       if (c === T_EMPTY) continue;
       var dx = tx * TILE - cam.x, dy = ty * TILE - cam.y;
-      if (c === T_SOLID) {
-        /* autotile: body or dressed cap, then trim on every exposed face */
-        var openUp = !this.isSolidCode(this.tileAt(tx, ty - 1));
+      if (c === T_SOLID || c === T_FAKE) {
+        /* Autotiled masonry. A false wall uses the identical variant hash,
+           depth shading and trim as the real thing, so nothing about it
+           reads as different until you walk into it. */
+        var found = (c === T_FAKE) && this.revealed[tx + ',' + ty];
+        if (found) g.globalAlpha = 0.30;
+        var openUp = !this.isWallLooking(this.tileAt(tx, ty - 1));
         g.drawImage(openUp ? Art.variant(ts.cap, tx, ty) : Art.variant(ts.solid, tx, ty), dx, dy);
         var dep = this.depth[ty][tx];
         if (dep > 0) {
           g.fillStyle = 'rgba(6,4,12,' + Math.min(0.62, dep * 0.17) + ')';
           g.fillRect(dx, dy, TILE, TILE);
         }
-        if (!this.isSolidCode(this.tileAt(tx - 1, ty))) g.drawImage(ts.trimL[ty % 2], dx, dy);
-        if (!this.isSolidCode(this.tileAt(tx + 1, ty))) g.drawImage(ts.trimR[ty % 2], dx, dy);
-        if (!this.isSolidCode(this.tileAt(tx, ty + 1))) g.drawImage(ts.trimB, dx, dy);
+        if (!this.isWallLooking(this.tileAt(tx - 1, ty))) g.drawImage(ts.trimL[ty % 2], dx, dy);
+        if (!this.isWallLooking(this.tileAt(tx + 1, ty))) g.drawImage(ts.trimR[ty % 2], dx, dy);
+        if (!this.isWallLooking(this.tileAt(tx, ty + 1))) g.drawImage(ts.trimB, dx, dy);
+        if (found) g.globalAlpha = 1;
       } else if (c === T_PLAT) {
         var pl = this.tileAt(tx - 1, ty) === T_PLAT, pr = this.tileAt(tx + 1, ty) === T_PLAT;
         g.drawImage(!pl ? ts.platL : (!pr ? ts.platR : ts.platM), dx, dy);
@@ -3305,6 +3604,7 @@ World.prototype.draw = function (g) {
     g.fillStyle = '#e8c45c'; g.fillRect(mx + 1, my + 2, 1, 1); g.fillRect(mx + m.w - 2, my + 2, 1, 1);
   }
 
+  for (i = 0; i < this.chests.length; i++) this.chests[i].draw(g, cam);
   for (i = 0; i < this.pickups.length; i++) this.pickups[i].draw(g, cam);
   for (i = 0; i < this.enemies.length; i++) this.enemies[i].draw(g, cam);
   if (this.boss && !this.boss.dead) this.boss.draw(g, cam);
@@ -3319,6 +3619,9 @@ World.prototype.draw = function (g) {
     if (vx > -8 && vx < VIEW_W + 8) Art.drawVine(g, vx, Math.round(v.y - cam.y), v.len, this.t, v.seed);
   }
   for (i = 0; i < this.texts.length; i++) this.texts[i].draw(g, cam);
+
+  Art.drawMotes(g, this.theme, cam.x, cam.y, this.t, VIEW_W, VIEW_H);
+  Art.drawForeground(g, this.theme, cam.x, cam.y, this.t, VIEW_W, VIEW_H);
 
   g.restore();
 
@@ -3351,8 +3654,23 @@ World.prototype.drawHud = function (g) {
   /* coins */
   g.drawImage(Art.COIN, VIEW_W - 52, 5);
   Text.shadow(g, String(Save.get().coins), VIEW_W - 42, 6, '#ffe27a', 1);
-  /* bone token */
-  g.drawImage(this.boneGot ? Art.BONE_GOLD : Art.BONE_GREY, VIEW_W - 16, 6);
+  /* gems found this run, then chests */
+  var gem = Art.GEMS[this.theme] || Art.GEMS.meadow;
+  for (i = 0; i < 3; i++) {
+    var gx = VIEW_W - 82 + i * 9;
+    if (i < this.gemsGot) g.drawImage(gem, gx, 17);
+    else {
+      g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(gx + 1, 18, 5, 5);
+      g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(gx + 1, 18, 5, 1);
+    }
+  }
+  for (i = 0; i < 2; i++) {
+    var kx = VIEW_W - 50 + i * 11;
+    g.save();
+    if (i >= this.chestsGot) g.globalAlpha = 0.30;
+    g.drawImage(Art.CHEST, kx, 15, 10, 9);
+    g.restore();
+  }
 
   /* boss bar */
   if (this.boss && !this.boss.dead) {
@@ -3519,7 +3837,14 @@ var UI = (function () {
         g.fillRect(p.x, p.y, 24, 1); g.fillRect(p.x, p.y + 13, 24, 1);
         g.fillRect(p.x, p.y, 1, 14); g.fillRect(p.x + 23, p.y, 1, 14);
         Text.draw(g, open ? L.id : '??', p.x + 5, p.y + 4, open ? '#ffffff' : '#5a5170', 1);
-        if (d.bones[L.id]) g.drawImage(Art.BONE_GOLD, p.x + 26, p.y + 4);
+        if (!isBoss && open) {
+          var got = d.gems[L.id] || 0;
+          var gimg = Art.GEMS[L.theme] || Art.GEMS.meadow;
+          for (var gI = 0; gI < 3; gI++) {
+            if (gI < got) g.drawImage(gimg, p.x + 26 + gI * 8, p.y + 4);
+            else { g.fillStyle = '#3a3350'; g.fillRect(p.x + 27 + gI * 8, p.y + 5, 5, 5); }
+          }
+        }
         if (done) { g.fillStyle = '#7fe0a0'; g.fillRect(p.x + 2, p.y + 2, 2, 2); }
       }
       var sp = nodePos(G.sel);
@@ -3529,8 +3854,8 @@ var UI = (function () {
       var L2 = LEVELS[G.sel];
       panel(g, 8, VIEW_H - 44, VIEW_W - 16, 36);
       Text.draw(g, L2.id + ' ' + L2.name, 16, VIEW_H - 38, '#ffd75e', 1);
-      Text.draw(g, 'COINS ' + d.coins + '   BONES ' + Save.bonesFound() + '/' + LEVELS.length,
-        16, VIEW_H - 27, '#b8a8d8', 1);
+      Text.draw(g, 'COINS ' + d.coins + '   GEMS ' + Save.gemsFound() + '/' + Save.gemsTotal() +
+        '   CHESTS ' + Save.chestsFound(), 16, VIEW_H - 27, '#b8a8d8', 1);
       Text.draw(g, 'ENTER PLAY   X SHOP', VIEW_W - 130, VIEW_H - 16, '#7f72a0', 1);
     }
   };
@@ -3613,16 +3938,26 @@ var UI = (function () {
       if (Input.pressed('pause')) { Sfx.select(); G.state = 'play'; }
       if (Input.pressed('restart')) { Sfx.confirm(); G.startStage(G.world.index); }
       if (Input.pressed('confirm')) { Sfx.select(); G.go('map'); }
+      if (Input.pressed('down') || Input.pressed('up')) {
+        var d = Save.get();
+        var now = (d.touch === null) ? Input.hasTouch() : !!d.touch;
+        d.touch = !now;
+        Input.setTouchVisible(d.touch);
+        Save.flush(); Sfx.select();
+      }
     },
     draw: function (g, G) {
       G.world.draw(g);
       dim(g, 0.68);
-      panel(g, VIEW_W / 2 - 92, 62, 184, 92);
+      panel(g, VIEW_W / 2 - 96, 58, 192, 108);
       Text.centerShadow(g, 'PAUSED', VIEW_W / 2, 72, '#ffffff', 2);
       Text.center(g, 'ESC   RESUME', VIEW_W / 2, 98, '#d8cff0', 1);
       Text.center(g, 'R     RESTART STAGE', VIEW_W / 2, 112, '#d8cff0', 1);
       Text.center(g, 'ENTER QUIT TO MAP', VIEW_W / 2, 126, '#d8cff0', 1);
+      var td = Save.get().touch;
+      var tOn = (td === null) ? Input.hasTouch() : !!td;
       Text.center(g, Sfx.isEnabled() ? 'M  SOUND ON' : 'M  SOUND OFF', VIEW_W / 2, 140, '#8d80ad', 1);
+      Text.center(g, tOn ? '^v TOUCH PAD ON' : '^v TOUCH PAD OFF', VIEW_W / 2, 152, '#8d80ad', 1);
     }
   };
 
@@ -3646,9 +3981,14 @@ var UI = (function () {
       Text.draw(g, 'COIN', px0, 94, '#8d80ad', 1);
       g.drawImage(Art.COIN, pv - 2, 93);
       Text.draw(g, '+' + G.resultCoins, pv + 10, 94, '#ffe27a', 1);
-      Text.draw(g, 'BONE', px0, 112, '#8d80ad', 1);
-      g.drawImage(G.resultBone ? Art.BONE_GOLD : Art.BONE_GREY, pv - 2, 112);
-      Text.draw(g, G.resultBone ? 'FOUND' : 'STILL BURIED', pv + 12, 112, G.resultBone ? '#ffd75e' : '#6b6458', 1);
+      Text.draw(g, 'GEMS', px0, 112, '#8d80ad', 1);
+      var rg = Art.GEMS[LEVELS[G.lastStage].theme] || Art.GEMS.meadow;
+      for (var gI = 0; gI < 3; gI++) {
+        if (gI < G.resultGems) g.drawImage(rg, pv - 2 + gI * 9, 111);
+        else { g.fillStyle = '#332b44'; g.fillRect(pv - 1 + gI * 9, 112, 5, 5); }
+      }
+      Text.draw(g, G.resultChests + ' CHEST' + (G.resultChests === 1 ? '' : 'S'),
+        pv + 30, 112, G.resultChests ? '#e8c45c' : '#6b6458', 1);
       Text.draw(g, 'PURSE', px0, 130, '#8d80ad', 1);
       Text.draw(g, String(Save.get().coins), pv, 130, '#ffe27a', 1);
       if (G.resultT <= 0 && Math.floor(G.t / 24) % 2 === 0) {
@@ -3686,8 +4026,8 @@ var UI = (function () {
       Text.center(g, 'YOU HAVE EARNED THE NAP.', VIEW_W / 2, 84, '#d8cff0', 1);
       var bob = Math.round(Math.sin(G.t * 0.05) * 2);
       g.drawImage(Art.dog.right.sit, VIEW_W / 2 - 18, 106 + bob, 36, 28);
-      Text.center(g, 'BONES RECOVERED  ' + Save.bonesFound() + ' / ' + LEVELS.length,
-        VIEW_W / 2, 152, '#ffd75e', 1);
+      Text.center(g, 'GEMS  ' + Save.gemsFound() + ' / ' + Save.gemsTotal() +
+        '     CHESTS  ' + Save.chestsFound(), VIEW_W / 2, 152, '#a8e0ff', 1);
       Text.center(g, 'COIN IN THE PURSE  ' + Save.get().coins, VIEW_W / 2, 166, '#ffe27a', 1);
       if (Math.floor(G.t / 26) % 2 === 0) {
         Text.center(g, 'PRESS ENTER', VIEW_W / 2, VIEW_H - 16, '#ffffff', 1);
@@ -3715,7 +4055,8 @@ var Game = (function () {
     t: 0,
     lastStage: 0,
     resultCoins: 0,
-    resultBone: false,
+    resultGems: 0,
+    resultChests: 0,
     resultT: 0,
     fade: 0,          /* 0 = clear, 1 = black */
     fadeDir: 0,
@@ -3756,9 +4097,10 @@ var Game = (function () {
   G.onLevelClear = function () {
     var w = G.world;
     G.resultCoins = w.coinsRun;
-    G.resultBone = w.boneGot;
+    G.resultGems = w.gemsGot;
+    G.resultChests = w.chestsGot;
     G.resultT = 26;
-    Save.clearStage(w.index, w.boneGot);
+    Save.clearStage(w.index, w.gemsGot, w.chestsGot);
     Save.flush();
     G.go('clear');
   };
@@ -3856,6 +4198,8 @@ var Game = (function () {
     Save.load();
     Sfx.setEnabled(Save.get().sound !== false);
     Input.init();
+    var d0 = Save.get();
+    Input.setTouchVisible(d0.touch === null ? Input.hasTouch() : !!d0.touch);
     fitCanvas();
     window.addEventListener('resize', fitCanvas);
     /* audio contexts need a gesture before they will make noise */
