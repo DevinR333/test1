@@ -7,6 +7,8 @@ var VIEW_W = 400, VIEW_H = 224;
 var T_EMPTY = 0, T_SOLID = 1, T_PLAT = 2, T_SPIKE = 3, T_HAZ = 4, T_CRATE = 5, T_SPRING = 6;
 /* Looks exactly like solid masonry, but you walk straight through it. */
 var T_FAKE = 7;
+/* Reinforced block: needs blade tier 2 (Emberblade) or better. */
+var T_BARRIER = 8;
 
 function World(stageIndex) {
   var def = LEVELS[stageIndex];
@@ -24,7 +26,7 @@ function World(stageIndex) {
   this.enemies = []; this.pickups = []; this.shots = [];
   this.parts = []; this.texts = []; this.movers = []; this.chests = [];
   this.revealed = {};
-  this.gemsGot = 0; this.chestsGot = 0;
+  this.gemsGot = 0; this.chestsGot = 0; this.gemScore = 0; this.vesselGot = 0;
   this.door = null; this.boss = null; this.bossMelee = null;
   var spawn = { x: TILE * 2, y: TILE * 2 };
 
@@ -43,10 +45,15 @@ function World(stageIndex) {
         case 'K': code = T_CRATE; break;
         case 'S': code = T_SPRING; break;
         case 'F': code = T_FAKE; break;
+        case 'B': code = T_BARRIER; break;
+        case 'V':
+          this.pickups.push(new Pickup(px + 5, py + 5, 'vessel'));
+          break;
         case 'C': this.chests.push(new Chest(px + 1, py + 3)); break;
-        case 'G':
-          var gem = new Pickup(px + 5, py + 5, 'gem');
-          gem.theme = def.theme;
+        case 'G': case 'J': case 'Q':
+          var grade = ch === 'G' ? 'shard' : (ch === 'J' ? 'jewel' : 'crown');
+          var gem = new Pickup(px + 4, py + 4, 'gem');
+          gem.grade = grade;
           this.pickups.push(gem);
           break;
         case 'P': spawn = { x: px + 2, y: py + 2 }; break;
@@ -119,7 +126,8 @@ World.prototype.tileAt = function (tx, ty) {
 World.prototype.isSolidCode = function (c) {
   /* Ledges collide on every face. Nothing in this game passes through
      floors - you go around, or you find another way up. */
-  return c === T_SOLID || c === T_CRATE || c === T_SPRING || c === T_PLAT;
+  return c === T_SOLID || c === T_CRATE || c === T_SPRING || c === T_PLAT ||
+         c === T_BARRIER;
 };
 /* Drawn as masonry, so it has to be hashed like masonry too. */
 World.prototype.isWallLooking = function (c) {
@@ -234,14 +242,16 @@ World.prototype.spawnEnemy = function (x, y, type) {
   this.enemies.push(e);
   this.puff(x + 6, y + 6, '#c9a2f0', 8);
 };
-World.prototype.breakCrate = function (tx, ty) {
-  if (this.tileAt(tx, ty) !== T_CRATE) return;
+World.prototype.breakCrate = function (tx, ty, stone) {
+  var was = this.tileAt(tx, ty);
+  if (was !== T_CRATE && was !== T_BARRIER) return;
   this.tiles[ty][tx] = T_EMPTY;
   var cx = tx * TILE + 8, cy = ty * TILE + 8;
   Sfx.kill(); this.shake(3);
   for (var i = 0; i < 10; i++) {
     this.parts.push(new Particle(cx, cy, Util.rand(-2, 2), Util.rand(-2.6, 0.4),
-      Util.randInt(18, 34), Util.pick(['#a97a45', '#c99a5f', '#5e3f21']), 2));
+      Util.randInt(18, 34), stone ? Util.pick(['#98a2b0', '#5e525c', '#c9d3e0'])
+                                  : Util.pick(['#a97a45', '#c99a5f', '#5e3f21']), 2));
   }
   var n = Util.randInt(2, 4);
   for (var k = 0; k < n; k++) this.dropCoin(cx, cy);
@@ -385,7 +395,19 @@ World.prototype.update = function () {
       var tx0 = Math.floor(hb.x / TILE), tx1 = Math.floor((hb.x + hb.w) / TILE);
       var ty0 = Math.floor(hb.y / TILE), ty1 = Math.floor((hb.y + hb.h) / TILE);
       for (var ty = ty0; ty <= ty1; ty++) {
-        for (var tx = tx0; tx <= tx1; tx++) if (this.tileAt(tx, ty) === T_CRATE) this.breakCrate(tx, ty);
+        for (var tx = tx0; tx <= tx1; tx++) {
+          var bt = this.tileAt(tx, ty);
+          if (bt === T_CRATE) this.breakCrate(tx, ty);
+          else if (bt === T_BARRIER) {
+            if (Save.get().sword >= 2) this.breakCrate(tx, ty, true);
+            else if (!this.barrierHinted) {
+              this.barrierHinted = true;
+              Sfx.deny();
+              this.texts.push(new FloatText(tx * TILE - 12, ty * TILE - 6,
+                'NEEDS A HEAVIER BLADE', '#c9d3e0'));
+            }
+          }
+        }
       }
       /* deflect incoming shots */
       for (i = 0; i < this.shots.length; i++) {
@@ -439,10 +461,27 @@ World.prototype.update = function () {
         this.coinsRun += val; Save.addCoins(val);
         Sfx.coin();
       } else if (pk.kind === 'gem') {
+        var val = Art.GEM_VALUE[pk.grade] || 1;
         this.gemsGot++;
+        this.gemScore += val;
+        Save.addGems(val);
         Sfx.bone();
-        this.texts.push(new FloatText(pk.x - 6, pk.y - 8, 'GEM ' + this.gemsGot + '/3', '#a8e0ff'));
-        this.puff(pk.x + 3, pk.y + 3, '#a8e0ff', 14);
+        var col = pk.grade === 'crown' ? '#ffc8f4' : (pk.grade === 'jewel' ? '#a8ffd0' : '#c8f4ff');
+        this.texts.push(new FloatText(pk.x - 4, pk.y - 8, '+' + val, col));
+        this.puff(pk.x + 3, pk.y + 3, col, 14);
+      } else if (pk.kind === 'vessel') {
+        this.vesselGot++;
+        var total = Save.addHeartPiece(this.def.id);
+        Sfx.fanfare();
+        this.puff(pk.x + 3, pk.y + 3, '#ff8a92', 18);
+        if (total % 4 === 0) {
+          p.maxHp = Save.maxHearts();
+          p.hp = p.maxHp;
+          this.texts.push(new FloatText(pk.x - 24, pk.y - 10, 'NEW HEART CONTAINER!', '#ff8a92'));
+        } else {
+          this.texts.push(new FloatText(pk.x - 16, pk.y - 8,
+            'HEART PIECE ' + (total % 4) + '/4', '#ff8a92'));
+        }
       } else {
         if (p.hp < p.maxHp) { p.hp++; this.texts.push(new FloatText(pk.x, pk.y - 6, '+1', '#e0424f')); }
         Sfx.buy();
@@ -489,6 +528,7 @@ World.prototype.buildDecor = function () {
       ? [P.CRYSTAL, P.CRYSTAL, P.SHROOM, P.RUBBLE, P.BONEPILE, P.SKULL]
       : [P.POT, P.SKULL, P.BARREL, P.VASE, P.RUBBLE, P.BONEPILE, P.CANDELABRA];
   var props = [], vines = [], torches = [], banners = [];
+  var hangers = [], growths = [];
   var tx, ty;
 
   for (tx = 1; tx < this.cols - 1; tx++) {
@@ -497,6 +537,20 @@ World.prototype.buildDecor = function () {
       if (c === T_PLAT && this.tileAt(tx, ty + 1) === T_EMPTY && rnd() < 0.20) {
         vines.push({ x: tx * TILE + 3 + Math.floor(rnd() * 9), y: ty * TILE + 6,
                      len: 5 + Math.floor(rnd() * 11), seed: rnd() * 6 });
+      }
+      /* rock overhead with open air beneath it gets something hanging */
+      if (this.isWallLooking(c) && this.tileAt(tx, ty + 1) === T_EMPTY && rnd() < 0.30) {
+        hangers.push({ x: tx * TILE + 4 + Math.floor(rnd() * 8), y: ty * TILE + TILE,
+                       len: 3 + Math.floor(rnd() * 6), seed: Math.floor(rnd() * 9) });
+      }
+      /* exposed vertical faces grow moss */
+      if (this.isWallLooking(c)) {
+        if (this.tileAt(tx - 1, ty) === T_EMPTY && rnd() < 0.22) {
+          growths.push({ x: tx * TILE, y: ty * TILE + 2, dir: -1, seed: Math.floor(rnd() * 9) });
+        }
+        if (this.tileAt(tx + 1, ty) === T_EMPTY && rnd() < 0.22) {
+          growths.push({ x: tx * TILE + TILE, y: ty * TILE + 2, dir: 1, seed: Math.floor(rnd() * 9) });
+        }
       }
       if (!this.isSolidCode(c) || c === T_CRATE || c === T_SPRING) continue;
       if (this.tileAt(tx, ty - 1) !== T_EMPTY) continue;
@@ -528,7 +582,8 @@ World.prototype.buildDecor = function () {
       }
     }
   }
-  return { props: props, vines: vines, torches: torches, banners: banners };
+  return { props: props, vines: vines, torches: torches, banners: banners,
+           hangers: hangers, growths: growths };
 };
 
 World.prototype.draw = function (g) {
@@ -591,7 +646,24 @@ World.prototype.draw = function (g) {
       else if (c === T_SPIKE) g.drawImage(ts.spike, dx, dy);
       else if (c === T_HAZ) g.drawImage(ts.hazard[Math.floor(this.t / 12) % 3], dx, dy);
       else if (c === T_CRATE) g.drawImage(ts.crate, dx, dy);
+      else if (c === T_BARRIER) g.drawImage(ts.barrier, dx, dy);
       else if (c === T_SPRING) g.drawImage(ts.spring, dx, dy);
+    }
+  }
+
+  /* things hanging from the rock, and moss on the faces */
+  for (i = 0; i < this.decor.hangers.length; i++) {
+    var hg2 = this.decor.hangers[i];
+    var hx = Math.round(hg2.x - cam.x);
+    if (hx > -10 && hx < VIEW_W + 10) {
+      Art.drawHanger(g, hx, Math.round(hg2.y - cam.y), hg2.len, this.theme, hg2.seed);
+    }
+  }
+  for (i = 0; i < this.decor.growths.length; i++) {
+    var gw = this.decor.growths[i];
+    var gx2 = Math.round(gw.x - cam.x);
+    if (gx2 > -8 && gx2 < VIEW_W + 8) {
+      Art.drawGrowth(g, gx2, Math.round(gw.y - cam.y), gw.dir, this.theme, gw.seed);
     }
   }
 
@@ -665,11 +737,20 @@ World.prototype.drawHud = function (g) {
   for (i = 0; i < p.maxHp; i++) {
     g.drawImage(i < p.hp ? Art.HEART_FULL : Art.HEART_EMPTY, 6 + i * 10, 6);
   }
+  /* progress toward the next heart container */
+  var hp4 = Save.heartPieceCount() % 4;
+  if (hp4) {
+    for (i = 0; i < hp4; i++) g.drawImage(Art.HEART_PIECE, 8 + p.maxHp * 10 + i * 7, 6);
+  }
+  /* running gem total, top left under the hearts */
+  g.drawImage(Art.GEMS.jewel, 6, 17);
+  Text.shadow(g, String(Save.gemScore()), 16, 18, '#a8ffd0', 1);
+
   /* coins */
   g.drawImage(Art.COIN, VIEW_W - 52, 5);
   Text.shadow(g, String(Save.get().coins), VIEW_W - 42, 6, '#ffe27a', 1);
   /* gems found this run, then chests */
-  var gem = Art.GEMS[this.theme] || Art.GEMS.meadow;
+  var gem = Art.GEMS.shard;
   for (i = 0; i < 3; i++) {
     var gx = VIEW_W - 82 + i * 9;
     if (i < this.gemsGot) g.drawImage(gem, gx, 17);

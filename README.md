@@ -64,7 +64,19 @@ Twelve stages across three worlds — Sunken Garden, Root Caverns, Kennel Keep
 * **Gloomwing**, a bat that circles high and dives.
 * **The Kennel King**, an armoured hound with a greatsword and shockwaves.
 
-Every stage hides **3 gems** and **2 treasure chests**. The chests are walled
+Every stage hides **3 gems** and **2 treasure chests**. Gems come in three
+grades, told apart by size, cut and colour: a pale shard (1), a green
+jewel (5) and a violet crown (10). The running total sits in the top-left
+corner.
+
+One of the two chests in every stage is sealed behind **reinforced stone**
+that only the Emberblade can break, so early stages keep something back
+until you have upgraded. Chests hand out **outfits** — nine of them, from a
+Santa hat to a knight helm — which you can also buy and switch in the
+wardrobe at the bottom of the shop.
+
+Four stages, spread far apart, hide a **heart vessel piece**. Collect all
+four and you gain a permanent heart container. The chests are walled
 up behind false masonry that is drawn with the same variant hash, depth
 shading and trim as real wall, so nothing marks it out — you find them by
 pushing into walls and dropping through floors that look solid. Gems and

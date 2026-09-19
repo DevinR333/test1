@@ -377,6 +377,160 @@ var Art = (function () {
   shade(CHEST_OPEN, '#8a5a28', ['#b07a3e', '#96612c', '#75491f', '#553413']);
 
   /* ---------------------------------------------------------------
+     TREASURE
+     Three grades of gem, told apart by size, cut and colour so the
+     value reads at a glance, plus heart vessel pieces.
+  --------------------------------------------------------------- */
+  var GEM_SHARD = S([
+    '..o..',
+    '.olo.',
+    'olllo',
+    'olkko',
+    '.oko.',
+    '..o..'
+  ], { o: '#12414f', l: '#c8f4ff', k: '#4fb6d6' });
+
+  var GEM_JEWEL = S([
+    '..ooo..',
+    '.olllo.',
+    'ollkklo',
+    'olkkkko',
+    'okkkkko',
+    '.okkko.',
+    '..ooo..'
+  ], { o: '#0f3d2a', l: '#a8ffd0', k: '#2fb36b' });
+
+  var GEM_CROWN = S([
+    '...ooo...',
+    '..olllo..',
+    '.ollkkllo',
+    'ollkkkklo',
+    'olkkkkkko',
+    'olkkkkkko',
+    '.okkkkko.',
+    '..okkko..',
+    '...ooo...'
+  ], { o: '#3d0d3a', l: '#ffc8f4', k: '#c33fb0' });
+
+  var GEMS = { shard: GEM_SHARD, jewel: GEM_JEWEL, crown: GEM_CROWN };
+  var GEM_VALUE = { shard: 1, jewel: 5, crown: 10 };
+
+  /* a quarter of a heart vessel; four make a new container */
+  var HEART_PIECE = S([
+    '..oo..',
+    '.orro.',
+    'orrlro',
+    'orrrro',
+    '.orro.',
+    '..oo..'
+  ], { o: '#4e0d16', r: '#e0424f', l: '#ffb0b6' });
+  shade(HEART_PIECE, '#e0424f', ['#ff8a92', '#ea5a65', '#c8323e', '#93202b']);
+
+  /* ---------------------------------------------------------------
+     OUTFITS
+     Cosmetic headwear drawn over the hero. Each is a small overlay
+     pinned to the top of his skull, so every pose and both facings get
+     it for free.
+  --------------------------------------------------------------- */
+  var HATS = {
+    santa: { name: 'Santa Hat', rows: [
+      '.......ww.',
+      '....oorww.',
+      '...orrro..',
+      '..orrrro..',
+      '.orrrrro..',
+      'owwwwwwwo.',
+      '.ooooooo..'
+    ], pal: { o: '#4a0d14', r: '#cf2b38', w: '#fdf6ea' } },
+
+    clown: { name: 'Clown Wig', rows: [
+      '..........',
+      '.oo....oo.',
+      'oggo..oggo',
+      'ogggoogggo',
+      '.oggggggo.',
+      '..oooooo..',
+      '..........'
+    ], pal: { o: '#5a1a10', g: '#f2762b' } },
+
+    knight: { name: 'Knight Helm', rows: [
+      '...ppp....',
+      '..okkko...',
+      '.okkkkko..',
+      'okkkkkkko.',
+      'okkwwwkkko',
+      '.okkkkkko.',
+      '..oooooo..'
+    ], pal: { o: '#2a2f38', k: '#9aa7b8', w: '#20252e', p: '#e8c45c' } },
+
+    pirate: { name: 'Pirate Hat', rows: [
+      '..........',
+      '...oooo...',
+      '..okkkko..',
+      '.okkwwkko.',
+      'okkkkkkkko',
+      'oooooooooo',
+      '..........'
+    ], pal: { o: '#17161c', k: '#33313d', w: '#efe7d2' } },
+
+    party: { name: 'Party Hat', rows: [
+      '....o.....',
+      '...oyo....',
+      '...oyo....',
+      '..oyyyo...',
+      '..oybyo...',
+      '.oyyyyyo..',
+      '.ooooooo..'
+    ], pal: { o: '#3d1030', y: '#ffd75e', b: '#4fb6d6' } },
+
+    crown: { name: 'Gold Crown', rows: [
+      '..........',
+      '.o.o.o.o..',
+      'ogogogogo.',
+      'ogggggggo.',
+      'oggjgjggo.',
+      'ooooooooo.',
+      '..........'
+    ], pal: { o: '#6b4a10', g: '#ffd75e', j: '#e0424f' } },
+
+    wizard: { name: 'Wizard Hat', rows: [
+      '.....oo...',
+      '....opo...',
+      '...oppo...',
+      '..opppo...',
+      '.oppppo...',
+      'oyyyyyyyo.',
+      '.ooooooo..'
+    ], pal: { o: '#1e1030', p: '#6b3fa8', y: '#ffd75e' } },
+
+    bandana: { name: 'Bandana', rows: [
+      '..........',
+      '..oooooo..',
+      '.obbbbbbo.',
+      'obbbbbbbbo',
+      '.oooobbbo.',
+      '.....oooo.',
+      '..........'
+    ], pal: { o: '#3a1016', b: '#c2445a' } },
+
+    flower: { name: 'Flower Crown', rows: [
+      '..........',
+      '..p..p..p.',
+      '.gpggpggp.',
+      'oggggggggo',
+      '.oooooooo.',
+      '..........',
+      '..........'
+    ], pal: { o: '#1f4416', g: '#59a63f', p: '#f2a8d0' } }
+  };
+
+  var OUTFITS = {};
+  for (var hk in HATS) {
+    var hc = S(HATS[hk].rows, HATS[hk].pal);
+    OUTFITS[hk] = { name: HATS[hk].name, right: hc, left: F(hc) };
+  }
+
+  /* ---------------------------------------------------------------
      THE BLADE
   --------------------------------------------------------------- */
   var BLADES = [
@@ -416,7 +570,9 @@ var Art = (function () {
     GRUB: GRUB, BATLING: [BATLING, BATLING2], THORN: THORN, THORN_L: F(THORN),
     THORNBALL: THORNBALL,
     COIN: COIN, BONE_GOLD: BONE_GOLD, BONE_GREY: BONE_GREY,
-    GEMS: GEMS, CHEST: CHEST, CHEST_OPEN: CHEST_OPEN,
+    GEMS: GEMS, GEM_VALUE: GEM_VALUE, HEART_PIECE: HEART_PIECE,
+    OUTFITS: OUTFITS,
+    CHEST: CHEST, CHEST_OPEN: CHEST_OPEN,
     HEART_FULL: HEART_FULL, HEART_EMPTY: HEART_EMPTY, MEAT: MEAT,
     buildDog: buildDog, drawBlade: drawBlade
   };
@@ -706,6 +862,23 @@ Art.tiles = function (themeName) {
     g.fillStyle = '#8a6a2a'; g.fillRect(7, 8, 2, 1);
   });
 
+  /* ---- reinforced barrier: only a heavier blade gets through ---- */
+  var barrier = overlay(function (g) {
+    g.fillStyle = '#4a4048'; g.fillRect(0, 0, N, N);
+    g.fillStyle = '#5e525c'; g.fillRect(1, 1, N - 2, N - 2);
+    g.fillStyle = '#332b33';
+    for (var yy = 3; yy < N; yy += 5) g.fillRect(1, yy, N - 2, 1);
+    /* iron banding and rivets say "not with that stick" */
+    g.fillStyle = '#6b7280'; g.fillRect(0, 4, N, 3); g.fillRect(0, N - 7, N, 3);
+    g.fillStyle = '#98a2b0'; g.fillRect(0, 4, N, 1); g.fillRect(0, N - 7, N, 1);
+    g.fillStyle = '#39414c'; g.fillRect(0, 6, N, 1); g.fillRect(0, N - 5, N, 1);
+    g.fillStyle = '#c9d3e0';
+    g.fillRect(2, 5, 1, 1); g.fillRect(N - 3, 5, 1, 1);
+    g.fillRect(2, N - 6, 1, 1); g.fillRect(N - 3, N - 6, 1, 1);
+    g.fillStyle = '#2a2430';
+    g.fillRect(6, 8, 1, 3); g.fillRect(7, 9, 1, 3); g.fillRect(9, 8, 1, 2);
+  });
+
   /* ---- bounce pad ---- */
   var spring = overlay(function (g) {
     g.fillStyle = '#241d2e'; g.fillRect(1, 11, N - 2, 5);
@@ -747,7 +920,8 @@ Art.tiles = function (themeName) {
   var set = {
     solid: solid, cap: cap, trimL: trimL, trimR: trimR, trimB: trimB,
     platL: platL, platM: platM, platR: platR,
-    spike: spike, hazard: haz, crate: crate, spring: spring, door: door
+    spike: spike, hazard: haz, crate: crate, barrier: barrier,
+    spring: spring, door: door
   };
   Art._tileCache[themeName] = set;
   return set;
@@ -959,6 +1133,34 @@ Art.drawVine = function (g, x, y, len, t, seed) {
     g.fillStyle = i % 5 === 4 ? '#7ec94f' : '#3f7a2a';
     g.fillRect(x + sway, y + i, 1, 1);
     if (i % 4 === 2) { g.fillStyle = '#59a63f'; g.fillRect(x + sway + (i % 8 === 2 ? 1 : -1), y + i, 1, 1); }
+  }
+};
+
+/* Rock hanging from a ceiling: stalactite, root or icicle by theme. */
+Art.drawHanger = function (g, x, y, len, theme, seed) {
+  var T = Art.THEMES[theme];
+  for (var i = 0; i < len; i++) {
+    var w = Math.max(1, Math.round((len - i) / 2.2));
+    g.fillStyle = i < 2 ? T.cap : (i < len - 2 ? T.base : T.dark);
+    g.fillRect(x - w, y + i, w * 2, 1);
+    g.fillStyle = T.light;
+    g.fillRect(x - w, y + i, 1, 1);
+  }
+  if (theme === 'cavern' && (seed % 3) === 0) {
+    g.fillStyle = 'rgba(160,220,255,.5)';
+    g.fillRect(x, y + len, 1, 1);
+  }
+};
+
+/* Moss, weed or lichen clinging to an exposed rock face. */
+Art.drawGrowth = function (g, x, y, dir, theme, seed) {
+  var cols = theme === 'meadow' ? ['#59a63f', '#86d75e']
+           : theme === 'cavern' ? ['#3f7a6a', '#5fa890']
+           : ['#4a7a3a', '#6b9c52'];
+  for (var i = 0; i < 5; i++) {
+    var len = 1 + ((seed + i * 3) % 3);
+    g.fillStyle = cols[i % 2];
+    g.fillRect(x, y + i * 2, dir * len, 1);
   }
 };
 

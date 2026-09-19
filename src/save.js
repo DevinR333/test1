@@ -11,10 +11,14 @@ var Save = (function () {
       unlocked: 1,        /* how many stages are playable */
       cleared: {},        /* stage id -> true          */
       gems: {},           /* stage id -> gems found 0-3 */
+      gemScore: 0,        /* running total of gem value            */
+      heartPieces: {},    /* stage id -> true, four make a heart    */
       chests: {},         /* stage id -> chests found   */
       sword: 0,           /* index into Art.BLADES */
       collar: 0,          /* extra hearts */
       relics: {},         /* relic id -> true */
+      outfits: { none: true },
+      worn: 'none',
       sound: true,
       touchMode: 'auto',  /* 'auto' fades when idle, 'always' stays put */
       seenIntro: false
@@ -56,13 +60,24 @@ var Save = (function () {
     { id: 'sword3', kind: 'sword', tier: 3, name: 'Stormfang', cost: 320,
       desc: '4 damage, longest reach.' },
     { id: 'guard', kind: 'relic', name: 'Thick Coat', cost: 260,
-      desc: 'Longer mercy time after a hit.' }
+      desc: 'Longer mercy time after a hit.' },
+    /* Wardrobe. Most turn up in chests; these are the ones you can
+       simply buy. Selecting one you already own wears it. */
+    { id: 'bandana', kind: 'outfit', name: 'Bandana', cost: 40,
+      desc: 'Pure swagger. No stats.' },
+    { id: 'party', kind: 'outfit', name: 'Party Hat', cost: 70,
+      desc: 'Every stage is a birthday.' },
+    { id: 'santa', kind: 'outfit', name: 'Santa Hat', cost: 120,
+      desc: 'Seasonal, aggressively.' },
+    { id: 'crown', kind: 'outfit', name: 'Gold Crown', cost: 400,
+      desc: 'Who is a good king? You are.' }
   ];
 
   function owned(item) {
     var d = get();
     if (item.kind === 'sword') return d.sword >= item.tier;
     if (item.kind === 'collar') return d.collar >= item.tier;
+    if (item.kind === 'outfit') return ownsOutfit(item.id);
     return !!d.relics[item.id];
   }
   /* Tiered gear must be bought in order. */
@@ -71,7 +86,7 @@ var Save = (function () {
     if (owned(item)) return false;
     if (item.kind === 'sword') return d.sword === item.tier - 1;
     if (item.kind === 'collar') return d.collar === item.tier - 1;
-    return true;
+    return true;   /* relics and outfits have no order */
   }
   function buy(item) {
     var d = get();
@@ -79,12 +94,45 @@ var Save = (function () {
     d.coins -= item.cost;
     if (item.kind === 'sword') d.sword = item.tier;
     else if (item.kind === 'collar') d.collar = item.tier;
+    else if (item.kind === 'outfit') { d.outfits[item.id] = true; d.worn = item.id; }
     else d.relics[item.id] = true;
     flush();
     return true;
   }
 
   function has(relicId) { return !!get().relics[relicId]; }
+  function ownsOutfit(id) { return id === 'none' || !!get().outfits[id]; }
+  function unlockOutfit(id) {
+    var d = get();
+    if (d.outfits[id]) return false;
+    d.outfits[id] = true; flush();
+    return true;
+  }
+  function wear(id) { if (ownsOutfit(id)) { get().worn = id; flush(); } }
+  function worn() { var w = get().worn; return ownsOutfit(w) ? w : 'none'; }
+  /* an outfit the player has not got yet, for a chest to hand over */
+  function lockedOutfit() {
+    var ids = [];
+    for (var k in Art.OUTFITS) if (!ownsOutfit(k)) ids.push(k);
+    return ids.length ? ids[Math.floor(Math.random() * ids.length)] : null;
+  }
+  function addGems(n) { get().gemScore = (get().gemScore || 0) + n; }
+  function gemScore() { return get().gemScore || 0; }
+  function heartPieceCount() {
+    var d = get(), n = 0;
+    for (var k in d.heartPieces) if (d.heartPieces[k]) n++;
+    return n;
+  }
+  function addHeartPiece(levelId) {
+    var d = get();
+    d.heartPieces[levelId] = true;
+    flush();
+    return heartPieceCount();
+  }
+  /* three to start, one per collar, and one for every four vessel pieces */
+  function maxHearts() {
+    return 3 + get().collar + Math.floor(heartPieceCount() / 4);
+  }
   function addCoins(n) { get().coins += n; }
   function clearStage(index, gems, chests) {
     var d = get(), L = LEVELS[index];
@@ -119,6 +167,10 @@ var Save = (function () {
     load: load, get: get, flush: flush, wipe: wipe,
     SHOP: SHOP, owned: owned, available: available, buy: buy,
     has: has, addCoins: addCoins, clearStage: clearStage,
+    addGems: addGems, gemScore: gemScore, addHeartPiece: addHeartPiece,
+    ownsOutfit: ownsOutfit, unlockOutfit: unlockOutfit, wear: wear, worn: worn,
+    lockedOutfit: lockedOutfit,
+    heartPieceCount: heartPieceCount, maxHearts: maxHearts,
     gemsFound: gemsFound, chestsFound: chestsFound, gemsTotal: gemsTotal,
     allCleared: allCleared
   };

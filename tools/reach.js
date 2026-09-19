@@ -64,7 +64,7 @@ function analyze(L) {
   const rows = L.rows.map(r => r.padEnd(w, ' '));
   const H = rows.length;
   const at = (x, y) => (y < 0 || y >= H || x < 0 || x >= w) ? ' ' : rows[y][x];
-  const solid = (x, y) => '#KS'.includes(at(x, y));
+  const solid = (x, y) => '#KSB'.includes(at(x, y));
   const stand = (x, y) => (solid(x, y) || at(x, y) === '=') && !solid(x, y - 1) && at(x, y - 1) !== '^';
 
   // movers act as standable surfaces too
@@ -136,7 +136,7 @@ function analyze(L) {
   // which collectibles are stranded
   let stranded = [];
   for (let y = 0; y < H; y++) for (let x = 0; x < w; x++) {
-    if ('oGH'.includes(at(x, y))) {
+    if ('oGJQHV'.includes(at(x, y))) {
       let reachable = false;
       for (let dy = 0; dy <= 4 && !reachable; dy++)
         for (let dx = -2; dx <= 2 && !reachable; dx++)
@@ -157,7 +157,7 @@ function analyze(L) {
         const nx = cx + dx, ny = cy + dy;
         if (nx < 0 || ny < 0 || nx >= w || ny >= H) continue;
         const t = at(nx, ny);
-        if ('#KS=F'.includes(t)) continue;        // false wall counts as rock
+        if ('#KS=FB'.includes(t)) continue;       // false wall and barrier are rock
         const k2 = key(nx, ny);
         if (!hit.has(k2)) { hit.add(k2); q.push([nx, ny]); }
       }

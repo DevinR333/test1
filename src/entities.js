@@ -48,8 +48,8 @@ FloatText.prototype.draw = function (g, cam) {
 /* ------------------------------------------------------------------ */
 function Pickup(x, y, kind) {
   this.x = x; this.y = y; this.kind = kind;
-  this.w = kind === 'bone' ? 10 : 7;
-  this.h = kind === 'bone' ? 6 : 7;
+  this.w = 7; this.h = 7;
+  this.grade = 'shard';
   this.vx = 0; this.vy = 0;
   this.t = Math.random() * 6.28;
   this.dead = false;
@@ -79,12 +79,21 @@ Pickup.prototype.draw = function (g, cam) {
   var sx = Math.round(this.x - cam.x), sy = Math.round(this.y - cam.y + bob);
   if (this.kind === 'coin') g.drawImage(Art.COIN, sx, sy);
   else if (this.kind === 'gem') {
+    var img = Art.GEMS[this.grade] || Art.GEMS.shard;
     g.save();
-    g.globalAlpha = 0.20 + 0.14 * Math.sin(this.t * 1.1);
-    g.fillStyle = '#ffffff';
-    g.fillRect(sx - 2, sy - 2, this.w + 4, this.h + 4);
+    g.globalAlpha = 0.18 + 0.16 * Math.sin(this.t * 1.1);
+    g.fillStyle = this.grade === 'crown' ? '#ffc8f4'
+                : (this.grade === 'jewel' ? '#a8ffd0' : '#c8f4ff');
+    g.fillRect(sx - 2, sy - 2, img.width + 4, img.height + 4);
     g.restore();
-    g.drawImage(Art.GEMS[this.theme] || Art.GEMS.meadow, sx, sy);
+    g.drawImage(img, sx, sy);
+  } else if (this.kind === 'vessel') {
+    g.save();
+    g.globalAlpha = 0.22 + 0.16 * Math.sin(this.t * 0.9);
+    g.fillStyle = '#ff8a92';
+    g.fillRect(sx - 3, sy - 3, this.w + 6, this.h + 6);
+    g.restore();
+    g.drawImage(Art.HEART_PIECE, sx, sy);
   } else g.drawImage(Art.MEAT, sx, sy);
 };
 
@@ -111,7 +120,15 @@ Chest.prototype.pop = function (w) {
     w.parts.push(new Particle(cx, cy, Util.rand(-2, 2), Util.rand(-3.2, -0.6),
       Util.randInt(20, 40), Util.pick(['#e8c45c', '#fff3bc', '#c08a42']), 2));
   }
-  w.texts.push(new FloatText(this.x - 6, this.y - 8, 'TREASURE!', '#e8c45c'));
+  var prize = Save.lockedOutfit();
+  if (prize && Math.random() < 0.6) {
+    Save.unlockOutfit(prize);
+    w.texts.push(new FloatText(this.x - 18, this.y - 16,
+      Art.OUTFITS[prize].name.toUpperCase() + '!', '#a8ffd0'));
+    w.texts.push(new FloatText(this.x - 6, this.y - 8, 'TREASURE!', '#e8c45c'));
+  } else {
+    w.texts.push(new FloatText(this.x - 6, this.y - 8, 'TREASURE!', '#e8c45c'));
+  }
 };
 Chest.prototype.update = function (w) {
   this.t++;
@@ -542,7 +559,7 @@ function Player(x, y) {
   this.grounded = false;
   this.hitWall = false;
   this.t = 0;
-  this.maxHp = 3 + Save.get().collar;
+  this.maxHp = Save.maxHearts();
   this.hp = this.maxHp;
   this.invuln = 0;
   this.attack = 0;        /* countdown while swinging */
@@ -693,6 +710,15 @@ Player.prototype.draw = function (g, cam) {
   var bx = sx + (this.facing > 0 ? 13 : 5);
   var by = sy + 8;
   g.drawImage(img, sx, sy);
+
+  /* whatever he is wearing, pinned to the top of his head */
+  var fit = Art.OUTFITS[Save.worn()];
+  if (fit) {
+    var hy = sy - 3 + (this.attack > 0 ? 1 : 0);
+    g.drawImage(this.facing > 0 ? fit.right : fit.left,
+                sx + (this.facing > 0 ? 8 : 0), hy);
+  }
+
   Art.drawBlade(g, bx, by, this.bladeAngle(), Save.get().sword, this.facing);
 
   /* Slash: a crescent that trails the blade through its arc and fades

@@ -212,6 +212,10 @@ class Stage:
 
 
 # ============================================================ assembly
+# One piece each in four widely separated stages; four makes a heart.
+HEART_PIECE_STAGES = ('1-2', '2-1', '2-3', '3-2')
+
+
 def route(rc, rr, rng):
     """A wandering path: right across the grid, changing deck as it goes,
     so the level is never a straight line."""
@@ -296,7 +300,16 @@ def build(sid, world, name, theme, hint, rcols, seed, spec, flyers):
                         for r in range(floor - 2, floor):
                             st.set(r, c, 'F')
                 st.put_free(floor - 1, vc0 + 2, 'C')
-                st.put_free(floor - 1, vc1 - 1, 'G')
+                # the deeper vault is sealed behind reinforced stone, so it
+                # stays shut until the Emberblade is bought - a reason to
+                # come back to an early stage later
+                if vaults == 1:
+                    bx = (c0 - 3) if nx > rx else (c1 + 3)
+                    for r in range(floor - 2, floor):
+                        st.set(r, bx, 'B')
+                    st.put_free(floor - 1, vc1 - 1, 'Q')     # crown gem
+                else:
+                    st.put_free(floor - 1, vc1 - 1, 'J')     # jewel
                 st.floors.append((vc0, vc1, floor))
                 onpath.add((nx, ry))
                 vaults += 1
@@ -312,6 +325,19 @@ def build(sid, world, name, theme, hint, rcols, seed, spec, flyers):
     for (x0, x1, row) in high:
         if st.put_free(row - 1, (x0 + x1) // 2, 'G'):
             break
+
+    # Heart vessel pieces sit far apart, so four of them span the game
+    if sid in HEART_PIECE_STAGES:
+        mid = sorted(st.floors, key=lambda f: f[2])
+        placed = False
+        for (x0, x1, row) in mid[2:]:
+            if st.put_free(row - 1, (x0 + x1) // 2, 'V'):
+                placed = True
+                break
+        if not placed:
+            for (x0, x1, row) in st.floors:
+                if st.put_free(row - 1, x0 + 1, 'V'):
+                    break
 
     # arenas get the crowd; the rest is sprinkled
     for (rx, ry) in arenas:

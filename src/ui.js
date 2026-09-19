@@ -155,7 +155,7 @@ var UI = (function () {
       Text.draw(g, L2.id + ' ' + L2.name, 16, VIEW_H - 38, '#ffd75e', 1);
       Text.draw(g, 'COINS ' + d.coins + '   GEMS ' + Save.gemsFound() + '/' + Save.gemsTotal() +
         '   CHESTS ' + Save.chestsFound(), 16, VIEW_H - 27, '#b8a8d8', 1);
-      Text.draw(g, 'ENTER PLAY   X SHOP', VIEW_W - 130, VIEW_H - 16, '#7f72a0', 1);
+      Text.draw(g, 'ENTER PLAY   X SHOP + WARDROBE', VIEW_W - 186, VIEW_H - 16, '#7f72a0', 1);
     }
   };
 
@@ -167,7 +167,12 @@ var UI = (function () {
       if (Input.pressed('up')) { G.shopSel = (G.shopSel + list.length - 1) % list.length; Sfx.select(); }
       if (Input.pressed('confirm') || Input.pressed('jump')) {
         var it = list[G.shopSel];
-        if (Save.buy(it)) {
+        /* something you already own and can wear: put it on */
+        if (it.kind === 'outfit' && Save.owned(it)) {
+          if (Save.worn() === it.id) { Save.wear('none'); G.shopMsg = 'TAKEN OFF'; }
+          else { Save.wear(it.id); G.shopMsg = 'WEARING ' + it.name.toUpperCase(); }
+          G.shopMsgT = 100; Sfx.confirm();
+        } else if (Save.buy(it)) {
           Sfx.buy();
           G.shopMsg = 'BOUGHT ' + it.name + '!'; G.shopMsgT = 100;
         } else {
@@ -199,14 +204,19 @@ var UI = (function () {
           cursor(g, 14, y, G.t);
         }
         Text.draw(g, it.name, 24, y, col, 1);
-        Text.draw(g, own ? 'OWNED' : String(it.cost), listW - 46, y, own ? '#7fe0a0' : '#ffd75e', 1);
+        var tag = own ? 'OWNED' : String(it.cost);
+        if (it.kind === 'outfit' && own) tag = (Save.worn() === it.id) ? 'WORN' : 'WEAR';
+        Text.draw(g, tag, listW - 46, y,
+          (it.kind === 'outfit' && Save.worn() === it.id) ? '#a8ffd0'
+            : (own ? '#7fe0a0' : '#ffd75e'), 1);
       }
 
       /* detail card */
       panel(g, detX, 30, VIEW_W - detX - 10, 150);
       var sel = list[G.shopSel];
-      Text.draw(g, sel.kind === 'sword' ? 'BLADE' : (sel.kind === 'collar' ? 'COLLAR' : 'RELIC'),
-        detX + 8, 38, '#7f72a0', 1);
+      Text.draw(g, sel.kind === 'sword' ? 'BLADE'
+        : (sel.kind === 'collar' ? 'COLLAR'
+        : (sel.kind === 'outfit' ? 'OUTFIT' : 'RELIC')), detX + 8, 38, '#7f72a0', 1);
       /* wrap the description */
       var words = sel.desc.split(' '), line = '', ly = 54;
       for (var wI = 0; wI < words.length; wI++) {
@@ -220,6 +230,12 @@ var UI = (function () {
         Art.drawBlade(g, detX + 26, 152, -0.5, sel.tier, 1);
       } else if (sel.kind === 'collar') {
         for (var h = 0; h < 3 + sel.tier; h++) g.drawImage(Art.HEART_FULL, detX + 8 + h * 11, 146);
+      } else if (sel.kind === 'outfit') {
+        /* preview it on him */
+        var pv2 = detX + 18;
+        g.drawImage(Art.dog.right.idle, pv2, 128, 36, 28);
+        var fitp = Art.OUTFITS[sel.id];
+        if (fitp) g.drawImage(fitp.right, pv2 + 16, 122, 20, 14);
       } else {
         g.drawImage(Art.BONE_GOLD, detX + 20, 148);
       }
