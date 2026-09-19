@@ -365,8 +365,11 @@ int gb_world_link_step(const gb_t *gb, int *out_x, int *out_y)
     if (object < 0xD0 || object > 0xDF)
         return 0;
     const uint8_t *o = &gb->wram[0x1000 + ((object << 8) - 0xD000)];
-    if (out_x) *out_x = o[0x0D];
-    if (out_y) *out_y = o[0x0B];
+    int lx = o[0x0D], ly = o[0x0B];
+    if (lx > 200) lx -= 256;         /* below zero, wrapped in a byte */
+    if (ly > 200) ly -= 256;
+    if (out_x) *out_x = lx;
+    if (out_y) *out_y = ly;
     return 1;
 }
 
@@ -427,6 +430,127 @@ void gb_world_mark_room(uint32_t *dst, int dst_w, int dst_h,
  * Only the room being simulated has any: the game runs one room at a time, so
  * elsewhere on the map there is genuinely nothing to draw.
  */
+/* Resolves one object-table entry into plain pixels, so it can be kept and
+ * redrawn long after the graphics it came from have been replaced. */
+static void ghost_pixels(const gb_t *gb, int i, int tall, uint32_t *px)
+{
+    uint8_t index = gb->oam[i * 4 + 2];
+    uint8_t attr  = gb->oam[i * 4 + 3];
+    if (tall == 16) index &= 0xFE;
+
+    for (int py = 0; py < tall; py++) {
+        for (int pxi = 0; pxi < 8; pxi++) {
+            int ty = (attr & ATTR_YFLIP) ? tall - 1 - py : py;
+            int tx = (attr & ATTR_XFLIP) ? 7 - pxi : pxi;
+            uint16_t addr = 0x8000 + index * 16 + ty * 2;
+            int bank = (gb->cgb && (attr & ATTR_BANK)) ? 1 : 0;
+            uint8_t lo = gb->vram[(bank ? 0x2000 : 0) + (addr - 0x8000)];
+            uint8_t hi = gb->vram[(bank ? 0x2000 : 0) + (addr - 0x8000) + 1];
+            int bit = 7 - tx;
+            int shade = (((hi >> bit) & 1) << 1) | ((lo >> bit) & 1);
+            uint32_t c = 0;
+            if (shade) {
+                int pal = gb->cgb ? (attr & ATTR_PALETTE) : 0;
+                c = gb->cgb ? colour_of(gb, gb->obj_palette, 0xFF, pal, shade)
+                            : DMG_SHADES[((attr & 0x10 ? gb->io[0x49] : gb->io[0x48])
+                                          >> (shade * 2)) & 3];
+            }
+            px[py * 8 + pxi] = c;
+        }
+    }
+}
+
+void gb_world_remember(gb_world_memory_t *mem, const gb_t *gb,
+                       float screen_x, float screen_y,
+                       float link_x, float link_y, int room)
+{
+    if (!mem || room < 0 || room >= GB_WORLD_ROOMS)
+        return;
+
+    float room_x = (float)((room % GB_WORLD_COLS) * ROOM_PX_W);
+    float room_y = (float)((room / GB_WORLD_COLS) * ROOM_PX_H);
+    int tall = (gb->io[0x40] & 0x04) ? 16 : 8;
+    int kept = 0;
+
+    for (int i = 0; i < 40 && kept < GB_REMEMBERED; i++) {
+        int oy = gb->oam[i * 4], ox = gb->oam[i * 4 + 1];
+        if (oy == 0 || oy >= 160 || ox == 0 || ox >= 168) continue;
+
+        float wx = screen_x + (ox - 8);
+        float wy = screen_y + (oy - 16) - GB_STATUS_H;
+
+        /* Not the player. He is drawn live wherever he is, and a copy of him
+         * left behind in every room he has walked through would be absurd. */
+        float dx = wx + 4 - link_x, dy = wy + tall / 2 - link_y;
+        if (dx * dx + dy * dy < 20.0f * 20.0f) continue;
+
+        /* Only what belongs to this room. */
+        if (wx < room_x - 8 || wx > room_x + ROOM_PX_W
+            || wy < room_y - 8 || wy > room_y + ROOM_PX_H) continue;
+
+        gb_world_ghost_t *g = &mem->obj[room][kept++];
+        g->x = (int16_t)(wx - room_x);
+        g->y = (int16_t)(wy - room_y);
+        g->h = (uint8_t)tall;
+        ghost_pixels(gb, i, tall, g->px);
+    }
+
+    mem->count[room] = (uint8_t)kept;
+    mem->known[room] = 1;
+}
+
+void gb_world_draw_remembered(const gb_world_memory_t *mem,
+                              uint32_t *dst, int dst_w, int dst_h,
+                              float cam_x, float cam_y, float scale,
+                              int loaded_room)
+{
+    if (!mem || !dst || scale <= 0.0f)
+        return;
+
+    float left = cam_x - (dst_w * 0.5f) / scale;
+    float top  = cam_y - (dst_h * 0.5f) / scale;
+    float right = left + dst_w / scale, bottom = top + dst_h / scale;
+
+    int c0 = (int)(left / ROOM_PX_W) - 1, c1 = (int)(right / ROOM_PX_W) + 1;
+    int r0 = (int)(top / ROOM_PX_H) - 1,  r1 = (int)(bottom / ROOM_PX_H) + 1;
+    if (c0 < 0) c0 = 0;
+    if (r0 < 0) r0 = 0;
+    if (c1 >= GB_WORLD_COLS) c1 = GB_WORLD_COLS - 1;
+    if (r1 >= GB_WORLD_ROWS) r1 = GB_WORLD_ROWS - 1;
+
+    for (int ry = r0; ry <= r1; ry++) {
+        for (int rx = c0; rx <= c1; rx++) {
+            int room = ry * GB_WORLD_COLS + rx;
+            if (room == loaded_room || !mem->known[room]) continue;
+
+            float room_x = (float)(rx * ROOM_PX_W), room_y = (float)(ry * ROOM_PX_H);
+            for (int k = 0; k < mem->count[room]; k++) {
+                const gb_world_ghost_t *g = &mem->obj[room][k];
+                for (int py = 0; py < g->h; py++) {
+                    for (int pxi = 0; pxi < 8; pxi++) {
+                        uint32_t c = g->px[py * 8 + pxi];
+                        if (!c) continue;
+                        float wx = room_x + g->x + pxi, wy = room_y + g->y + py;
+                        int sx0 = (int)((wx - left) * scale);
+                        int sy0 = (int)((wy - top) * scale);
+                        int sx1 = (int)((wx + 1 - left) * scale);
+                        int sy1 = (int)((wy + 1 - top) * scale);
+                        if (sx1 <= sx0) sx1 = sx0 + 1;
+                        if (sy1 <= sy0) sy1 = sy0 + 1;
+                        for (int y = sy0; y < sy1; y++) {
+                            if (y < 0 || y >= dst_h) continue;
+                            for (int x = sx0; x < sx1; x++) {
+                                if (x < 0 || x >= dst_w) continue;
+                                dst[(size_t)y * dst_w + x] = c;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 void gb_world_draw_objects(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
                            float cam_x, float cam_y, float scale,
                            float screen_x, float screen_y)
@@ -573,8 +697,24 @@ void gb_world_track(gb_world_view_t *view, const gb_t *gb)
     if (object >= 0xD0 && object <= 0xDF) {
         /* Objects live in the second bank of work RAM. */
         const uint8_t *o = &gb->wram[0x1000 + ((object << 8) - 0xD000)];
-        link_x = view->anchor_x + o[0x0D];
-        link_y = view->anchor_y + o[0x0B];
+
+        /* A byte, and it goes below zero.
+         *
+         * Link's coordinates are counted within his room, and crossing a
+         * boundary they run past its far edge - 154, 160, 169 walking east -
+         * or below its near one, where a byte wraps: 0, 255, 254 walking
+         * north or west. Added as written, that last case throws the camera
+         * 255 pixels sideways and back again, which it did on every crossing
+         * upward or leftward. Only crossings to the east were ever checked,
+         * and east is the one direction where it cannot happen.
+         *
+         * A room is 160 by 128, and a crossing carries him no more than about
+         * 16 past an edge, so anything above 200 is a small negative. */
+        int lx = o[0x0D], ly = o[0x0B];
+        if (lx > 200) lx -= 256;
+        if (ly > 200) ly -= 256;
+        link_x = view->anchor_x + lx;
+        link_y = view->anchor_y + ly;
         have_link = 1;
     }
 

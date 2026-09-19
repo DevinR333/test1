@@ -72,6 +72,7 @@ static struct {
 
     /* World map view: the whole world drawn from its room data, at any
      * scale, rather than the hardware's 160x144 window. */
+    gb_world_memory_t memory;   /* who was in each room when last seen */
     uint32_t     *map_pixels;   /* scratch for the pulled-back view */
     float         cam_x, cam_y; /* eased, so a room change glides */
     int           cam_valid;
@@ -565,6 +566,21 @@ static void paint(HWND hwnd)
      * status bar travelled around with the player. Sampling both here, by
      * index, through one position and scale, none of that can happen. */
     gb_world_render(view, app.map_pixels, cw, ch, cam_x, cam_y, scale, 1);
+
+    /* Who was in the other rooms.
+     *
+     * The game simulates one room; objects elsewhere are not slowed down or
+     * paused, they are simply not there, so there is nothing live to draw for
+     * them. What was seen is remembered and kept on screen, so the world
+     * stays populated rather than emptying to bare ground everywhere the
+     * player is not. They hold their last pose until their room is loaded
+     * again, at which point the live ones take over. */
+    int loaded = gb_world_active_room(view);
+    if (!where->crossing)
+        gb_world_remember(&app.memory, view, screen_x, screen_y,
+                          cam_x, cam_y, loaded);
+    gb_world_draw_remembered(&app.memory, app.map_pixels, cw, ch,
+                             cam_x, cam_y, scale, where->crossing ? -1 : loaded);
 
     /* Every object the game has active, drawn at its own position across the
      * whole view - not only where the hardware's screen happens to reach.

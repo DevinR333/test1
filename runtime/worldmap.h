@@ -148,6 +148,44 @@ int gb_world_self_check(const gb_t *gb, char *out, size_t n, double *pct_out);
 void gb_world_mark_room(uint32_t *dst, int dst_w, int dst_h,
                         float cam_x, float cam_y, float scale, int room);
 
+/* What was standing in a room when it was last loaded.
+ *
+ * The game simulates one room. Objects in the others do not exist in memory
+ * at all, so there is nothing live to draw for them - walk away and an NPC
+ * does not carry on, it stops being. What can be done is to remember what was
+ * there and keep showing it, so the world stays populated instead of emptying
+ * out to bare ground everywhere the player is not standing.
+ *
+ * They are remembered as they looked, so they hold their last pose rather
+ * than animating. A remembered figure is replaced by the live one the moment
+ * its room is loaded again.
+ */
+#define GB_REMEMBERED 40             /* objects kept per room */
+#define GB_GHOST_PX   (8 * 16)
+
+typedef struct {
+    int16_t  x, y;                   /* from the room's corner */
+    uint8_t  h;                      /* 8 or 16 */
+    uint32_t px[GB_GHOST_PX];        /* 0 where the object is see-through */
+} gb_world_ghost_t;
+
+typedef struct {
+    gb_world_ghost_t obj[GB_WORLD_ROOMS][GB_REMEMBERED];
+    uint8_t          count[GB_WORLD_ROOMS];
+    uint8_t          known[GB_WORLD_ROOMS];
+} gb_world_memory_t;
+
+/* Records what is in the room the game currently has loaded. */
+void gb_world_remember(gb_world_memory_t *mem, const gb_t *gb,
+                       float screen_x, float screen_y,
+                       float link_x, float link_y, int room);
+
+/* Draws what was remembered of every room except the one that is loaded. */
+void gb_world_draw_remembered(const gb_world_memory_t *mem,
+                              uint32_t *dst, int dst_w, int dst_h,
+                              float cam_x, float cam_y, float scale,
+                              int loaded_room);
+
 /* Draws every object the game has active, at its live position, anywhere in
  * the view - so nothing is cut off at the edge of the hardware's screen, and
  * nothing is lost to its limit of ten objects on a line. */
