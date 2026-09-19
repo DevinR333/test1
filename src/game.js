@@ -9,6 +9,7 @@ var Game = (function () {
     world: null,
     sel: 0,
     shopSel: 0,
+    shopTab: 0,
     pauseSel: 0,
     shopMsg: '', shopMsgT: 0,
     t: 0,

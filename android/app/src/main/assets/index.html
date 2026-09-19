@@ -1083,6 +1083,17 @@ var Art = (function () {
   var GEMS = { shard: GEM_SHARD, jewel: GEM_JEWEL, crown: GEM_CROWN };
   var GEM_VALUE = { shard: 1, jewel: 5, crown: 10 };
 
+  /* dropped by the beaten; fills the special gauge */
+  var ORB = S([
+    '..ooo..',
+    '.owwlo.',
+    'owwllko',
+    'owllkko',
+    'olkkkko',
+    '.okkko.',
+    '..ooo..'
+  ], { o: '#2a1f4a', w: '#ffffff', l: '#b9a0ff', k: '#6b3fd6' });
+
   /* a quarter of a heart vessel; four make a new container */
   var HEART_PIECE = S([
     '..oo..',
@@ -1201,15 +1212,41 @@ var Art = (function () {
   /* ---------------------------------------------------------------
      THE BLADE
   --------------------------------------------------------------- */
+  /* Weapons trade damage against reach, so a later blade is a choice
+     rather than a strict upgrade. Each carries its own special attack,
+     spent from the orb gauge. */
   var BLADES = [
-    { name: 'Chewed Stick', len: 9,  w: 2, blade: '#9a7045', edge: '#c9a273', dark: '#5f4526', hilt: '#4a3520', glow: null },
-    { name: 'Iron Fang',    len: 11, w: 2, blade: '#aeb8c4', edge: '#eef4fa', dark: '#6d7783', hilt: '#5d4728', glow: null },
-    { name: 'Emberblade',   len: 13, w: 3, blade: '#e0732c', edge: '#ffd08a', dark: '#96401a', hilt: '#4c2314', glow: 'rgba(255,140,50,.35)' },
-    { name: 'Stormfang',    len: 15, w: 3, blade: '#7fd7f0', edge: '#eafdff', dark: '#3b8fad', hilt: '#26405a', glow: 'rgba(120,220,255,.38)' }
+    { id: 'stick', name: 'Chewed Stick', dmg: 1, reach: 13, special: 'splinter',
+      len: 9,  w: 2, blade: '#9a7045', edge: '#c9a273', dark: '#5f4526', hilt: '#4a3520', glow: null },
+    { id: 'iron', name: 'Iron Fang', dmg: 2, reach: 15, special: 'cross',
+      len: 11, w: 2, blade: '#aeb8c4', edge: '#eef4fa', dark: '#6d7783', hilt: '#5d4728', glow: null },
+    { id: 'cleaver', name: 'Boar Cleaver', dmg: 4, reach: 11, special: 'quake',
+      len: 9,  w: 4, blade: '#b08050', edge: '#e6c193', dark: '#6b4a28', hilt: '#3a2a18', glow: null },
+    { id: 'ember', name: 'Emberblade', dmg: 3, reach: 17, special: 'flame',
+      len: 13, w: 3, blade: '#e0732c', edge: '#ffd08a', dark: '#96401a', hilt: '#4c2314',
+      glow: 'rgba(255,140,50,.35)' },
+    { id: 'whip', name: 'Whip Fang', dmg: 2, reach: 25, special: 'lash',
+      len: 21, w: 1, blade: '#8fd6a0', edge: '#e8fff0', dark: '#3f7a52', hilt: '#2a4a33',
+      glow: 'rgba(140,240,170,.22)' },
+    { id: 'storm', name: 'Stormfang', dmg: 5, reach: 19, special: 'thunder',
+      len: 15, w: 3, blade: '#7fd7f0', edge: '#eafdff', dark: '#3b8fad', hilt: '#26405a',
+      glow: 'rgba(120,220,255,.38)' }
   ];
+  var BLADE_BY_ID = {};
+  for (var bi = 0; bi < BLADES.length; bi++) BLADE_BY_ID[BLADES[bi].id] = BLADES[bi];
 
-  function drawBlade(g, px2, py2, angle, tier, facing) {
-    var b = BLADES[Util.clamp(tier, 0, BLADES.length - 1)];
+  var SPECIALS = {
+    splinter: { name: 'Splinter Shot', desc: 'Throws a spray of splinters.' },
+    cross:    { name: 'Cross Slash',   desc: 'A wide two-hit arc.' },
+    quake:    { name: 'Quake',         desc: 'Shockwaves both ways along the ground.' },
+    flame:    { name: 'Flame Wave',    desc: 'Rolls a wall of fire forward.' },
+    lash:     { name: 'Long Lash',     desc: 'Strikes clear across the room.' },
+    thunder:  { name: 'Thunder Arc',   desc: 'A bolt that pierces everything.' }
+  };
+
+  function drawBlade(g, px2, py2, angle, which, facing) {
+    var b = (typeof which === 'string') ? (BLADE_BY_ID[which] || BLADES[0])
+                                        : BLADES[Util.clamp(which, 0, BLADES.length - 1)];
     g.save();
     g.translate(px2, py2);
     g.rotate(angle * facing);
@@ -1233,13 +1270,14 @@ var Art = (function () {
   }
 
   return {
-    LAB: LAB, BONE: BONE, BLADES: BLADES, shade: shade, rim: rim,
+    LAB: LAB, BONE: BONE, BLADES: BLADES, BLADE_BY_ID: BLADE_BY_ID,
+    SPECIALS: SPECIALS, shade: shade, rim: rim,
     dog: null, hound: null,
     GRUB: GRUB, BATLING: [BATLING, BATLING2], THORN: THORN, THORN_L: F(THORN),
     THORNBALL: THORNBALL,
     COIN: COIN, BONE_GOLD: BONE_GOLD, BONE_GREY: BONE_GREY,
     GEMS: GEMS, GEM_VALUE: GEM_VALUE, HEART_PIECE: HEART_PIECE,
-    OUTFITS: OUTFITS,
+    OUTFITS: OUTFITS, ORB: ORB,
     CHEST: CHEST, CHEST_OPEN: CHEST_OPEN,
     HEART_FULL: HEART_FULL, HEART_EMPTY: HEART_EMPTY, MEAT: MEAT,
     buildDog: buildDog, drawBlade: drawBlade
@@ -2610,7 +2648,8 @@ var Save = (function () {
       gemScore: 0,        /* running total of gem value            */
       heartPieces: {},    /* stage id -> true, four make a heart    */
       chests: {},         /* stage id -> chests found   */
-      sword: 0,           /* index into Art.BLADES */
+      blades: { stick: true },
+      blade: 'stick',
       collar: 0,          /* extra hearts */
       relics: {},         /* relic id -> true */
       outfits: { none: true },
@@ -2628,6 +2667,13 @@ var Save = (function () {
     } catch (e) { data = fresh(); }
     var f = fresh();
     for (var k in f) if (!(k in data)) data[k] = f[k];
+    /* migrate the old numeric sword tier to the named blades */
+    if (typeof data.sword === 'number') {
+      var order = ['stick', 'iron', 'ember', 'storm'];
+      for (var i = 0; i <= data.sword && i < order.length; i++) data.blades[order[i]] = true;
+      data.blade = order[Math.min(data.sword, order.length - 1)];
+      delete data.sword;
+    }
     return data;
   }
   function flush() {
@@ -2637,24 +2683,28 @@ var Save = (function () {
   function wipe() { data = fresh(); flush(); return data; }
 
   var SHOP = [
-    { id: 'sword1', kind: 'sword', tier: 1, name: 'Iron Fang', cost: 60,
-      desc: '2 damage. A real blade.' },
+    { id: 'iron', kind: 'sword', name: 'Iron Fang', cost: 60,
+      desc: '2 damage, fair reach. Special: cross slash.' },
     { id: 'collar1', kind: 'collar', tier: 1, name: 'Studded Collar', cost: 80,
       desc: '+1 heart.' },
     { id: 'spring', kind: 'relic', name: 'Gale Collar', cost: 130,
       desc: 'A third jump in mid-air.' },
     { id: 'swift', kind: 'relic', name: 'Swift Paws', cost: 90,
       desc: 'Run noticeably faster.' },
-    { id: 'sword2', kind: 'sword', tier: 2, name: 'Emberblade', cost: 180,
-      desc: '3 damage, longer reach.' },
+    { id: 'cleaver', kind: 'sword', name: 'Boar Cleaver', cost: 150,
+      desc: '4 damage but stubby. Special: quake.' },
+    { id: 'ember', kind: 'sword', name: 'Emberblade', cost: 190,
+      desc: '3 damage, long. Breaks reinforced stone. Special: flame wave.' },
+    { id: 'whip', kind: 'sword', name: 'Whip Fang', cost: 240,
+      desc: '2 damage, enormous reach. Special: long lash.' },
     { id: 'magnet', kind: 'relic', name: 'Wet Nose', cost: 120,
       desc: 'Coins drift toward you.' },
     { id: 'collar2', kind: 'collar', tier: 2, name: 'Iron Collar', cost: 200,
       desc: '+2 hearts total.' },
     { id: 'lucky', kind: 'relic', name: 'Lucky Tag', cost: 150,
       desc: 'Coins are worth double.' },
-    { id: 'sword3', kind: 'sword', tier: 3, name: 'Stormfang', cost: 320,
-      desc: '4 damage, longest reach.' },
+    { id: 'storm', kind: 'sword', name: 'Stormfang', cost: 380,
+      desc: '5 damage, long. Special: piercing thunder arc.' },
     { id: 'guard', kind: 'relic', name: 'Thick Coat', cost: 260,
       desc: 'Longer mercy time after a hit.' },
     /* Wardrobe. Most turn up in chests; these are the ones you can
@@ -2671,7 +2721,7 @@ var Save = (function () {
 
   function owned(item) {
     var d = get();
-    if (item.kind === 'sword') return d.sword >= item.tier;
+    if (item.kind === 'sword') return !!d.blades[item.id];
     if (item.kind === 'collar') return d.collar >= item.tier;
     if (item.kind === 'outfit') return ownsOutfit(item.id);
     return !!d.relics[item.id];
@@ -2680,7 +2730,7 @@ var Save = (function () {
   function available(item) {
     var d = get();
     if (owned(item)) return false;
-    if (item.kind === 'sword') return d.sword === item.tier - 1;
+    if (item.kind === 'sword') return true;
     if (item.kind === 'collar') return d.collar === item.tier - 1;
     return true;   /* relics and outfits have no order */
   }
@@ -2688,7 +2738,7 @@ var Save = (function () {
     var d = get();
     if (owned(item) || !available(item) || d.coins < item.cost) return false;
     d.coins -= item.cost;
-    if (item.kind === 'sword') d.sword = item.tier;
+    if (item.kind === 'sword') { d.blades[item.id] = true; d.blade = item.id; }
     else if (item.kind === 'collar') d.collar = item.tier;
     else if (item.kind === 'outfit') { d.outfits[item.id] = true; d.worn = item.id; }
     else d.relics[item.id] = true;
@@ -2697,6 +2747,25 @@ var Save = (function () {
   }
 
   function has(relicId) { return !!get().relics[relicId]; }
+
+  /* ---- blades ---- */
+  function ownsBlade(id) { return !!get().blades[id]; }
+  function equipBlade(id) { if (ownsBlade(id)) { get().blade = id; flush(); } }
+  function blade() {
+    var b = Art.BLADE_BY_ID[get().blade];
+    return b || Art.BLADES[0];
+  }
+  function bladeId() { return blade().id; }
+  function bladeDamage() { return blade().dmg; }
+  function bladeReach() { return blade().reach; }
+  /* the best blade owned, for gating reinforced stone */
+  function bestDamage() {
+    var d = get(), best = 1;
+    for (var i = 0; i < Art.BLADES.length; i++) {
+      if (d.blades[Art.BLADES[i].id]) best = Math.max(best, Art.BLADES[i].dmg);
+    }
+    return best;
+  }
   function ownsOutfit(id) { return id === 'none' || !!get().outfits[id]; }
   function unlockOutfit(id) {
     var d = get();
@@ -2763,6 +2832,8 @@ var Save = (function () {
     load: load, get: get, flush: flush, wipe: wipe,
     SHOP: SHOP, owned: owned, available: available, buy: buy,
     has: has, addCoins: addCoins, clearStage: clearStage,
+    ownsBlade: ownsBlade, equipBlade: equipBlade, blade: blade, bladeId: bladeId,
+    bladeDamage: bladeDamage, bladeReach: bladeReach, bestDamage: bestDamage,
     addGems: addGems, gemScore: gemScore, addHeartPiece: addHeartPiece,
     ownsOutfit: ownsOutfit, unlockOutfit: unlockOutfit, wear: wear, worn: worn,
     lockedOutfit: lockedOutfit,
@@ -2862,6 +2933,13 @@ Pickup.prototype.draw = function (g, cam) {
     g.fillRect(sx - 2, sy - 2, img.width + 4, img.height + 4);
     g.restore();
     g.drawImage(img, sx, sy);
+  } else if (this.kind === 'orb') {
+    g.save();
+    g.globalAlpha = 0.25 + 0.2 * Math.sin(this.t * 1.4);
+    g.fillStyle = '#b9a0ff';
+    g.fillRect(sx - 3, sy - 3, this.w + 6, this.h + 6);
+    g.restore();
+    g.drawImage(Art.ORB, sx, sy);
   } else if (this.kind === 'vessel') {
     g.save();
     g.globalAlpha = 0.22 + 0.16 * Math.sin(this.t * 0.9);
@@ -2882,6 +2960,10 @@ function Chest(x, y) {
   this.open = false;
   this.t = 0;
   this.dead = false;
+  /* Loot is fixed per chest, derived from where it sits, so a stage
+     always rewards the same thing. Some hold nothing but gems. */
+  var h = (Math.floor(x) * 73856093 ^ Math.floor(y) * 19349663) >>> 0;
+  this.loot = ['gems', 'coins', 'gems', 'outfit'][h % 4];
 }
 Chest.prototype.pop = function (w) {
   if (this.open) return;
@@ -2890,13 +2972,26 @@ Chest.prototype.pop = function (w) {
   w.shake(4);
   w.chestsGot++;
   var cx = this.x + this.w / 2, cy = this.y + 2;
-  for (var i = 0; i < 16; i++) w.dropCoin(cx, cy);
+
+  if (this.loot === 'gems') {
+    /* a hoard of gems rather than coin */
+    var grades = ['crown', 'jewel', 'jewel', 'shard'];
+    for (var gi = 0; gi < grades.length; gi++) {
+      var gem = new Pickup(cx - 4 + (gi - 1.5) * 9, cy - 6, 'gem');
+      gem.grade = grades[gi];
+      gem.loose = true;
+      gem.vx = (gi - 1.5) * 0.7; gem.vy = Util.rand(-3.0, -2.0);
+      w.pickups.push(gem);
+    }
+  } else {
+    for (var i = 0; i < 16; i++) w.dropCoin(cx, cy);
+  }
   for (var j = 0; j < 14; j++) {
     w.parts.push(new Particle(cx, cy, Util.rand(-2, 2), Util.rand(-3.2, -0.6),
       Util.randInt(20, 40), Util.pick(['#e8c45c', '#fff3bc', '#c08a42']), 2));
   }
-  var prize = Save.lockedOutfit();
-  if (prize && Math.random() < 0.6) {
+  var prize = (this.loot === 'outfit') ? Save.lockedOutfit() : null;
+  if (prize) {
     Save.unlockOutfit(prize);
     w.texts.push(new FloatText(this.x - 18, this.y - 16,
       Art.OUTFITS[prize].name.toUpperCase() + '!', '#a8ffd0'));
@@ -2923,10 +3018,14 @@ Chest.prototype.draw = function (g, cam) {
 };
 
 /* ------------------------------------------------------------------ */
-function Shot(x, y, vx, vy, kind) {
+function Shot(x, y, vx, vy, kind, friendly) {
   this.x = x; this.y = y; this.vx = vx; this.vy = vy; this.kind = kind;
-  this.w = kind === 'shock' ? 10 : 4;
-  this.h = kind === 'shock' ? 10 : 4;
+  this.friendly = !!friendly;
+  this.dmg = 1;
+  this.pierce = false;
+  this.hits = [];
+  this.w = (kind === 'shock' || kind === 'flame') ? 10 : (kind === 'bolt' ? 14 : 4);
+  this.h = (kind === 'shock' || kind === 'flame') ? 10 : (kind === 'bolt' ? 8 : 4);
   this.life = kind === 'shock' ? 150 : 260;
   this.dead = false;
   this.t = 0;
@@ -2944,8 +3043,10 @@ Shot.prototype.update = function (w) {
       if (this.y > w.pixelH) { this.dead = true; break; }
     }
   } else if (w.solidAt(this.x + this.w / 2, this.y + this.h / 2)) {
-    this.dead = true;
-    w.puff(this.x, this.y, '#c9a2d8', 4);
+    if (!this.pierce) {
+      this.dead = true;
+      w.puff(this.x, this.y, this.friendly ? '#ffd08a' : '#c9a2d8', 4);
+    }
   }
 };
 Shot.prototype.draw = function (g, cam) {
@@ -2956,6 +3057,18 @@ Shot.prototype.draw = function (g, cam) {
   } else if (this.kind === 'sonic') {
     g.fillStyle = '#c9a2f0';
     g.fillRect(sx, sy + 1, 4, 2); g.fillRect(sx + 1, sy, 2, 4);
+  } else if (this.kind === 'flame') {
+    var fh = 8 + Math.round(Math.sin(this.t * 0.5) * 2);
+    g.fillStyle = 'rgba(255,140,50,.85)'; g.fillRect(sx, sy + 10 - fh, 10, fh);
+    g.fillStyle = '#ffd08a'; g.fillRect(sx + 1, sy + 10 - fh, 8, 2);
+    g.fillStyle = '#fff3bc'; g.fillRect(sx + 3, sy + 10 - fh, 4, 1);
+  } else if (this.kind === 'bolt') {
+    g.fillStyle = 'rgba(180,230,255,.9)'; g.fillRect(sx, sy + 2, 14, 4);
+    g.fillStyle = '#eafdff'; g.fillRect(sx, sy + 3, 14, 1);
+    g.fillStyle = 'rgba(140,200,255,.5)'; g.fillRect(sx - 4, sy + 1, 6, 6);
+  } else if (this.kind === 'splinter') {
+    g.fillStyle = '#c9a273'; g.fillRect(sx, sy + 1, 5, 2);
+    g.fillStyle = '#efe7d2'; g.fillRect(sx + 3, sy + 1, 2, 1);
   } else {
     var h = 6 + Math.round(Math.sin(this.t * 0.4) * 2);
     g.fillStyle = 'rgba(255,190,120,.85)';
@@ -3002,6 +3115,12 @@ Enemy.prototype.hurt = function (dmg, dir, w) {
     Sfx.kill();
     w.puff(this.x + this.w / 2, this.y + this.h / 2, '#ffd75e', 10);
     w.shake(3);
+    var n = this.type === 'hound' ? 3 : (this.type === 'thorn' ? 3 : 2);
+    for (var ci = 0; ci < n; ci++) w.dropCoin(this.x + this.w / 2, this.y + this.h / 2);
+    /* occasionally an orb, so the special stays a treat */
+    if (Math.random() < 0.12 && w.player.charges <= 0) {
+      w.dropOrb(this.x + this.w / 2, this.y + this.h / 2);
+    }
     var n = this.type === 'hound' ? 3 : (this.type === 'thorn' ? 3 : 2);
     for (var i = 0; i < n; i++) w.dropCoin(this.x + this.w / 2, this.y + this.h / 2);
   } else {
@@ -3346,9 +3465,11 @@ function Player(x, y) {
   this.runFrame = 0;
   this.landSquash = 0;
   this.lift = 0;
+  this.charges = 0;        /* special uses left, from orbs */
+  this.special = false;    /* is this swing a special? */
 }
-Player.prototype.damage = function () { return 1 + Save.get().sword; };
-Player.prototype.reach = function () { return 13 + Save.get().sword * 2; };
+Player.prototype.damage = function () { return Save.bladeDamage(); };
+Player.prototype.reach = function () { return Save.bladeReach(); };
 
 Player.prototype.hurt = function (w, fromX) {
   if (this.invuln > 0 || this.dead) return;
@@ -3428,12 +3549,24 @@ Player.prototype.update = function (w) {
     this.lift--;
   } else {
     this.lift = 0;
+  this.charges = 0;        /* special uses left, from orbs */
+  this.special = false;    /* is this swing a special? */
   }
 
   if (Input.pressed('attack') && this.attack <= 0) {
     this.attack = ATTACK_FRAMES;
     this.attackHit = [];
-    Sfx.swing();
+    /* with the gauge charged, every swing is the blade's special until
+       it runs dry */
+    this.special = this.charges > 0;
+    if (this.special) {
+      this.charges--;
+      w.fireSpecial(this);
+      Sfx.bark();
+      w.shake(3);
+    } else {
+      Sfx.swing();
+    }
   }
   if (this.attack > 0) this.attack--;
 
@@ -3452,11 +3585,11 @@ Player.prototype.update = function (w) {
 /* Active blade rectangle during the middle of a swing, else null. */
 Player.prototype.hitbox = function () {
   if (this.attack > 14 || this.attack < 5) return null;
-  var r = this.reach();
+  var r = this.reach() * (this.special ? 1.6 : 1);
   return {
     x: this.facing > 0 ? this.x + this.w - 3 : this.x - r + 3,
-    y: this.y - 2,
-    w: r, h: 17
+    y: this.y - 2 - (this.special ? 6 : 0),
+    w: r, h: this.special ? 29 : 17
   };
 };
 
@@ -3494,7 +3627,7 @@ Player.prototype.draw = function (g, cam) {
                 sx + (this.facing > 0 ? 8 : 0), hy);
   }
 
-  Art.drawBlade(g, bx, by, this.bladeAngle(), Save.get().sword, this.facing);
+  Art.drawBlade(g, bx, by, this.bladeAngle(), Save.bladeId(), this.facing);
 
   /* Slash: a crescent that trails the blade through its arc and fades
      out with the swing, rather than a static ring hanging in the air. */
@@ -3504,8 +3637,11 @@ Player.prototype.draw = function (g, cam) {
     var a0 = this.bladeAngleAt(Math.max(0, prog - 0.34));
     if (a1 - a0 > 0.03) {
       var reach = this.reach();
-      var tier = Save.get().sword;
-      var col = tier >= 3 ? '210,250,255' : (tier >= 2 ? '255,208,138' : '255,255,255');
+      var bl = Save.blade();
+      var col = this.special ? '200,170,255'
+        : (bl.id === 'storm' ? '210,250,255'
+        : (bl.id === 'ember' ? '255,208,138'
+        : (bl.id === 'whip' ? '200,255,215' : '255,255,255')));
       var fade = Util.clamp((this.attack - 2) / 9, 0, 1);
       g.save();
       g.translate(bx, by);
@@ -3759,6 +3895,12 @@ World.prototype.puff = function (x, y, color, n) {
   }
 };
 World.prototype.shake = function (n) { this.shakeAmt = Math.max(this.shakeAmt, n); };
+World.prototype.dropOrb = function (x, y) {
+  var o = new Pickup(x - 4, y - 4, 'orb');
+  o.loose = true;
+  o.vx = Util.rand(-0.8, 0.8); o.vy = -2.2;
+  this.pickups.push(o);
+};
 World.prototype.dropCoin = function (x, y) {
   var p = new Pickup(x - 4, y - 4, 'coin');
   p.loose = true;
@@ -3784,6 +3926,47 @@ World.prototype.breakCrate = function (tx, ty, stone) {
   var n = Util.randInt(2, 4);
   for (var k = 0; k < n; k++) this.dropCoin(cx, cy);
 };
+
+/* Each blade spends a charge differently. */
+World.prototype.fireSpecial = function (p) {
+  var f = p.facing;
+  var cx = p.x + p.w / 2 + f * 8, cy = p.y + 4;
+  var kind = Save.blade().special;
+  var dmg = p.damage();
+  var sh;
+
+  if (kind === 'splinter') {
+    for (var i = -1; i <= 1; i++) {
+      sh = new Shot(cx, cy + 2, f * 3.4, i * 0.8, 'splinter', true);
+      sh.dmg = dmg; sh.life = 60;
+      this.shots.push(sh);
+    }
+  } else if (kind === 'cross') {
+    /* no projectile: the swing itself is wider and lands twice */
+    p.crossHit = true;
+    this.puff(cx, cy + 4, '#eef4fa', 10);
+  } else if (kind === 'quake') {
+    this.shots.push(quake(this, p, -1, dmg));
+    this.shots.push(quake(this, p, 1, dmg));
+    this.shake(7);
+  } else if (kind === 'flame') {
+    sh = new Shot(cx, p.y + p.h - 10, f * 1.9, 0, 'flame', true);
+    sh.dmg = dmg; sh.life = 120;
+    this.shots.push(sh);
+  } else if (kind === 'lash') {
+    p.lashHit = true;
+    this.puff(cx + f * 16, cy + 4, '#e8fff0', 12);
+  } else {                                   /* thunder */
+    sh = new Shot(cx, cy, f * 4.2, 0, 'bolt', true);
+    sh.dmg = dmg + 2; sh.pierce = true; sh.life = 70;
+    this.shots.push(sh);
+  }
+};
+function quake(w, p, dir, dmg) {
+  var sh = new Shot(p.x + (dir > 0 ? p.w : -10), p.y + p.h - 10, dir * 2.2, 0, 'shock', true);
+  sh.dmg = dmg; sh.life = 90;
+  return sh;
+}
 
 World.prototype.onPlayerDead = function () {
   this.state = 'dying'; this.stateTimer = 96;
@@ -3905,7 +4088,8 @@ World.prototype.update = function () {
         if (e.dead || p.attackHit.indexOf(e) >= 0) continue;
         if (Util.aabb(hb, e)) {
           p.attackHit.push(e);
-          e.hurt(p.damage(), p.facing, this);
+          var mult = p.special && Save.blade().special === 'cross' ? 2 : 1;
+          e.hurt(p.damage() * mult, p.facing, this);
           this.hitStop = 2;
           this.texts.push(new FloatText(e.x + e.w / 2 - 3, e.y - 4, String(p.damage()), '#ffe27a'));
         }
@@ -3927,7 +4111,7 @@ World.prototype.update = function () {
           var bt = this.tileAt(tx, ty);
           if (bt === T_CRATE) this.breakCrate(tx, ty);
           else if (bt === T_BARRIER) {
-            if (Save.get().sword >= 2) this.breakCrate(tx, ty, true);
+            if (Save.bestDamage() >= 3) this.breakCrate(tx, ty, true);
             else if (!this.barrierHinted) {
               this.barrierHinted = true;
               Sfx.deny();
@@ -3972,7 +4156,23 @@ World.prototype.update = function () {
   for (i = this.shots.length - 1; i >= 0; i--) {
     var sh = this.shots[i];
     sh.update(this);
-    if (this.state === 'play' && !p.dead && Util.aabb(p, sh)) {
+    if (sh.friendly) {
+      for (var ei = 0; ei < this.enemies.length; ei++) {
+        var en = this.enemies[ei];
+        if (en.dead || sh.hits.indexOf(en) >= 0) continue;
+        if (Util.aabb(sh, en)) {
+          sh.hits.push(en);
+          en.hurt(sh.dmg, sh.vx > 0 ? 1 : -1, this);
+          if (!sh.pierce) sh.dead = true;
+        }
+      }
+      if (this.boss && !this.boss.dead && sh.hits.indexOf(this.boss) < 0 &&
+          Util.aabb(sh, this.boss) && this.boss.hurtLock <= 0) {
+        sh.hits.push(this.boss);
+        this.boss.hurt(sh.dmg, sh.vx > 0 ? 1 : -1, this);
+        if (!sh.pierce) sh.dead = true;
+      }
+    } else if (this.state === 'play' && !p.dead && Util.aabb(p, sh)) {
       p.hurt(this, sh.x + sh.w / 2);
       if (sh.kind !== 'shock') sh.dead = true;
     }
@@ -3997,6 +4197,11 @@ World.prototype.update = function () {
         var col = pk.grade === 'crown' ? '#ffc8f4' : (pk.grade === 'jewel' ? '#a8ffd0' : '#c8f4ff');
         this.texts.push(new FloatText(pk.x - 4, pk.y - 8, '+' + val, col));
         this.puff(pk.x + 3, pk.y + 3, col, 14);
+      } else if (pk.kind === 'orb') {
+        p.charges = 4;
+        Sfx.buy();
+        this.texts.push(new FloatText(pk.x - 14, pk.y - 8, 'SPECIAL READY', '#b9a0ff'));
+        this.puff(pk.x + 3, pk.y + 3, '#b9a0ff', 16);
       } else if (pk.kind === 'vessel') {
         this.vesselGot++;
         var total = Save.addHeartPiece(this.def.id);
@@ -4270,6 +4475,22 @@ World.prototype.drawHud = function (g) {
   if (hp4) {
     for (i = 0; i < hp4; i++) g.drawImage(Art.HEART_PIECE, 8 + p.maxHp * 10 + i * 7, 6);
   }
+  /* special gauge, only while it has something in it */
+  if (p.charges > 0) {
+    var bl = Save.blade();
+    g.drawImage(Art.ORB, 6, 28, 7, 7);
+    for (i = 0; i < 4; i++) {
+      var px2 = 16 + i * 6;
+      if (i < p.charges) {
+        g.fillStyle = '#b9a0ff'; g.fillRect(px2, 29, 4, 5);
+        g.fillStyle = '#e8dcff'; g.fillRect(px2, 29, 4, 1);
+      } else {
+        g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(px2, 29, 4, 5);
+      }
+    }
+    Text.shadow(g, Art.SPECIALS[bl.special].name, 44, 29, '#b9a0ff', 1);
+  }
+
   /* running gem total, top left under the hearts */
   g.drawImage(Art.GEMS.jewel, 6, 17);
   Text.shadow(g, String(Save.gemScore()), 16, 18, '#a8ffd0', 1);
@@ -4277,22 +4498,29 @@ World.prototype.drawHud = function (g) {
   /* coins */
   g.drawImage(Art.COIN, VIEW_W - 52, 5);
   Text.shadow(g, String(Save.get().coins), VIEW_W - 42, 6, '#ffe27a', 1);
-  /* gems found this run, then chests */
-  var gem = Art.GEMS.shard;
+  /* What this stage still owes you: three gems and two chests, filled
+     in as you find them. */
+  var slotY = 18, sx0 = VIEW_W - 96;
   for (i = 0; i < 3; i++) {
-    var gx = VIEW_W - 82 + i * 9;
-    if (i < this.gemsGot) g.drawImage(gem, gx, 17);
-    else {
-      g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(gx + 1, 18, 5, 5);
-      g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(gx + 1, 18, 5, 1);
+    var gx = sx0 + i * 10;
+    if (i < this.gemsGot) {
+      g.drawImage(Art.GEMS.jewel, gx, slotY);
+    } else {
+      g.fillStyle = 'rgba(0,0,0,.50)'; g.fillRect(gx + 1, slotY + 1, 5, 5);
+      g.fillStyle = 'rgba(168,255,208,.35)';
+      g.fillRect(gx + 1, slotY + 1, 5, 1); g.fillRect(gx + 1, slotY + 5, 5, 1);
+      g.fillRect(gx + 1, slotY + 1, 1, 5); g.fillRect(gx + 5, slotY + 1, 1, 5);
     }
   }
   for (i = 0; i < 2; i++) {
-    var kx = VIEW_W - 50 + i * 11;
-    g.save();
-    if (i >= this.chestsGot) g.globalAlpha = 0.30;
-    g.drawImage(Art.CHEST, kx, 15, 10, 9);
-    g.restore();
+    var kx = sx0 + 36 + i * 13;
+    if (i < this.chestsGot) {
+      g.drawImage(Art.CHEST, kx, slotY - 2, 11, 10);
+    } else {
+      g.save(); g.globalAlpha = 0.28;
+      g.drawImage(Art.CHEST, kx, slotY - 2, 11, 10);
+      g.restore();
+    }
   }
 
   /* boss bar */
@@ -4393,7 +4621,7 @@ var UI = (function () {
       g.imageSmoothingEnabled = false;
       g.drawImage(Art.dog.right.idle, px, py, 36, 28);
       g.restore();
-      Art.drawBlade(g, px + 30, py + 17, -0.5 + Math.sin(G.t * 0.05) * 0.12, Save.get().sword, 1);
+      Art.drawBlade(g, px + 30, py + 17, -0.5 + Math.sin(G.t * 0.05) * 0.12, Save.bladeId(), 1);
 
       if (Math.floor(G.t / 26) % 2 === 0) {
         Text.centerShadow(g, 'PRESS ENTER', cx, VIEW_H - 32, '#ffffff', 1);
@@ -4485,8 +4713,39 @@ var UI = (function () {
   };
 
   /* ------------------------------------------------ SHOP */
+  /* one shared tab header, clear of the title */
+  function tabStrip(g, G) {
+    var names = ['GEAR', 'BLADES', 'WARDROBE'];
+    var txt = '';
+    for (var i = 0; i < names.length; i++) txt += (i ? '  ' : '') + names[i];
+    var x = Math.round(VIEW_W / 2 - Text.width(txt, 1) / 2);
+    Text.draw(g, '<', x - 14, 24, '#5d5478', 1);
+    Text.draw(g, '>', x + Text.width(txt, 1) + 8, 24, '#5d5478', 1);
+    var cx2 = x;
+    for (var j = 0; j < names.length; j++) {
+      var on = (G.shopTab || 0) === j;
+      if (on) {
+        g.fillStyle = 'rgba(255,215,94,.14)';
+        g.fillRect(cx2 - 3, 21, Text.width(names[j], 1) + 6, 12);
+      }
+      Text.draw(g, names[j], cx2, 24, on ? '#ffd75e' : '#6d6488', 1);
+      cx2 += Text.width(names[j], 1) + 12;
+    }
+  }
+
+  function wardrobeList() {
+    var out = [{ id: 'none', name: 'No Outfit' }];
+    for (var k in Art.OUTFITS) out.push({ id: k, name: Art.OUTFITS[k].name });
+    return out;
+  }
+
   var shop = {
     update: function (G) {
+      if (G.shopTab === undefined) G.shopTab = 0;
+      if (Input.pressed('right')) { G.shopTab = (G.shopTab + 1) % 3; G.shopSel = 0; Sfx.select(); return; }
+      if (Input.pressed('left')) { G.shopTab = (G.shopTab + 2) % 3; G.shopSel = 0; Sfx.select(); return; }
+      if (G.shopTab === 1) return shop.blades(G);
+      if (G.shopTab === 2) return shop.wardrobe(G);
       var list = Save.SHOP;
       if (Input.pressed('down')) { G.shopSel = (G.shopSel + 1) % list.length; Sfx.select(); }
       if (Input.pressed('up')) { G.shopSel = (G.shopSel + list.length - 1) % list.length; Sfx.select(); }
@@ -4509,18 +4768,126 @@ var UI = (function () {
       }
       if (Input.pressed('pause') || Input.pressed('attack')) { Sfx.select(); G.go('map'); }
     },
+
+    /* Blades work the same way as outfits: once one is yours you can
+       switch back to it whenever you like. They are not a one-way ladder -
+       a short heavy cleaver stays useful next to a long thin whip. */
+    blades: function (G) {
+      var list = Art.BLADES;
+      if (Input.pressed('down')) { G.shopSel = (G.shopSel + 1) % list.length; Sfx.select(); }
+      if (Input.pressed('up')) { G.shopSel = (G.shopSel + list.length - 1) % list.length; Sfx.select(); }
+      if (Input.pressed('confirm') || Input.pressed('jump')) {
+        var bl = list[G.shopSel];
+        if (Save.ownsBlade(bl.id)) {
+          Save.equipBlade(bl.id);
+          G.shopMsg = 'DRAWING ' + bl.name.toUpperCase();
+          Sfx.confirm();
+        } else {
+          G.shopMsg = 'BUY IT IN GEAR FIRST';
+          Sfx.deny();
+        }
+        G.shopMsgT = 100;
+      }
+      if (Input.pressed('pause') || Input.pressed('attack')) { Sfx.select(); G.go('map'); }
+    },
+
+    drawBlades: function (g, G) {
+      backdrop(g, G.t, ['#1c1a2c', '#2e2a3f']);
+      Text.centerShadow(g, 'BLADES', VIEW_W / 2, 10, '#ffffff', 2);
+      tabStrip(g, G);
+
+      var list = Art.BLADES;
+      var listW = Math.round(VIEW_W * 0.52), detX = listW + 18;
+      panel(g, 10, 38, listW, 142);
+      for (var i = 0; i < list.length; i++) {
+        var bl = list[i], y = 45 + i * 18;
+        var own = Save.ownsBlade(bl.id);
+        var held = Save.bladeId() === bl.id;
+        if (i === G.shopSel) {
+          g.fillStyle = 'rgba(200,220,255,.12)';
+          g.fillRect(12, y - 4, listW - 4, 17);
+          cursor(g, 14, y, G.t);
+        }
+        Text.draw(g, own ? bl.name : '? ? ?', 24, y,
+          own ? (held ? '#bcd6ff' : '#ffffff') : '#5d5478', 1);
+        Text.draw(g, held ? 'DRAWN' : (own ? 'DRAW' : 'LOCKED'), listW - 48, y,
+          held ? '#bcd6ff' : (own ? '#7fe0a0' : '#5d5478'), 1);
+      }
+
+      panel(g, detX, 38, VIEW_W - detX - 10, 142);
+      var sel = list[G.shopSel];
+      var ownSel = Save.ownsBlade(sel.id);
+      Text.draw(g, ownSel ? sel.name.toUpperCase() : 'NOT YOURS YET', detX + 8, 46,
+        ownSel ? '#bcd6ff' : '#7f72a0', 1);
+      /* the blade itself, plus what it trades */
+      Art.drawBlade(g, detX + 16, 68, -0.35, sel.id, 1);
+      Text.draw(g, 'DAMAGE', detX + 8, 78, '#7f72a0', 1);
+      for (var d2 = 0; d2 < sel.dmg; d2++) {
+        g.fillStyle = '#e0424f'; g.fillRect(detX + 56 + d2 * 6, 78, 4, 6);
+        g.fillStyle = '#ff8a92'; g.fillRect(detX + 56 + d2 * 6, 78, 4, 1);
+      }
+      Text.draw(g, 'REACH', detX + 8, 92, '#7f72a0', 1);
+      g.fillStyle = '#8fa0bd';
+      g.fillRect(detX + 56, 93, Math.round(sel.reach * 1.6), 4);
+      g.fillStyle = '#c6d3de'; g.fillRect(detX + 56, 93, Math.round(sel.reach * 1.6), 1);
+      Text.draw(g, 'SPECIAL', detX + 8, 108, '#7f72a0', 1);
+      Text.draw(g, Art.SPECIALS[sel.special].name, detX + 8, 120, '#b9a0ff', 1);
+      var words = Art.SPECIALS[sel.special].desc.split(' '), line = '', ly = 132;
+      for (var wI = 0; wI < words.length; wI++) {
+        var tryLine = line ? line + ' ' + words[wI] : words[wI];
+        if (Text.width(tryLine, 1) > VIEW_W - detX - 26) {
+          Text.draw(g, line, detX + 8, ly, '#8d80ad', 1); ly += 10; line = words[wI];
+        } else line = tryLine;
+      }
+      if (line) Text.draw(g, line, detX + 8, ly, '#8d80ad', 1);
+
+      if (G.shopMsgT > 0) {
+        Text.centerShadow(g, G.shopMsg, VIEW_W / 2, VIEW_H - 26, '#bcd6ff', 1);
+        G.shopMsgT--;
+      }
+      Text.draw(g, 'ENTER DRAW   < > TABS   X BACK', 10, VIEW_H - 12, '#7f72a0', 1);
+    },
+
+    /* Outfits are never locked away once owned - wear, swap or remove
+       any of them here, as often as you like. */
+    wardrobe: function (G) {
+      var list = wardrobeList();
+      if (Input.pressed('down')) { G.shopSel = (G.shopSel + 1) % list.length; Sfx.select(); }
+      if (Input.pressed('up')) { G.shopSel = (G.shopSel + list.length - 1) % list.length; Sfx.select(); }
+      if (Input.pressed('confirm') || Input.pressed('jump')) {
+        var it = list[G.shopSel];
+        if (Save.ownsOutfit(it.id)) {
+          if (Save.worn() === it.id && it.id !== 'none') {
+            Save.wear('none'); G.shopMsg = 'TAKEN OFF';
+          } else {
+            Save.wear(it.id);
+            G.shopMsg = it.id === 'none' ? 'TAKEN OFF' : 'WEARING ' + it.name.toUpperCase();
+          }
+          Sfx.confirm();
+        } else {
+          G.shopMsg = 'LOCKED - FIND IT IN A CHEST';
+          Sfx.deny();
+        }
+        G.shopMsgT = 100;
+      }
+      if (Input.pressed('pause') || Input.pressed('attack')) { Sfx.select(); G.go('map'); }
+    },
+
     draw: function (g, G) {
+      if (G.shopTab === 1) return shop.drawBlades(g, G);
+      if (G.shopTab === 2) return shop.drawWardrobe(g, G);
       backdrop(g, G.t, ['#201428', '#3a1f2f']);
       Text.centerShadow(g, 'THE TRADING POST', VIEW_W / 2, 10, '#ffffff', 2);
+      tabStrip(g, G);
       g.drawImage(Art.COIN, 10, 10);
       Text.draw(g, String(Save.get().coins), 21, 11, '#ffe27a', 1);
 
       var list = Save.SHOP;
       var top = Util.clamp(G.shopSel - 3, 0, Math.max(0, list.length - 7));
       var listW = Math.round(VIEW_W * 0.60), detX = listW + 18;
-      panel(g, 10, 30, listW, 150);
+      panel(g, 10, 38, listW, 142);
       for (var i = 0; i < 7 && top + i < list.length; i++) {
-        var it = list[top + i], y = 37 + i * 19;
+        var it = list[top + i], y = 45 + i * 18;
         var own = Save.owned(it), avail = Save.available(it);
         var col = own ? '#5f7a5f' : (avail && Save.get().coins >= it.cost ? '#ffffff' : '#8d80ad');
         if (top + i === G.shopSel) {
@@ -4537,11 +4904,11 @@ var UI = (function () {
       }
 
       /* detail card */
-      panel(g, detX, 30, VIEW_W - detX - 10, 150);
+      panel(g, detX, 38, VIEW_W - detX - 10, 142);
       var sel = list[G.shopSel];
       Text.draw(g, sel.kind === 'sword' ? 'BLADE'
         : (sel.kind === 'collar' ? 'COLLAR'
-        : (sel.kind === 'outfit' ? 'OUTFIT' : 'RELIC')), detX + 8, 38, '#7f72a0', 1);
+        : (sel.kind === 'outfit' ? 'OUTFIT' : 'RELIC')), detX + 8, 46, '#7f72a0', 1);
       /* wrap the description */
       var words = sel.desc.split(' '), line = '', ly = 54;
       for (var wI = 0; wI < words.length; wI++) {
@@ -4552,7 +4919,7 @@ var UI = (function () {
       if (line) Text.draw(g, line, detX + 8, ly, '#d8cff0', 1);
 
       if (sel.kind === 'sword') {
-        Art.drawBlade(g, detX + 26, 152, -0.5, sel.tier, 1);
+        Art.drawBlade(g, detX + 26, 152, -0.5, sel.id, 1);
       } else if (sel.kind === 'collar') {
         for (var h = 0; h < 3 + sel.tier; h++) g.drawImage(Art.HEART_FULL, detX + 8 + h * 11, 146);
       } else if (sel.kind === 'outfit') {
@@ -4569,7 +4936,56 @@ var UI = (function () {
         Text.centerShadow(g, G.shopMsg, VIEW_W / 2, VIEW_H - 22, '#ffd75e', 1);
         G.shopMsgT--;
       }
-      Text.draw(g, 'ENTER BUY    X BACK', 10, VIEW_H - 12, '#7f72a0', 1);
+      Text.draw(g, 'ENTER BUY    < > TABS    X BACK', 10, VIEW_H - 12, '#7f72a0', 1);
+    },
+
+    drawWardrobe: function (g, G) {
+      backdrop(g, G.t, ['#16202e', '#24303f']);
+      Text.centerShadow(g, 'WARDROBE', VIEW_W / 2, 10, '#ffffff', 2);
+      tabStrip(g, G);
+
+      var list = wardrobeList();
+      var listW = Math.round(VIEW_W * 0.52), detX = listW + 18;
+      var top = Util.clamp(G.shopSel - 3, 0, Math.max(0, list.length - 7));
+      panel(g, 10, 38, listW, 142);
+      for (var i = 0; i < 7 && top + i < list.length; i++) {
+        var it = list[top + i], y = 45 + i * 18;
+        var own = Save.ownsOutfit(it.id);
+        var isWorn = Save.worn() === it.id;
+        if (top + i === G.shopSel) {
+          g.fillStyle = 'rgba(168,255,208,.12)';
+          g.fillRect(12, y - 4, listW - 4, 17);
+          cursor(g, 14, y, G.t);
+        }
+        Text.draw(g, own ? it.name : '? ? ?', 24, y,
+          own ? (isWorn ? '#a8ffd0' : '#ffffff') : '#5d5478', 1);
+        Text.draw(g, isWorn ? 'WORN' : (own ? 'WEAR' : 'LOCKED'), listW - 48, y,
+          isWorn ? '#a8ffd0' : (own ? '#7fe0a0' : '#5d5478'), 1);
+      }
+
+      panel(g, detX, 38, VIEW_W - detX - 10, 142);
+      var sel = list[G.shopSel];
+      var ownSel = Save.ownsOutfit(sel.id);
+      Text.draw(g, ownSel ? sel.name.toUpperCase() : 'NOT FOUND YET', detX + 8, 46,
+        ownSel ? '#a8ffd0' : '#7f72a0', 1);
+      /* him, wearing it */
+      var pvx = detX + Math.round((VIEW_W - detX - 10) / 2) - 22;
+      g.drawImage(Art.dog.right.idle, pvx, 74, 45, 35);
+      if (ownSel && sel.id !== 'none' && Art.OUTFITS[sel.id]) {
+        g.drawImage(Art.OUTFITS[sel.id].right, pvx + 20, 66, 25, 18);
+      }
+      Text.draw(g, ownSel ? 'ENTER TO WEAR' : 'HIDDEN IN A CHEST', detX + 8, 126,
+        '#8d80ad', 1);
+      var found = 0, total = 0;
+      var all = wardrobeList();
+      for (var q = 1; q < all.length; q++) { total++; if (Save.ownsOutfit(all[q].id)) found++; }
+      Text.draw(g, 'FOUND ' + found + ' / ' + total, detX + 8, 140, '#7f72a0', 1);
+
+      if (G.shopMsgT > 0) {
+        Text.centerShadow(g, G.shopMsg, VIEW_W / 2, VIEW_H - 26, '#a8ffd0', 1);
+        G.shopMsgT--;
+      }
+      Text.draw(g, 'ENTER WEAR   < > TABS   X BACK', 10, VIEW_H - 12, '#7f72a0', 1);
     }
   };
 
@@ -4744,6 +5160,7 @@ var Game = (function () {
     world: null,
     sel: 0,
     shopSel: 0,
+    shopTab: 0,
     pauseSel: 0,
     shopMsg: '', shopMsgT: 0,
     t: 0,

@@ -14,7 +14,8 @@ var Save = (function () {
       gemScore: 0,        /* running total of gem value            */
       heartPieces: {},    /* stage id -> true, four make a heart    */
       chests: {},         /* stage id -> chests found   */
-      sword: 0,           /* index into Art.BLADES */
+      blades: { stick: true },
+      blade: 'stick',
       collar: 0,          /* extra hearts */
       relics: {},         /* relic id -> true */
       outfits: { none: true },
@@ -32,6 +33,13 @@ var Save = (function () {
     } catch (e) { data = fresh(); }
     var f = fresh();
     for (var k in f) if (!(k in data)) data[k] = f[k];
+    /* migrate the old numeric sword tier to the named blades */
+    if (typeof data.sword === 'number') {
+      var order = ['stick', 'iron', 'ember', 'storm'];
+      for (var i = 0; i <= data.sword && i < order.length; i++) data.blades[order[i]] = true;
+      data.blade = order[Math.min(data.sword, order.length - 1)];
+      delete data.sword;
+    }
     return data;
   }
   function flush() {
@@ -41,24 +49,28 @@ var Save = (function () {
   function wipe() { data = fresh(); flush(); return data; }
 
   var SHOP = [
-    { id: 'sword1', kind: 'sword', tier: 1, name: 'Iron Fang', cost: 60,
-      desc: '2 damage. A real blade.' },
+    { id: 'iron', kind: 'sword', name: 'Iron Fang', cost: 60,
+      desc: '2 damage, fair reach. Special: cross slash.' },
     { id: 'collar1', kind: 'collar', tier: 1, name: 'Studded Collar', cost: 80,
       desc: '+1 heart.' },
     { id: 'spring', kind: 'relic', name: 'Gale Collar', cost: 130,
       desc: 'A third jump in mid-air.' },
     { id: 'swift', kind: 'relic', name: 'Swift Paws', cost: 90,
       desc: 'Run noticeably faster.' },
-    { id: 'sword2', kind: 'sword', tier: 2, name: 'Emberblade', cost: 180,
-      desc: '3 damage, longer reach.' },
+    { id: 'cleaver', kind: 'sword', name: 'Boar Cleaver', cost: 150,
+      desc: '4 damage but stubby. Special: quake.' },
+    { id: 'ember', kind: 'sword', name: 'Emberblade', cost: 190,
+      desc: '3 damage, long. Breaks reinforced stone. Special: flame wave.' },
+    { id: 'whip', kind: 'sword', name: 'Whip Fang', cost: 240,
+      desc: '2 damage, enormous reach. Special: long lash.' },
     { id: 'magnet', kind: 'relic', name: 'Wet Nose', cost: 120,
       desc: 'Coins drift toward you.' },
     { id: 'collar2', kind: 'collar', tier: 2, name: 'Iron Collar', cost: 200,
       desc: '+2 hearts total.' },
     { id: 'lucky', kind: 'relic', name: 'Lucky Tag', cost: 150,
       desc: 'Coins are worth double.' },
-    { id: 'sword3', kind: 'sword', tier: 3, name: 'Stormfang', cost: 320,
-      desc: '4 damage, longest reach.' },
+    { id: 'storm', kind: 'sword', name: 'Stormfang', cost: 380,
+      desc: '5 damage, long. Special: piercing thunder arc.' },
     { id: 'guard', kind: 'relic', name: 'Thick Coat', cost: 260,
       desc: 'Longer mercy time after a hit.' },
     /* Wardrobe. Most turn up in chests; these are the ones you can
@@ -75,7 +87,7 @@ var Save = (function () {
 
   function owned(item) {
     var d = get();
-    if (item.kind === 'sword') return d.sword >= item.tier;
+    if (item.kind === 'sword') return !!d.blades[item.id];
     if (item.kind === 'collar') return d.collar >= item.tier;
     if (item.kind === 'outfit') return ownsOutfit(item.id);
     return !!d.relics[item.id];
@@ -84,7 +96,7 @@ var Save = (function () {
   function available(item) {
     var d = get();
     if (owned(item)) return false;
-    if (item.kind === 'sword') return d.sword === item.tier - 1;
+    if (item.kind === 'sword') return true;
     if (item.kind === 'collar') return d.collar === item.tier - 1;
     return true;   /* relics and outfits have no order */
   }
@@ -92,7 +104,7 @@ var Save = (function () {
     var d = get();
     if (owned(item) || !available(item) || d.coins < item.cost) return false;
     d.coins -= item.cost;
-    if (item.kind === 'sword') d.sword = item.tier;
+    if (item.kind === 'sword') { d.blades[item.id] = true; d.blade = item.id; }
     else if (item.kind === 'collar') d.collar = item.tier;
     else if (item.kind === 'outfit') { d.outfits[item.id] = true; d.worn = item.id; }
     else d.relics[item.id] = true;
@@ -101,6 +113,25 @@ var Save = (function () {
   }
 
   function has(relicId) { return !!get().relics[relicId]; }
+
+  /* ---- blades ---- */
+  function ownsBlade(id) { return !!get().blades[id]; }
+  function equipBlade(id) { if (ownsBlade(id)) { get().blade = id; flush(); } }
+  function blade() {
+    var b = Art.BLADE_BY_ID[get().blade];
+    return b || Art.BLADES[0];
+  }
+  function bladeId() { return blade().id; }
+  function bladeDamage() { return blade().dmg; }
+  function bladeReach() { return blade().reach; }
+  /* the best blade owned, for gating reinforced stone */
+  function bestDamage() {
+    var d = get(), best = 1;
+    for (var i = 0; i < Art.BLADES.length; i++) {
+      if (d.blades[Art.BLADES[i].id]) best = Math.max(best, Art.BLADES[i].dmg);
+    }
+    return best;
+  }
   function ownsOutfit(id) { return id === 'none' || !!get().outfits[id]; }
   function unlockOutfit(id) {
     var d = get();
@@ -167,6 +198,8 @@ var Save = (function () {
     load: load, get: get, flush: flush, wipe: wipe,
     SHOP: SHOP, owned: owned, available: available, buy: buy,
     has: has, addCoins: addCoins, clearStage: clearStage,
+    ownsBlade: ownsBlade, equipBlade: equipBlade, blade: blade, bladeId: bladeId,
+    bladeDamage: bladeDamage, bladeReach: bladeReach, bestDamage: bestDamage,
     addGems: addGems, gemScore: gemScore, addHeartPiece: addHeartPiece,
     ownsOutfit: ownsOutfit, unlockOutfit: unlockOutfit, wear: wear, worn: worn,
     lockedOutfit: lockedOutfit,

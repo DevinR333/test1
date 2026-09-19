@@ -68,7 +68,7 @@ var UI = (function () {
       g.imageSmoothingEnabled = false;
       g.drawImage(Art.dog.right.idle, px, py, 36, 28);
       g.restore();
-      Art.drawBlade(g, px + 30, py + 17, -0.5 + Math.sin(G.t * 0.05) * 0.12, Save.get().sword, 1);
+      Art.drawBlade(g, px + 30, py + 17, -0.5 + Math.sin(G.t * 0.05) * 0.12, Save.bladeId(), 1);
 
       if (Math.floor(G.t / 26) % 2 === 0) {
         Text.centerShadow(g, 'PRESS ENTER', cx, VIEW_H - 32, '#ffffff', 1);
@@ -160,8 +160,39 @@ var UI = (function () {
   };
 
   /* ------------------------------------------------ SHOP */
+  /* one shared tab header, clear of the title */
+  function tabStrip(g, G) {
+    var names = ['GEAR', 'BLADES', 'WARDROBE'];
+    var txt = '';
+    for (var i = 0; i < names.length; i++) txt += (i ? '  ' : '') + names[i];
+    var x = Math.round(VIEW_W / 2 - Text.width(txt, 1) / 2);
+    Text.draw(g, '<', x - 14, 24, '#5d5478', 1);
+    Text.draw(g, '>', x + Text.width(txt, 1) + 8, 24, '#5d5478', 1);
+    var cx2 = x;
+    for (var j = 0; j < names.length; j++) {
+      var on = (G.shopTab || 0) === j;
+      if (on) {
+        g.fillStyle = 'rgba(255,215,94,.14)';
+        g.fillRect(cx2 - 3, 21, Text.width(names[j], 1) + 6, 12);
+      }
+      Text.draw(g, names[j], cx2, 24, on ? '#ffd75e' : '#6d6488', 1);
+      cx2 += Text.width(names[j], 1) + 12;
+    }
+  }
+
+  function wardrobeList() {
+    var out = [{ id: 'none', name: 'No Outfit' }];
+    for (var k in Art.OUTFITS) out.push({ id: k, name: Art.OUTFITS[k].name });
+    return out;
+  }
+
   var shop = {
     update: function (G) {
+      if (G.shopTab === undefined) G.shopTab = 0;
+      if (Input.pressed('right')) { G.shopTab = (G.shopTab + 1) % 3; G.shopSel = 0; Sfx.select(); return; }
+      if (Input.pressed('left')) { G.shopTab = (G.shopTab + 2) % 3; G.shopSel = 0; Sfx.select(); return; }
+      if (G.shopTab === 1) return shop.blades(G);
+      if (G.shopTab === 2) return shop.wardrobe(G);
       var list = Save.SHOP;
       if (Input.pressed('down')) { G.shopSel = (G.shopSel + 1) % list.length; Sfx.select(); }
       if (Input.pressed('up')) { G.shopSel = (G.shopSel + list.length - 1) % list.length; Sfx.select(); }
@@ -184,18 +215,126 @@ var UI = (function () {
       }
       if (Input.pressed('pause') || Input.pressed('attack')) { Sfx.select(); G.go('map'); }
     },
+
+    /* Blades work the same way as outfits: once one is yours you can
+       switch back to it whenever you like. They are not a one-way ladder -
+       a short heavy cleaver stays useful next to a long thin whip. */
+    blades: function (G) {
+      var list = Art.BLADES;
+      if (Input.pressed('down')) { G.shopSel = (G.shopSel + 1) % list.length; Sfx.select(); }
+      if (Input.pressed('up')) { G.shopSel = (G.shopSel + list.length - 1) % list.length; Sfx.select(); }
+      if (Input.pressed('confirm') || Input.pressed('jump')) {
+        var bl = list[G.shopSel];
+        if (Save.ownsBlade(bl.id)) {
+          Save.equipBlade(bl.id);
+          G.shopMsg = 'DRAWING ' + bl.name.toUpperCase();
+          Sfx.confirm();
+        } else {
+          G.shopMsg = 'BUY IT IN GEAR FIRST';
+          Sfx.deny();
+        }
+        G.shopMsgT = 100;
+      }
+      if (Input.pressed('pause') || Input.pressed('attack')) { Sfx.select(); G.go('map'); }
+    },
+
+    drawBlades: function (g, G) {
+      backdrop(g, G.t, ['#1c1a2c', '#2e2a3f']);
+      Text.centerShadow(g, 'BLADES', VIEW_W / 2, 10, '#ffffff', 2);
+      tabStrip(g, G);
+
+      var list = Art.BLADES;
+      var listW = Math.round(VIEW_W * 0.52), detX = listW + 18;
+      panel(g, 10, 38, listW, 142);
+      for (var i = 0; i < list.length; i++) {
+        var bl = list[i], y = 45 + i * 18;
+        var own = Save.ownsBlade(bl.id);
+        var held = Save.bladeId() === bl.id;
+        if (i === G.shopSel) {
+          g.fillStyle = 'rgba(200,220,255,.12)';
+          g.fillRect(12, y - 4, listW - 4, 17);
+          cursor(g, 14, y, G.t);
+        }
+        Text.draw(g, own ? bl.name : '? ? ?', 24, y,
+          own ? (held ? '#bcd6ff' : '#ffffff') : '#5d5478', 1);
+        Text.draw(g, held ? 'DRAWN' : (own ? 'DRAW' : 'LOCKED'), listW - 48, y,
+          held ? '#bcd6ff' : (own ? '#7fe0a0' : '#5d5478'), 1);
+      }
+
+      panel(g, detX, 38, VIEW_W - detX - 10, 142);
+      var sel = list[G.shopSel];
+      var ownSel = Save.ownsBlade(sel.id);
+      Text.draw(g, ownSel ? sel.name.toUpperCase() : 'NOT YOURS YET', detX + 8, 46,
+        ownSel ? '#bcd6ff' : '#7f72a0', 1);
+      /* the blade itself, plus what it trades */
+      Art.drawBlade(g, detX + 16, 68, -0.35, sel.id, 1);
+      Text.draw(g, 'DAMAGE', detX + 8, 78, '#7f72a0', 1);
+      for (var d2 = 0; d2 < sel.dmg; d2++) {
+        g.fillStyle = '#e0424f'; g.fillRect(detX + 56 + d2 * 6, 78, 4, 6);
+        g.fillStyle = '#ff8a92'; g.fillRect(detX + 56 + d2 * 6, 78, 4, 1);
+      }
+      Text.draw(g, 'REACH', detX + 8, 92, '#7f72a0', 1);
+      g.fillStyle = '#8fa0bd';
+      g.fillRect(detX + 56, 93, Math.round(sel.reach * 1.6), 4);
+      g.fillStyle = '#c6d3de'; g.fillRect(detX + 56, 93, Math.round(sel.reach * 1.6), 1);
+      Text.draw(g, 'SPECIAL', detX + 8, 108, '#7f72a0', 1);
+      Text.draw(g, Art.SPECIALS[sel.special].name, detX + 8, 120, '#b9a0ff', 1);
+      var words = Art.SPECIALS[sel.special].desc.split(' '), line = '', ly = 132;
+      for (var wI = 0; wI < words.length; wI++) {
+        var tryLine = line ? line + ' ' + words[wI] : words[wI];
+        if (Text.width(tryLine, 1) > VIEW_W - detX - 26) {
+          Text.draw(g, line, detX + 8, ly, '#8d80ad', 1); ly += 10; line = words[wI];
+        } else line = tryLine;
+      }
+      if (line) Text.draw(g, line, detX + 8, ly, '#8d80ad', 1);
+
+      if (G.shopMsgT > 0) {
+        Text.centerShadow(g, G.shopMsg, VIEW_W / 2, VIEW_H - 26, '#bcd6ff', 1);
+        G.shopMsgT--;
+      }
+      Text.draw(g, 'ENTER DRAW   < > TABS   X BACK', 10, VIEW_H - 12, '#7f72a0', 1);
+    },
+
+    /* Outfits are never locked away once owned - wear, swap or remove
+       any of them here, as often as you like. */
+    wardrobe: function (G) {
+      var list = wardrobeList();
+      if (Input.pressed('down')) { G.shopSel = (G.shopSel + 1) % list.length; Sfx.select(); }
+      if (Input.pressed('up')) { G.shopSel = (G.shopSel + list.length - 1) % list.length; Sfx.select(); }
+      if (Input.pressed('confirm') || Input.pressed('jump')) {
+        var it = list[G.shopSel];
+        if (Save.ownsOutfit(it.id)) {
+          if (Save.worn() === it.id && it.id !== 'none') {
+            Save.wear('none'); G.shopMsg = 'TAKEN OFF';
+          } else {
+            Save.wear(it.id);
+            G.shopMsg = it.id === 'none' ? 'TAKEN OFF' : 'WEARING ' + it.name.toUpperCase();
+          }
+          Sfx.confirm();
+        } else {
+          G.shopMsg = 'LOCKED - FIND IT IN A CHEST';
+          Sfx.deny();
+        }
+        G.shopMsgT = 100;
+      }
+      if (Input.pressed('pause') || Input.pressed('attack')) { Sfx.select(); G.go('map'); }
+    },
+
     draw: function (g, G) {
+      if (G.shopTab === 1) return shop.drawBlades(g, G);
+      if (G.shopTab === 2) return shop.drawWardrobe(g, G);
       backdrop(g, G.t, ['#201428', '#3a1f2f']);
       Text.centerShadow(g, 'THE TRADING POST', VIEW_W / 2, 10, '#ffffff', 2);
+      tabStrip(g, G);
       g.drawImage(Art.COIN, 10, 10);
       Text.draw(g, String(Save.get().coins), 21, 11, '#ffe27a', 1);
 
       var list = Save.SHOP;
       var top = Util.clamp(G.shopSel - 3, 0, Math.max(0, list.length - 7));
       var listW = Math.round(VIEW_W * 0.60), detX = listW + 18;
-      panel(g, 10, 30, listW, 150);
+      panel(g, 10, 38, listW, 142);
       for (var i = 0; i < 7 && top + i < list.length; i++) {
-        var it = list[top + i], y = 37 + i * 19;
+        var it = list[top + i], y = 45 + i * 18;
         var own = Save.owned(it), avail = Save.available(it);
         var col = own ? '#5f7a5f' : (avail && Save.get().coins >= it.cost ? '#ffffff' : '#8d80ad');
         if (top + i === G.shopSel) {
@@ -212,11 +351,11 @@ var UI = (function () {
       }
 
       /* detail card */
-      panel(g, detX, 30, VIEW_W - detX - 10, 150);
+      panel(g, detX, 38, VIEW_W - detX - 10, 142);
       var sel = list[G.shopSel];
       Text.draw(g, sel.kind === 'sword' ? 'BLADE'
         : (sel.kind === 'collar' ? 'COLLAR'
-        : (sel.kind === 'outfit' ? 'OUTFIT' : 'RELIC')), detX + 8, 38, '#7f72a0', 1);
+        : (sel.kind === 'outfit' ? 'OUTFIT' : 'RELIC')), detX + 8, 46, '#7f72a0', 1);
       /* wrap the description */
       var words = sel.desc.split(' '), line = '', ly = 54;
       for (var wI = 0; wI < words.length; wI++) {
@@ -227,7 +366,7 @@ var UI = (function () {
       if (line) Text.draw(g, line, detX + 8, ly, '#d8cff0', 1);
 
       if (sel.kind === 'sword') {
-        Art.drawBlade(g, detX + 26, 152, -0.5, sel.tier, 1);
+        Art.drawBlade(g, detX + 26, 152, -0.5, sel.id, 1);
       } else if (sel.kind === 'collar') {
         for (var h = 0; h < 3 + sel.tier; h++) g.drawImage(Art.HEART_FULL, detX + 8 + h * 11, 146);
       } else if (sel.kind === 'outfit') {
@@ -244,7 +383,56 @@ var UI = (function () {
         Text.centerShadow(g, G.shopMsg, VIEW_W / 2, VIEW_H - 22, '#ffd75e', 1);
         G.shopMsgT--;
       }
-      Text.draw(g, 'ENTER BUY    X BACK', 10, VIEW_H - 12, '#7f72a0', 1);
+      Text.draw(g, 'ENTER BUY    < > TABS    X BACK', 10, VIEW_H - 12, '#7f72a0', 1);
+    },
+
+    drawWardrobe: function (g, G) {
+      backdrop(g, G.t, ['#16202e', '#24303f']);
+      Text.centerShadow(g, 'WARDROBE', VIEW_W / 2, 10, '#ffffff', 2);
+      tabStrip(g, G);
+
+      var list = wardrobeList();
+      var listW = Math.round(VIEW_W * 0.52), detX = listW + 18;
+      var top = Util.clamp(G.shopSel - 3, 0, Math.max(0, list.length - 7));
+      panel(g, 10, 38, listW, 142);
+      for (var i = 0; i < 7 && top + i < list.length; i++) {
+        var it = list[top + i], y = 45 + i * 18;
+        var own = Save.ownsOutfit(it.id);
+        var isWorn = Save.worn() === it.id;
+        if (top + i === G.shopSel) {
+          g.fillStyle = 'rgba(168,255,208,.12)';
+          g.fillRect(12, y - 4, listW - 4, 17);
+          cursor(g, 14, y, G.t);
+        }
+        Text.draw(g, own ? it.name : '? ? ?', 24, y,
+          own ? (isWorn ? '#a8ffd0' : '#ffffff') : '#5d5478', 1);
+        Text.draw(g, isWorn ? 'WORN' : (own ? 'WEAR' : 'LOCKED'), listW - 48, y,
+          isWorn ? '#a8ffd0' : (own ? '#7fe0a0' : '#5d5478'), 1);
+      }
+
+      panel(g, detX, 38, VIEW_W - detX - 10, 142);
+      var sel = list[G.shopSel];
+      var ownSel = Save.ownsOutfit(sel.id);
+      Text.draw(g, ownSel ? sel.name.toUpperCase() : 'NOT FOUND YET', detX + 8, 46,
+        ownSel ? '#a8ffd0' : '#7f72a0', 1);
+      /* him, wearing it */
+      var pvx = detX + Math.round((VIEW_W - detX - 10) / 2) - 22;
+      g.drawImage(Art.dog.right.idle, pvx, 74, 45, 35);
+      if (ownSel && sel.id !== 'none' && Art.OUTFITS[sel.id]) {
+        g.drawImage(Art.OUTFITS[sel.id].right, pvx + 20, 66, 25, 18);
+      }
+      Text.draw(g, ownSel ? 'ENTER TO WEAR' : 'HIDDEN IN A CHEST', detX + 8, 126,
+        '#8d80ad', 1);
+      var found = 0, total = 0;
+      var all = wardrobeList();
+      for (var q = 1; q < all.length; q++) { total++; if (Save.ownsOutfit(all[q].id)) found++; }
+      Text.draw(g, 'FOUND ' + found + ' / ' + total, detX + 8, 140, '#7f72a0', 1);
+
+      if (G.shopMsgT > 0) {
+        Text.centerShadow(g, G.shopMsg, VIEW_W / 2, VIEW_H - 26, '#a8ffd0', 1);
+        G.shopMsgT--;
+      }
+      Text.draw(g, 'ENTER WEAR   < > TABS   X BACK', 10, VIEW_H - 12, '#7f72a0', 1);
     }
   };
 

@@ -231,6 +231,12 @@ World.prototype.puff = function (x, y, color, n) {
   }
 };
 World.prototype.shake = function (n) { this.shakeAmt = Math.max(this.shakeAmt, n); };
+World.prototype.dropOrb = function (x, y) {
+  var o = new Pickup(x - 4, y - 4, 'orb');
+  o.loose = true;
+  o.vx = Util.rand(-0.8, 0.8); o.vy = -2.2;
+  this.pickups.push(o);
+};
 World.prototype.dropCoin = function (x, y) {
   var p = new Pickup(x - 4, y - 4, 'coin');
   p.loose = true;
@@ -256,6 +262,47 @@ World.prototype.breakCrate = function (tx, ty, stone) {
   var n = Util.randInt(2, 4);
   for (var k = 0; k < n; k++) this.dropCoin(cx, cy);
 };
+
+/* Each blade spends a charge differently. */
+World.prototype.fireSpecial = function (p) {
+  var f = p.facing;
+  var cx = p.x + p.w / 2 + f * 8, cy = p.y + 4;
+  var kind = Save.blade().special;
+  var dmg = p.damage();
+  var sh;
+
+  if (kind === 'splinter') {
+    for (var i = -1; i <= 1; i++) {
+      sh = new Shot(cx, cy + 2, f * 3.4, i * 0.8, 'splinter', true);
+      sh.dmg = dmg; sh.life = 60;
+      this.shots.push(sh);
+    }
+  } else if (kind === 'cross') {
+    /* no projectile: the swing itself is wider and lands twice */
+    p.crossHit = true;
+    this.puff(cx, cy + 4, '#eef4fa', 10);
+  } else if (kind === 'quake') {
+    this.shots.push(quake(this, p, -1, dmg));
+    this.shots.push(quake(this, p, 1, dmg));
+    this.shake(7);
+  } else if (kind === 'flame') {
+    sh = new Shot(cx, p.y + p.h - 10, f * 1.9, 0, 'flame', true);
+    sh.dmg = dmg; sh.life = 120;
+    this.shots.push(sh);
+  } else if (kind === 'lash') {
+    p.lashHit = true;
+    this.puff(cx + f * 16, cy + 4, '#e8fff0', 12);
+  } else {                                   /* thunder */
+    sh = new Shot(cx, cy, f * 4.2, 0, 'bolt', true);
+    sh.dmg = dmg + 2; sh.pierce = true; sh.life = 70;
+    this.shots.push(sh);
+  }
+};
+function quake(w, p, dir, dmg) {
+  var sh = new Shot(p.x + (dir > 0 ? p.w : -10), p.y + p.h - 10, dir * 2.2, 0, 'shock', true);
+  sh.dmg = dmg; sh.life = 90;
+  return sh;
+}
 
 World.prototype.onPlayerDead = function () {
   this.state = 'dying'; this.stateTimer = 96;
@@ -377,7 +424,8 @@ World.prototype.update = function () {
         if (e.dead || p.attackHit.indexOf(e) >= 0) continue;
         if (Util.aabb(hb, e)) {
           p.attackHit.push(e);
-          e.hurt(p.damage(), p.facing, this);
+          var mult = p.special && Save.blade().special === 'cross' ? 2 : 1;
+          e.hurt(p.damage() * mult, p.facing, this);
           this.hitStop = 2;
           this.texts.push(new FloatText(e.x + e.w / 2 - 3, e.y - 4, String(p.damage()), '#ffe27a'));
         }
@@ -399,7 +447,7 @@ World.prototype.update = function () {
           var bt = this.tileAt(tx, ty);
           if (bt === T_CRATE) this.breakCrate(tx, ty);
           else if (bt === T_BARRIER) {
-            if (Save.get().sword >= 2) this.breakCrate(tx, ty, true);
+            if (Save.bestDamage() >= 3) this.breakCrate(tx, ty, true);
             else if (!this.barrierHinted) {
               this.barrierHinted = true;
               Sfx.deny();
@@ -444,7 +492,23 @@ World.prototype.update = function () {
   for (i = this.shots.length - 1; i >= 0; i--) {
     var sh = this.shots[i];
     sh.update(this);
-    if (this.state === 'play' && !p.dead && Util.aabb(p, sh)) {
+    if (sh.friendly) {
+      for (var ei = 0; ei < this.enemies.length; ei++) {
+        var en = this.enemies[ei];
+        if (en.dead || sh.hits.indexOf(en) >= 0) continue;
+        if (Util.aabb(sh, en)) {
+          sh.hits.push(en);
+          en.hurt(sh.dmg, sh.vx > 0 ? 1 : -1, this);
+          if (!sh.pierce) sh.dead = true;
+        }
+      }
+      if (this.boss && !this.boss.dead && sh.hits.indexOf(this.boss) < 0 &&
+          Util.aabb(sh, this.boss) && this.boss.hurtLock <= 0) {
+        sh.hits.push(this.boss);
+        this.boss.hurt(sh.dmg, sh.vx > 0 ? 1 : -1, this);
+        if (!sh.pierce) sh.dead = true;
+      }
+    } else if (this.state === 'play' && !p.dead && Util.aabb(p, sh)) {
       p.hurt(this, sh.x + sh.w / 2);
       if (sh.kind !== 'shock') sh.dead = true;
     }
@@ -469,6 +533,11 @@ World.prototype.update = function () {
         var col = pk.grade === 'crown' ? '#ffc8f4' : (pk.grade === 'jewel' ? '#a8ffd0' : '#c8f4ff');
         this.texts.push(new FloatText(pk.x - 4, pk.y - 8, '+' + val, col));
         this.puff(pk.x + 3, pk.y + 3, col, 14);
+      } else if (pk.kind === 'orb') {
+        p.charges = 4;
+        Sfx.buy();
+        this.texts.push(new FloatText(pk.x - 14, pk.y - 8, 'SPECIAL READY', '#b9a0ff'));
+        this.puff(pk.x + 3, pk.y + 3, '#b9a0ff', 16);
       } else if (pk.kind === 'vessel') {
         this.vesselGot++;
         var total = Save.addHeartPiece(this.def.id);
@@ -742,6 +811,22 @@ World.prototype.drawHud = function (g) {
   if (hp4) {
     for (i = 0; i < hp4; i++) g.drawImage(Art.HEART_PIECE, 8 + p.maxHp * 10 + i * 7, 6);
   }
+  /* special gauge, only while it has something in it */
+  if (p.charges > 0) {
+    var bl = Save.blade();
+    g.drawImage(Art.ORB, 6, 28, 7, 7);
+    for (i = 0; i < 4; i++) {
+      var px2 = 16 + i * 6;
+      if (i < p.charges) {
+        g.fillStyle = '#b9a0ff'; g.fillRect(px2, 29, 4, 5);
+        g.fillStyle = '#e8dcff'; g.fillRect(px2, 29, 4, 1);
+      } else {
+        g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(px2, 29, 4, 5);
+      }
+    }
+    Text.shadow(g, Art.SPECIALS[bl.special].name, 44, 29, '#b9a0ff', 1);
+  }
+
   /* running gem total, top left under the hearts */
   g.drawImage(Art.GEMS.jewel, 6, 17);
   Text.shadow(g, String(Save.gemScore()), 16, 18, '#a8ffd0', 1);
@@ -749,22 +834,29 @@ World.prototype.drawHud = function (g) {
   /* coins */
   g.drawImage(Art.COIN, VIEW_W - 52, 5);
   Text.shadow(g, String(Save.get().coins), VIEW_W - 42, 6, '#ffe27a', 1);
-  /* gems found this run, then chests */
-  var gem = Art.GEMS.shard;
+  /* What this stage still owes you: three gems and two chests, filled
+     in as you find them. */
+  var slotY = 18, sx0 = VIEW_W - 96;
   for (i = 0; i < 3; i++) {
-    var gx = VIEW_W - 82 + i * 9;
-    if (i < this.gemsGot) g.drawImage(gem, gx, 17);
-    else {
-      g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(gx + 1, 18, 5, 5);
-      g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(gx + 1, 18, 5, 1);
+    var gx = sx0 + i * 10;
+    if (i < this.gemsGot) {
+      g.drawImage(Art.GEMS.jewel, gx, slotY);
+    } else {
+      g.fillStyle = 'rgba(0,0,0,.50)'; g.fillRect(gx + 1, slotY + 1, 5, 5);
+      g.fillStyle = 'rgba(168,255,208,.35)';
+      g.fillRect(gx + 1, slotY + 1, 5, 1); g.fillRect(gx + 1, slotY + 5, 5, 1);
+      g.fillRect(gx + 1, slotY + 1, 1, 5); g.fillRect(gx + 5, slotY + 1, 1, 5);
     }
   }
   for (i = 0; i < 2; i++) {
-    var kx = VIEW_W - 50 + i * 11;
-    g.save();
-    if (i >= this.chestsGot) g.globalAlpha = 0.30;
-    g.drawImage(Art.CHEST, kx, 15, 10, 9);
-    g.restore();
+    var kx = sx0 + 36 + i * 13;
+    if (i < this.chestsGot) {
+      g.drawImage(Art.CHEST, kx, slotY - 2, 11, 10);
+    } else {
+      g.save(); g.globalAlpha = 0.28;
+      g.drawImage(Art.CHEST, kx, slotY - 2, 11, 10);
+      g.restore();
+    }
   }
 
   /* boss bar */

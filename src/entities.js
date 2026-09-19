@@ -87,6 +87,13 @@ Pickup.prototype.draw = function (g, cam) {
     g.fillRect(sx - 2, sy - 2, img.width + 4, img.height + 4);
     g.restore();
     g.drawImage(img, sx, sy);
+  } else if (this.kind === 'orb') {
+    g.save();
+    g.globalAlpha = 0.25 + 0.2 * Math.sin(this.t * 1.4);
+    g.fillStyle = '#b9a0ff';
+    g.fillRect(sx - 3, sy - 3, this.w + 6, this.h + 6);
+    g.restore();
+    g.drawImage(Art.ORB, sx, sy);
   } else if (this.kind === 'vessel') {
     g.save();
     g.globalAlpha = 0.22 + 0.16 * Math.sin(this.t * 0.9);
@@ -107,6 +114,10 @@ function Chest(x, y) {
   this.open = false;
   this.t = 0;
   this.dead = false;
+  /* Loot is fixed per chest, derived from where it sits, so a stage
+     always rewards the same thing. Some hold nothing but gems. */
+  var h = (Math.floor(x) * 73856093 ^ Math.floor(y) * 19349663) >>> 0;
+  this.loot = ['gems', 'coins', 'gems', 'outfit'][h % 4];
 }
 Chest.prototype.pop = function (w) {
   if (this.open) return;
@@ -115,13 +126,26 @@ Chest.prototype.pop = function (w) {
   w.shake(4);
   w.chestsGot++;
   var cx = this.x + this.w / 2, cy = this.y + 2;
-  for (var i = 0; i < 16; i++) w.dropCoin(cx, cy);
+
+  if (this.loot === 'gems') {
+    /* a hoard of gems rather than coin */
+    var grades = ['crown', 'jewel', 'jewel', 'shard'];
+    for (var gi = 0; gi < grades.length; gi++) {
+      var gem = new Pickup(cx - 4 + (gi - 1.5) * 9, cy - 6, 'gem');
+      gem.grade = grades[gi];
+      gem.loose = true;
+      gem.vx = (gi - 1.5) * 0.7; gem.vy = Util.rand(-3.0, -2.0);
+      w.pickups.push(gem);
+    }
+  } else {
+    for (var i = 0; i < 16; i++) w.dropCoin(cx, cy);
+  }
   for (var j = 0; j < 14; j++) {
     w.parts.push(new Particle(cx, cy, Util.rand(-2, 2), Util.rand(-3.2, -0.6),
       Util.randInt(20, 40), Util.pick(['#e8c45c', '#fff3bc', '#c08a42']), 2));
   }
-  var prize = Save.lockedOutfit();
-  if (prize && Math.random() < 0.6) {
+  var prize = (this.loot === 'outfit') ? Save.lockedOutfit() : null;
+  if (prize) {
     Save.unlockOutfit(prize);
     w.texts.push(new FloatText(this.x - 18, this.y - 16,
       Art.OUTFITS[prize].name.toUpperCase() + '!', '#a8ffd0'));
@@ -148,10 +172,14 @@ Chest.prototype.draw = function (g, cam) {
 };
 
 /* ------------------------------------------------------------------ */
-function Shot(x, y, vx, vy, kind) {
+function Shot(x, y, vx, vy, kind, friendly) {
   this.x = x; this.y = y; this.vx = vx; this.vy = vy; this.kind = kind;
-  this.w = kind === 'shock' ? 10 : 4;
-  this.h = kind === 'shock' ? 10 : 4;
+  this.friendly = !!friendly;
+  this.dmg = 1;
+  this.pierce = false;
+  this.hits = [];
+  this.w = (kind === 'shock' || kind === 'flame') ? 10 : (kind === 'bolt' ? 14 : 4);
+  this.h = (kind === 'shock' || kind === 'flame') ? 10 : (kind === 'bolt' ? 8 : 4);
   this.life = kind === 'shock' ? 150 : 260;
   this.dead = false;
   this.t = 0;
@@ -169,8 +197,10 @@ Shot.prototype.update = function (w) {
       if (this.y > w.pixelH) { this.dead = true; break; }
     }
   } else if (w.solidAt(this.x + this.w / 2, this.y + this.h / 2)) {
-    this.dead = true;
-    w.puff(this.x, this.y, '#c9a2d8', 4);
+    if (!this.pierce) {
+      this.dead = true;
+      w.puff(this.x, this.y, this.friendly ? '#ffd08a' : '#c9a2d8', 4);
+    }
   }
 };
 Shot.prototype.draw = function (g, cam) {
@@ -181,6 +211,18 @@ Shot.prototype.draw = function (g, cam) {
   } else if (this.kind === 'sonic') {
     g.fillStyle = '#c9a2f0';
     g.fillRect(sx, sy + 1, 4, 2); g.fillRect(sx + 1, sy, 2, 4);
+  } else if (this.kind === 'flame') {
+    var fh = 8 + Math.round(Math.sin(this.t * 0.5) * 2);
+    g.fillStyle = 'rgba(255,140,50,.85)'; g.fillRect(sx, sy + 10 - fh, 10, fh);
+    g.fillStyle = '#ffd08a'; g.fillRect(sx + 1, sy + 10 - fh, 8, 2);
+    g.fillStyle = '#fff3bc'; g.fillRect(sx + 3, sy + 10 - fh, 4, 1);
+  } else if (this.kind === 'bolt') {
+    g.fillStyle = 'rgba(180,230,255,.9)'; g.fillRect(sx, sy + 2, 14, 4);
+    g.fillStyle = '#eafdff'; g.fillRect(sx, sy + 3, 14, 1);
+    g.fillStyle = 'rgba(140,200,255,.5)'; g.fillRect(sx - 4, sy + 1, 6, 6);
+  } else if (this.kind === 'splinter') {
+    g.fillStyle = '#c9a273'; g.fillRect(sx, sy + 1, 5, 2);
+    g.fillStyle = '#efe7d2'; g.fillRect(sx + 3, sy + 1, 2, 1);
   } else {
     var h = 6 + Math.round(Math.sin(this.t * 0.4) * 2);
     g.fillStyle = 'rgba(255,190,120,.85)';
@@ -227,6 +269,12 @@ Enemy.prototype.hurt = function (dmg, dir, w) {
     Sfx.kill();
     w.puff(this.x + this.w / 2, this.y + this.h / 2, '#ffd75e', 10);
     w.shake(3);
+    var n = this.type === 'hound' ? 3 : (this.type === 'thorn' ? 3 : 2);
+    for (var ci = 0; ci < n; ci++) w.dropCoin(this.x + this.w / 2, this.y + this.h / 2);
+    /* occasionally an orb, so the special stays a treat */
+    if (Math.random() < 0.12 && w.player.charges <= 0) {
+      w.dropOrb(this.x + this.w / 2, this.y + this.h / 2);
+    }
     var n = this.type === 'hound' ? 3 : (this.type === 'thorn' ? 3 : 2);
     for (var i = 0; i < n; i++) w.dropCoin(this.x + this.w / 2, this.y + this.h / 2);
   } else {
@@ -571,9 +619,11 @@ function Player(x, y) {
   this.runFrame = 0;
   this.landSquash = 0;
   this.lift = 0;
+  this.charges = 0;        /* special uses left, from orbs */
+  this.special = false;    /* is this swing a special? */
 }
-Player.prototype.damage = function () { return 1 + Save.get().sword; };
-Player.prototype.reach = function () { return 13 + Save.get().sword * 2; };
+Player.prototype.damage = function () { return Save.bladeDamage(); };
+Player.prototype.reach = function () { return Save.bladeReach(); };
 
 Player.prototype.hurt = function (w, fromX) {
   if (this.invuln > 0 || this.dead) return;
@@ -653,12 +703,24 @@ Player.prototype.update = function (w) {
     this.lift--;
   } else {
     this.lift = 0;
+  this.charges = 0;        /* special uses left, from orbs */
+  this.special = false;    /* is this swing a special? */
   }
 
   if (Input.pressed('attack') && this.attack <= 0) {
     this.attack = ATTACK_FRAMES;
     this.attackHit = [];
-    Sfx.swing();
+    /* with the gauge charged, every swing is the blade's special until
+       it runs dry */
+    this.special = this.charges > 0;
+    if (this.special) {
+      this.charges--;
+      w.fireSpecial(this);
+      Sfx.bark();
+      w.shake(3);
+    } else {
+      Sfx.swing();
+    }
   }
   if (this.attack > 0) this.attack--;
 
@@ -677,11 +739,11 @@ Player.prototype.update = function (w) {
 /* Active blade rectangle during the middle of a swing, else null. */
 Player.prototype.hitbox = function () {
   if (this.attack > 14 || this.attack < 5) return null;
-  var r = this.reach();
+  var r = this.reach() * (this.special ? 1.6 : 1);
   return {
     x: this.facing > 0 ? this.x + this.w - 3 : this.x - r + 3,
-    y: this.y - 2,
-    w: r, h: 17
+    y: this.y - 2 - (this.special ? 6 : 0),
+    w: r, h: this.special ? 29 : 17
   };
 };
 
@@ -719,7 +781,7 @@ Player.prototype.draw = function (g, cam) {
                 sx + (this.facing > 0 ? 8 : 0), hy);
   }
 
-  Art.drawBlade(g, bx, by, this.bladeAngle(), Save.get().sword, this.facing);
+  Art.drawBlade(g, bx, by, this.bladeAngle(), Save.bladeId(), this.facing);
 
   /* Slash: a crescent that trails the blade through its arc and fades
      out with the swing, rather than a static ring hanging in the air. */
@@ -729,8 +791,11 @@ Player.prototype.draw = function (g, cam) {
     var a0 = this.bladeAngleAt(Math.max(0, prog - 0.34));
     if (a1 - a0 > 0.03) {
       var reach = this.reach();
-      var tier = Save.get().sword;
-      var col = tier >= 3 ? '210,250,255' : (tier >= 2 ? '255,208,138' : '255,255,255');
+      var bl = Save.blade();
+      var col = this.special ? '200,170,255'
+        : (bl.id === 'storm' ? '210,250,255'
+        : (bl.id === 'ember' ? '255,208,138'
+        : (bl.id === 'whip' ? '200,255,215' : '255,255,255')));
       var fade = Util.clamp((this.attack - 2) / 9, 0, 1);
       g.save();
       g.translate(bx, by);

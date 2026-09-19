@@ -415,6 +415,17 @@ var Art = (function () {
   var GEMS = { shard: GEM_SHARD, jewel: GEM_JEWEL, crown: GEM_CROWN };
   var GEM_VALUE = { shard: 1, jewel: 5, crown: 10 };
 
+  /* dropped by the beaten; fills the special gauge */
+  var ORB = S([
+    '..ooo..',
+    '.owwlo.',
+    'owwllko',
+    'owllkko',
+    'olkkkko',
+    '.okkko.',
+    '..ooo..'
+  ], { o: '#2a1f4a', w: '#ffffff', l: '#b9a0ff', k: '#6b3fd6' });
+
   /* a quarter of a heart vessel; four make a new container */
   var HEART_PIECE = S([
     '..oo..',
@@ -533,15 +544,41 @@ var Art = (function () {
   /* ---------------------------------------------------------------
      THE BLADE
   --------------------------------------------------------------- */
+  /* Weapons trade damage against reach, so a later blade is a choice
+     rather than a strict upgrade. Each carries its own special attack,
+     spent from the orb gauge. */
   var BLADES = [
-    { name: 'Chewed Stick', len: 9,  w: 2, blade: '#9a7045', edge: '#c9a273', dark: '#5f4526', hilt: '#4a3520', glow: null },
-    { name: 'Iron Fang',    len: 11, w: 2, blade: '#aeb8c4', edge: '#eef4fa', dark: '#6d7783', hilt: '#5d4728', glow: null },
-    { name: 'Emberblade',   len: 13, w: 3, blade: '#e0732c', edge: '#ffd08a', dark: '#96401a', hilt: '#4c2314', glow: 'rgba(255,140,50,.35)' },
-    { name: 'Stormfang',    len: 15, w: 3, blade: '#7fd7f0', edge: '#eafdff', dark: '#3b8fad', hilt: '#26405a', glow: 'rgba(120,220,255,.38)' }
+    { id: 'stick', name: 'Chewed Stick', dmg: 1, reach: 13, special: 'splinter',
+      len: 9,  w: 2, blade: '#9a7045', edge: '#c9a273', dark: '#5f4526', hilt: '#4a3520', glow: null },
+    { id: 'iron', name: 'Iron Fang', dmg: 2, reach: 15, special: 'cross',
+      len: 11, w: 2, blade: '#aeb8c4', edge: '#eef4fa', dark: '#6d7783', hilt: '#5d4728', glow: null },
+    { id: 'cleaver', name: 'Boar Cleaver', dmg: 4, reach: 11, special: 'quake',
+      len: 9,  w: 4, blade: '#b08050', edge: '#e6c193', dark: '#6b4a28', hilt: '#3a2a18', glow: null },
+    { id: 'ember', name: 'Emberblade', dmg: 3, reach: 17, special: 'flame',
+      len: 13, w: 3, blade: '#e0732c', edge: '#ffd08a', dark: '#96401a', hilt: '#4c2314',
+      glow: 'rgba(255,140,50,.35)' },
+    { id: 'whip', name: 'Whip Fang', dmg: 2, reach: 25, special: 'lash',
+      len: 21, w: 1, blade: '#8fd6a0', edge: '#e8fff0', dark: '#3f7a52', hilt: '#2a4a33',
+      glow: 'rgba(140,240,170,.22)' },
+    { id: 'storm', name: 'Stormfang', dmg: 5, reach: 19, special: 'thunder',
+      len: 15, w: 3, blade: '#7fd7f0', edge: '#eafdff', dark: '#3b8fad', hilt: '#26405a',
+      glow: 'rgba(120,220,255,.38)' }
   ];
+  var BLADE_BY_ID = {};
+  for (var bi = 0; bi < BLADES.length; bi++) BLADE_BY_ID[BLADES[bi].id] = BLADES[bi];
 
-  function drawBlade(g, px2, py2, angle, tier, facing) {
-    var b = BLADES[Util.clamp(tier, 0, BLADES.length - 1)];
+  var SPECIALS = {
+    splinter: { name: 'Splinter Shot', desc: 'Throws a spray of splinters.' },
+    cross:    { name: 'Cross Slash',   desc: 'A wide two-hit arc.' },
+    quake:    { name: 'Quake',         desc: 'Shockwaves both ways along the ground.' },
+    flame:    { name: 'Flame Wave',    desc: 'Rolls a wall of fire forward.' },
+    lash:     { name: 'Long Lash',     desc: 'Strikes clear across the room.' },
+    thunder:  { name: 'Thunder Arc',   desc: 'A bolt that pierces everything.' }
+  };
+
+  function drawBlade(g, px2, py2, angle, which, facing) {
+    var b = (typeof which === 'string') ? (BLADE_BY_ID[which] || BLADES[0])
+                                        : BLADES[Util.clamp(which, 0, BLADES.length - 1)];
     g.save();
     g.translate(px2, py2);
     g.rotate(angle * facing);
@@ -565,13 +602,14 @@ var Art = (function () {
   }
 
   return {
-    LAB: LAB, BONE: BONE, BLADES: BLADES, shade: shade, rim: rim,
+    LAB: LAB, BONE: BONE, BLADES: BLADES, BLADE_BY_ID: BLADE_BY_ID,
+    SPECIALS: SPECIALS, shade: shade, rim: rim,
     dog: null, hound: null,
     GRUB: GRUB, BATLING: [BATLING, BATLING2], THORN: THORN, THORN_L: F(THORN),
     THORNBALL: THORNBALL,
     COIN: COIN, BONE_GOLD: BONE_GOLD, BONE_GREY: BONE_GREY,
     GEMS: GEMS, GEM_VALUE: GEM_VALUE, HEART_PIECE: HEART_PIECE,
-    OUTFITS: OUTFITS,
+    OUTFITS: OUTFITS, ORB: ORB,
     CHEST: CHEST, CHEST_OPEN: CHEST_OPEN,
     HEART_FULL: HEART_FULL, HEART_EMPTY: HEART_EMPTY, MEAT: MEAT,
     buildDog: buildDog, drawBlade: drawBlade
