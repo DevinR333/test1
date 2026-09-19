@@ -1,4 +1,4 @@
-# Black Lab Blade — Android project
+# Buddy Blade — Android project
 
 A ready-to-open Android Studio project. The game is one self-contained
 HTML file in `app/src/main/assets/index.html`, shown in a fullscreen
@@ -24,7 +24,7 @@ The APK embeds a copy of the game. After changing anything in `src/`:
 
 ```sh
 python3 tools/bundle.py
-cp black-lab-blade.html android/app/src/main/assets/index.html
+cp buddy-blade.html android/app/src/main/assets/index.html
 ```
 
 then rebuild in Android Studio.

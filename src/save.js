@@ -1,5 +1,7 @@
 /* Persistence + the shop catalogue. */
 var Save = (function () {
+  /* Storage key kept from the old title on purpose - renaming it would
+     wipe every existing save. */
   var KEY = 'blacklabblade.save.v2';
   var data = null;
 
@@ -14,7 +16,7 @@ var Save = (function () {
       collar: 0,          /* extra hearts */
       relics: {},         /* relic id -> true */
       sound: true,
-      touch: null,        /* null = auto-detect, else forced on/off */
+      touchMode: 'auto',  /* 'auto' fades when idle, 'always' stays put */
       seenIntro: false
     };
   }

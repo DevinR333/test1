@@ -9,6 +9,7 @@ var Game = (function () {
     world: null,
     sel: 0,
     shopSel: 0,
+    pauseSel: 0,
     shopMsg: '', shopMsgT: 0,
     t: 0,
     lastStage: 0,
@@ -21,17 +22,35 @@ var Game = (function () {
     pending: null
   };
 
+  /* The design reference is 400x224. Rather than pinning one axis and
+     letting the other go short, the view is scaled so that reference
+     ALWAYS fits, then whichever axis has room shows more world. A 4:3
+     screen therefore gets the full width plus extra height instead of a
+     cramped, narrow picture, and an ultrawide gets extra width. Pixels
+     stay square in every case, and the picture fills the display. */
+  var BASE_W = 400, BASE_H = 224;
+
   function fitCanvas() {
-    var scale = Math.max(1, Math.min(
-      Math.floor(window.innerWidth / VIEW_W),
-      Math.floor(window.innerHeight / VIEW_H)
-    ));
-    /* allow fractional upscale on small screens so it still fills nicely */
-    if (window.innerWidth < VIEW_W || window.innerHeight < VIEW_H) {
-      scale = Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H);
+    var vw = window.innerWidth, vh = window.innerHeight;
+    if (!vw || !vh) return;
+
+    var scale = Math.min(vw / BASE_W, vh / BASE_H);
+    var w = Math.round(vw / scale / 2) * 2;
+    var h = Math.round(vh / scale / 2) * 2;
+    VIEW_W = Math.max(BASE_W, Math.min(760, w));
+    VIEW_H = Math.max(BASE_H, Math.min(440, h));
+
+    if (cv.width !== VIEW_W || cv.height !== VIEW_H) {
+      cv.width = VIEW_W;
+      cv.height = VIEW_H;
     }
-    cv.style.width = Math.floor(VIEW_W * scale) + 'px';
-    cv.style.height = Math.floor(VIEW_H * scale) + 'px';
+    g = cv.getContext('2d');
+    g.imageSmoothingEnabled = false;
+
+    /* one uniform scale for both axes - never stretched */
+    var s2 = Math.min(vw / VIEW_W, vh / VIEW_H);
+    cv.style.width = Math.round(VIEW_W * s2) + 'px';
+    cv.style.height = Math.round(VIEW_H * s2) + 'px';
   }
 
   G.go = function (state) {
@@ -157,8 +176,7 @@ var Game = (function () {
     Save.load();
     Sfx.setEnabled(Save.get().sound !== false);
     Input.init();
-    var d0 = Save.get();
-    if (d0.touch !== null) Input.setTouchVisible(!!d0.touch);
+    Input.setTouchMode(Save.get().touchMode || 'auto');
     fitCanvas();
     window.addEventListener('resize', fitCanvas);
     /* audio contexts need a gesture before they will make noise */

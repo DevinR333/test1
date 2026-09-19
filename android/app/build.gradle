@@ -1,11 +1,11 @@
 plugins { id 'com.android.application' }
 
 android {
-    namespace 'com.blacklabblade.game'
+    namespace 'com.buddyblade.game'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.blacklabblade.game"
+        applicationId "com.buddyblade.game"
         minSdk 24
         targetSdk 34
         versionCode 1

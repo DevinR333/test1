@@ -23,7 +23,7 @@ for name in order:
     out = out.replace('  <script src="src/%s"></script>\n' % name, '')
 out = out.replace('</body>', '  <script>\n%s\n  </script>\n</body>' % '\n'.join(js))
 
-dest = os.path.join(ROOT, 'black-lab-blade.html')
+dest = os.path.join(ROOT, 'buddy-blade.html')
 open(dest, 'w').write(out)
 print('wrote %s (%.0f KB, %d sources inlined)'
       % (os.path.relpath(dest, ROOT), os.path.getsize(dest) / 1024.0, len(order)))

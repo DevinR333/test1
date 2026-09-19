@@ -14,8 +14,14 @@ html, body {
 
 /* ---- touch controls: invisible until the screen is actually touched,
         so keyboard and gamepad players never see them ---- */
-#touch { position:fixed; inset:0; pointer-events:none; z-index:5; }
+#touch { position:fixed; inset:0; pointer-events:none; z-index:5;
+         transition:opacity .25s ease; }
 #touch.hidden { display:none; }
+/* faded while your thumb is off the glass - still live, so a tap brings
+   it straight back */
+#touch.idle #stick, #touch.idle .acts { opacity:0; }
+#touch.idle .sys { opacity:.30; }
+#stick, .acts, .sys { transition:opacity .25s ease; }
 
 /* the left half is a catch area; the stick springs up wherever you press */
 #stickzone {

@@ -11,7 +11,8 @@ var RUN_SPEED_SWIFT = 2.2;
 var JUMP_IMPULSE = 6.8;      /* tap  -> 34px, about 2.4x the hero */
 var JUMP_LIFT = 0.16;        /* added per frame while held */
 var JUMP_LIFT_FRAMES = 10;   /* hold -> 46px (2.8 tiles), 26f airtime */
-var DBL_JUMP_IMPULSE = 5.6;
+var DBL_JUMP_IMPULSE = 6.2;
+var DBL_LIFT_FRAMES = 6;     /* shorter hold on the air jump, so it snaps */
 var BASE_JUMPS = 2;          /* ground jump + one in mid-air, always */
 var ATTACK_FRAMES = 17;
 
@@ -615,8 +616,11 @@ Player.prototype.update = function (w) {
       Sfx.jump();
       w.puff(this.x + this.w / 2, this.y + this.h, '#e8e0cc', 4);
     } else if (this.jumps > 0) {
-      this.vy = -DBL_JUMP_IMPULSE; this.buffer = 0; this.jumps--;
-      this.lift = JUMP_LIFT_FRAMES;
+      /* Kill any downward speed first. Without this the air jump fights
+         whatever fall was already underway and reads as heavy and vague. */
+      this.vy = -DBL_JUMP_IMPULSE;
+      this.buffer = 0; this.jumps--;
+      this.lift = DBL_LIFT_FRAMES;
       Sfx.dbljump();
       for (var i = 0; i < 6; i++) {
         w.parts.push(new Particle(this.x + this.w / 2, this.y + this.h,

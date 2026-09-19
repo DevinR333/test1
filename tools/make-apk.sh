@@ -15,8 +15,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 BUILD="$ROOT/build-android"
-APPID="com.blacklabblade.game"
-APPNAME="Black Lab Blade"
+APPID="com.buddyblade.game"
+APPNAME="Buddy Blade"
 
 command -v node >/dev/null || { echo "node is required"; exit 1; }
 : "${ANDROID_HOME:=${ANDROID_SDK_ROOT:-}}"
@@ -37,7 +37,7 @@ npx --yes cordova create "$BUILD" "$APPID" "$APPNAME"
 
 echo "==> installing the game as the app payload"
 rm -rf "$BUILD/www"/*
-cp "$ROOT/black-lab-blade.html" "$BUILD/www/index.html"
+cp "$ROOT/buddy-blade.html" "$BUILD/www/index.html"
 
 # Lock to landscape and fullscreen - it is a side-scroller.
 python3 - "$BUILD/config.xml" <<'PY'
@@ -62,10 +62,10 @@ echo "==> building"
 
 APK="$(find "$BUILD/platforms/android" -name '*-debug.apk' | head -1 || true)"
 if [ -n "$APK" ]; then
-  cp "$APK" "$ROOT/black-lab-blade.apk"
+  cp "$APK" "$ROOT/buddy-blade.apk"
   echo
-  echo "APK written to: $ROOT/black-lab-blade.apk"
-  echo "Install it with:  adb install -r black-lab-blade.apk"
+  echo "APK written to: $ROOT/buddy-blade.apk"
+  echo "Install it with:  adb install -r buddy-blade.apk"
   echo "Or copy it to the phone and open it (allow install from unknown sources)."
 else
   echo "Build finished but no APK was found; check the Cordova output above."

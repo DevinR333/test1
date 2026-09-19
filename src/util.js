@@ -1,4 +1,4 @@
-/* Black Lab Blade - small helpers + a pixel-grid sprite baker. */
+/* Buddy Blade - small helpers + a pixel-grid sprite baker. */
 var Util = (function () {
   function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
   function lerp(a, b, t) { return a + (b - a) * t; }

@@ -1,4 +1,8 @@
 /* The playable level: tilemap, collision, camera and HUD. */
+/* VIEW_H is fixed so the vertical framing is identical everywhere.
+   VIEW_W is recomputed from the real screen aspect at boot and on every
+   resize, so the picture fills the display instead of being letterboxed
+   inside black bars. */
 var VIEW_W = 400, VIEW_H = 224;
 var T_EMPTY = 0, T_SOLID = 1, T_PLAT = 2, T_SPIKE = 3, T_HAZ = 4, T_CRATE = 5, T_SPRING = 6;
 /* Looks exactly like solid masonry, but you walk straight through it. */

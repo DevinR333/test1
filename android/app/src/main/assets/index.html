@@ -7,8 +7,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Black Lab Blade">
-<title>Black Lab Blade</title>
+<meta name="apple-mobile-web-app-title" content="Buddy Blade">
+<title>Buddy Blade</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 html, body {
@@ -26,8 +26,14 @@ html, body {
 
 /* ---- touch controls: invisible until the screen is actually touched,
         so keyboard and gamepad players never see them ---- */
-#touch { position:fixed; inset:0; pointer-events:none; z-index:5; }
+#touch { position:fixed; inset:0; pointer-events:none; z-index:5;
+         transition:opacity .25s ease; }
 #touch.hidden { display:none; }
+/* faded while your thumb is off the glass - still live, so a tap brings
+   it straight back */
+#touch.idle #stick, #touch.idle .acts { opacity:0; }
+#touch.idle .sys { opacity:.30; }
+#stick, .acts, .sys { transition:opacity .25s ease; }
 
 /* the left half is a catch area; the stick springs up wherever you press */
 #stickzone {
@@ -91,7 +97,7 @@ html, body {
   </div>
   <script>
 /* ===== util.js ===== */
-/* Black Lab Blade - small helpers + a pixel-grid sprite baker. */
+/* Buddy Blade - small helpers + a pixel-grid sprite baker. */
 var Util = (function () {
   function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
   function lerp(a, b, t) { return a + (b - a) * t; }
@@ -188,8 +194,15 @@ var Input = (function () {
   var host = null, stickEl = null, knobEl = null;
   var stickId = null, originX = 0, originY = 0;
   var RADIUS = 46, DEAD = 0.18;
-  var touchPref = null;           /* null = auto, true/false = forced */
+  /* 'auto'  - the pad shows while you are touching and fades when you let go
+     'always' - the pad stays put
+     There is deliberately no "off": hiding the pad hid the pause button
+     with it, which left no way back in. */
+  var touchMode = 'auto';
   var sawTouch = false;
+  var lastTouch = 0;
+  var IDLE_MS = 1100;
+  var mode = 'keyboard';          /* keyboard | touch | controller */
 
   function set(name, on) {
     if (!name) return;
@@ -200,7 +213,12 @@ var Input = (function () {
   /* ---------------- keyboard ---------------- */
   window.addEventListener('keydown', function (e) {
     var n = MAP[e.code];
-    if (n) { e.preventDefault(); if (!e.repeat) set(n, true); hideTouch(); }
+    if (n) {
+      e.preventDefault();
+      if (!e.repeat) set(n, true);
+      if (mode !== 'controller') mode = 'keyboard';
+      hideTouch();
+    }
   });
   window.addEventListener('keyup', function (e) {
     var n = MAP[e.code];
@@ -210,13 +228,20 @@ var Input = (function () {
 
   /* Any keyboard or pad input puts the touch controls away again. */
   function hideTouch() {
-    if (touchPref === null && sawTouch) { sawTouch = false; apply(); }
+    if (sawTouch) { sawTouch = false; apply(); }
   }
   function apply() {
     if (!host) return;
-    var on = (touchPref === null) ? sawTouch : touchPref;
-    if (on) host.classList.remove('hidden');
-    else host.classList.add('hidden');
+    if (!sawTouch || mode === 'controller') { host.classList.add('hidden'); return; }
+    host.classList.remove('hidden');
+    var idle = (touchMode === 'auto') && (Date.now() - lastTouch > IDLE_MS) && stickId === null;
+    if (idle) host.classList.add('idle');
+    else host.classList.remove('idle');
+  }
+  function touched() {
+    lastTouch = Date.now();
+    if (!sawTouch || mode !== 'touch') { sawTouch = true; mode = 'touch'; }
+    apply();
   }
 
   /* ---------------- touch stick ---------------- */
@@ -239,6 +264,7 @@ var Input = (function () {
   function bindStick(zone) {
     zone.addEventListener('pointerdown', function (e) {
       if (stickId !== null) return;
+      if (e.pointerType === 'touch') touched();
       stickId = e.pointerId;
       originX = e.clientX; originY = e.clientY;
       stickEl.style.left = originX + 'px';
@@ -288,28 +314,34 @@ var Input = (function () {
           set(key, false);
           if (key === 'jump') set('confirm', false);
         };
-        b.addEventListener('pointerdown', press);
+        b.addEventListener('pointerdown', function (e) {
+          if (e.pointerType === 'touch') touched();
+          press(e);
+        });
         b.addEventListener('pointerup', release);
         b.addEventListener('pointercancel', release);
         b.addEventListener('pointerleave', release);
       })(btns[i]);
     }
 
-    /* first real touch anywhere reveals the pad */
-    window.addEventListener('touchstart', function () {
-      if (!sawTouch) { sawTouch = true; apply(); }
-    }, { passive: true });
+    /* any touch reveals the pad; it fades again once you let go */
+    window.addEventListener('touchstart', touched, { passive: true });
+    window.addEventListener('touchmove', touched, { passive: true });
+    window.addEventListener('touchend', function () { lastTouch = Date.now(); }, { passive: true });
+    setInterval(apply, 200);
     apply();
   }
 
   /* ---------------- gamepad ---------------- */
   var padPrev = {};
+  var padName = '';
   function pollPad() {
     if (!navigator.getGamepads) return;
     var pads = navigator.getGamepads();
     var gp = null;
     for (var i = 0; i < pads.length; i++) if (pads[i]) { gp = pads[i]; break; }
-    if (!gp) return;
+    if (!gp) { if (mode === 'controller') { mode = 'keyboard'; padName = ''; } return; }
+    padName = gp.id || 'Controller';
     var active = false;
     var ax = gp.axes && gp.axes.length ? gp.axes[0] : 0;
     if (Math.abs(ax) > 0.25) { stickX = ax; active = true; }
@@ -328,14 +360,27 @@ var Input = (function () {
         if (down) active = true;
       }
     }
-    if (active) hideTouch();
+    if (active) {
+      if (mode !== 'controller') { mode = 'controller'; }
+      hideTouch();
+    }
   }
 
   return {
     init: bindTouch,
     pollPad: pollPad,
-    setTouchVisible: function (on) { touchPref = on; apply(); },
-    touchIsOn: function () { return (touchPref === null) ? sawTouch : touchPref; },
+    /* 'auto' or 'always'; never an off switch, so the pause button
+       can never become unreachable */
+    setTouchMode: function (m) { touchMode = m; lastTouch = Date.now(); apply(); },
+    touchMode: function () { return touchMode; },
+    mode: function () { return mode; },
+    padName: function () { return padName; },
+    /* a short, friendly label for whatever is driving the game */
+    schemeLabel: function () {
+      if (mode === 'controller') return 'CONTROLLER';
+      if (mode === 'touch') return 'TOUCH';
+      return 'KEYBOARD';
+    },
     hasTouch: function () { return ('ontouchstart' in window) || navigator.maxTouchPoints > 0; },
     down: function (n) { return !!held[n]; },
     pressed: function (n) {
@@ -2349,6 +2394,8 @@ var WORLDS = [
 /* ===== save.js ===== */
 /* Persistence + the shop catalogue. */
 var Save = (function () {
+  /* Storage key kept from the old title on purpose - renaming it would
+     wipe every existing save. */
   var KEY = 'blacklabblade.save.v2';
   var data = null;
 
@@ -2363,7 +2410,7 @@ var Save = (function () {
       collar: 0,          /* extra hearts */
       relics: {},         /* relic id -> true */
       sound: true,
-      touch: null,        /* null = auto-detect, else forced on/off */
+      touchMode: 'auto',  /* 'auto' fades when idle, 'always' stays put */
       seenIntro: false
     };
   }
@@ -2485,7 +2532,8 @@ var RUN_SPEED_SWIFT = 2.2;
 var JUMP_IMPULSE = 6.8;      /* tap  -> 34px, about 2.4x the hero */
 var JUMP_LIFT = 0.16;        /* added per frame while held */
 var JUMP_LIFT_FRAMES = 10;   /* hold -> 46px (2.8 tiles), 26f airtime */
-var DBL_JUMP_IMPULSE = 5.6;
+var DBL_JUMP_IMPULSE = 6.2;
+var DBL_LIFT_FRAMES = 6;     /* shorter hold on the air jump, so it snaps */
 var BASE_JUMPS = 2;          /* ground jump + one in mid-air, always */
 var ATTACK_FRAMES = 17;
 
@@ -3089,8 +3137,11 @@ Player.prototype.update = function (w) {
       Sfx.jump();
       w.puff(this.x + this.w / 2, this.y + this.h, '#e8e0cc', 4);
     } else if (this.jumps > 0) {
-      this.vy = -DBL_JUMP_IMPULSE; this.buffer = 0; this.jumps--;
-      this.lift = JUMP_LIFT_FRAMES;
+      /* Kill any downward speed first. Without this the air jump fights
+         whatever fall was already underway and reads as heavy and vague. */
+      this.vy = -DBL_JUMP_IMPULSE;
+      this.buffer = 0; this.jumps--;
+      this.lift = DBL_LIFT_FRAMES;
       Sfx.dbljump();
       for (var i = 0; i < 6; i++) {
         w.parts.push(new Particle(this.x + this.w / 2, this.y + this.h,
@@ -3196,6 +3247,10 @@ Player.prototype.draw = function (g, cam) {
 
 /* ===== world.js ===== */
 /* The playable level: tilemap, collision, camera and HUD. */
+/* VIEW_H is fixed so the vertical framing is identical everywhere.
+   VIEW_W is recomputed from the real screen aspect at boot and on every
+   resize, so the picture fills the display instead of being letterboxed
+   inside black bars. */
 var VIEW_W = 400, VIEW_H = 224;
 var T_EMPTY = 0, T_SOLID = 1, T_PLAT = 2, T_SPIKE = 3, T_HAZ = 4, T_CRATE = 5, T_SPRING = 6;
 /* Looks exactly like solid masonry, but you walk straight through it. */
@@ -3966,7 +4021,7 @@ var UI = (function () {
         g.fillRect(x, VIEW_H - h, 1, h);
       }
       var cx = VIEW_W / 2;
-      Text.centerShadow(g, 'BLACK LAB', cx, 34, '#ffffff', 3);
+      Text.centerShadow(g, 'BUDDY', cx, 34, '#ffffff', 3);
       Text.centerShadow(g, 'BLADE', cx, 62, '#ffd75e', 3);
       Text.centerShadow(g, 'A GOOD BOY WITH A VERY SHARP STICK', cx, 90, '#b8a8d8', 1);
 
@@ -3989,7 +4044,8 @@ var UI = (function () {
   /* ------------------------------------------------ WORLD MAP */
   function nodePos(i) {
     var w = Math.floor(i / 4), s = i % 4;
-    return { x: 52 + s * 78, y: 62 + w * 44 };
+    var step = Math.floor((VIEW_W - 104) / 3);
+    return { x: 52 + s * step, y: 62 + w * 44 };
   }
   var map = {
     update: function (G) {
@@ -4095,40 +4151,41 @@ var UI = (function () {
 
       var list = Save.SHOP;
       var top = Util.clamp(G.shopSel - 3, 0, Math.max(0, list.length - 7));
-      panel(g, 10, 30, 244, 150);
+      var listW = Math.round(VIEW_W * 0.60), detX = listW + 18;
+      panel(g, 10, 30, listW, 150);
       for (var i = 0; i < 7 && top + i < list.length; i++) {
         var it = list[top + i], y = 37 + i * 19;
         var own = Save.owned(it), avail = Save.available(it);
         var col = own ? '#5f7a5f' : (avail && Save.get().coins >= it.cost ? '#ffffff' : '#8d80ad');
         if (top + i === G.shopSel) {
           g.fillStyle = 'rgba(255,215,94,.14)';
-          g.fillRect(12, y - 4, 240, 17);
+          g.fillRect(12, y - 4, listW - 4, 17);
           cursor(g, 14, y, G.t);
         }
         Text.draw(g, it.name, 24, y, col, 1);
-        Text.draw(g, own ? 'OWNED' : String(it.cost), 202, y, own ? '#7fe0a0' : '#ffd75e', 1);
+        Text.draw(g, own ? 'OWNED' : String(it.cost), listW - 46, y, own ? '#7fe0a0' : '#ffd75e', 1);
       }
 
       /* detail card */
-      panel(g, 262, 30, 128, 150);
+      panel(g, detX, 30, VIEW_W - detX - 10, 150);
       var sel = list[G.shopSel];
       Text.draw(g, sel.kind === 'sword' ? 'BLADE' : (sel.kind === 'collar' ? 'COLLAR' : 'RELIC'),
-        270, 38, '#7f72a0', 1);
+        detX + 8, 38, '#7f72a0', 1);
       /* wrap the description */
       var words = sel.desc.split(' '), line = '', ly = 54;
       for (var wI = 0; wI < words.length; wI++) {
         var tryLine = line ? line + ' ' + words[wI] : words[wI];
-        if (Text.width(tryLine, 1) > 112) { Text.draw(g, line, 270, ly, '#d8cff0', 1); ly += 11; line = words[wI]; }
+        if (Text.width(tryLine, 1) > VIEW_W - detX - 26) { Text.draw(g, line, detX + 8, ly, '#d8cff0', 1); ly += 11; line = words[wI]; }
         else line = tryLine;
       }
-      if (line) Text.draw(g, line, 270, ly, '#d8cff0', 1);
+      if (line) Text.draw(g, line, detX + 8, ly, '#d8cff0', 1);
 
       if (sel.kind === 'sword') {
-        Art.drawBlade(g, 288, 152, -0.5, sel.tier, 1);
+        Art.drawBlade(g, detX + 26, 152, -0.5, sel.tier, 1);
       } else if (sel.kind === 'collar') {
-        for (var h = 0; h < 3 + sel.tier; h++) g.drawImage(Art.HEART_FULL, 270 + h * 11, 146);
+        for (var h = 0; h < 3 + sel.tier; h++) g.drawImage(Art.HEART_FULL, detX + 8 + h * 11, 146);
       } else {
-        g.drawImage(Art.BONE_GOLD, 282, 148);
+        g.drawImage(Art.BONE_GOLD, detX + 20, 148);
       }
 
       if (G.shopMsgT > 0) {
@@ -4140,29 +4197,83 @@ var UI = (function () {
   };
 
   /* ------------------------------------------------ PAUSE */
+  function pauseItems() {
+    var items = [
+      { k: 'resume', label: 'RESUME' },
+      { k: 'restart', label: 'RESTART STAGE' },
+      { k: 'sound', label: 'SOUND',
+        value: function () { return Sfx.isEnabled() ? 'ON' : 'OFF'; } }
+    ];
+    /* only worth offering once the screen has actually been touched */
+    if (Input.mode() === 'touch') {
+      items.push({ k: 'touch', label: 'TOUCH PAD',
+        value: function () { return Input.touchMode() === 'always' ? 'ALWAYS ON' : 'AUTO HIDE'; } });
+    }
+    items.push({ k: 'quit', label: 'QUIT TO MAP' });
+    return items;
+  }
+
   var pause = {
     update: function (G) {
+      var items = pauseItems();
+      if (G.pauseSel >= items.length) G.pauseSel = 0;
+
+      if (Input.pressed('down')) { G.pauseSel = (G.pauseSel + 1) % items.length; Sfx.select(); }
+      if (Input.pressed('up')) { G.pauseSel = (G.pauseSel + items.length - 1) % items.length; Sfx.select(); }
+
+      var it = items[G.pauseSel];
+      var nudge = Input.pressed('left') ? -1 : (Input.pressed('right') ? 1 : 0);
+      if (nudge && it.value) {
+        if (it.k === 'sound') {
+          var d = Save.get();
+          d.sound = !Sfx.isEnabled();
+          Sfx.setEnabled(d.sound);
+          Save.flush();
+          if (d.sound && G.world) Sfx.playSong(G.world.def.boss ? 'boss' : G.world.theme);
+        } else if (it.k === 'touch') {
+          var d2 = Save.get();
+          d2.touchMode = (Input.touchMode() === 'always') ? 'auto' : 'always';
+          Input.setTouchMode(d2.touchMode);
+          Save.flush();
+        }
+        Sfx.select();
+      }
+
+      if (Input.pressed('confirm') || Input.pressed('jump')) {
+        if (it.k === 'resume') { Sfx.select(); G.state = 'play'; }
+        else if (it.k === 'restart') { Sfx.confirm(); G.startStage(G.world.index); }
+        else if (it.k === 'quit') { Sfx.select(); G.go('map'); }
+        else Sfx.select();
+      }
       if (Input.pressed('pause')) { Sfx.select(); G.state = 'play'; }
       if (Input.pressed('restart')) { Sfx.confirm(); G.startStage(G.world.index); }
-      if (Input.pressed('confirm')) { Sfx.select(); G.go('map'); }
-      if (Input.pressed('down') || Input.pressed('up')) {
-        var d = Save.get();
-        d.touch = !Input.touchIsOn();
-        Input.setTouchVisible(d.touch);
-        Save.flush(); Sfx.select();
-      }
     },
     draw: function (g, G) {
       G.world.draw(g);
-      dim(g, 0.68);
-      panel(g, VIEW_W / 2 - 96, 58, 192, 108);
-      Text.centerShadow(g, 'PAUSED', VIEW_W / 2, 72, '#ffffff', 2);
-      Text.center(g, 'ESC   RESUME', VIEW_W / 2, 98, '#d8cff0', 1);
-      Text.center(g, 'R     RESTART STAGE', VIEW_W / 2, 112, '#d8cff0', 1);
-      Text.center(g, 'ENTER QUIT TO MAP', VIEW_W / 2, 126, '#d8cff0', 1);
-      var tOn = Input.touchIsOn();
-      Text.center(g, Sfx.isEnabled() ? 'M  SOUND ON' : 'M  SOUND OFF', VIEW_W / 2, 140, '#8d80ad', 1);
-      Text.center(g, tOn ? '^v TOUCH PAD ON' : '^v TOUCH PAD OFF', VIEW_W / 2, 152, '#8d80ad', 1);
+      dim(g, 0.72);
+      var items = pauseItems();
+      var w = 214, h = 48 + items.length * 18;
+      var x = Math.round(VIEW_W / 2 - w / 2), y = Math.round(VIEW_H / 2 - h / 2);
+      panel(g, x, y, w, h);
+      Text.centerShadow(g, 'PAUSED', VIEW_W / 2, y + 10, '#ffffff', 2);
+
+      for (var i = 0; i < items.length; i++) {
+        var iy = y + 32 + i * 18;
+        var on = i === G.pauseSel;
+        if (on) {
+          g.fillStyle = 'rgba(255,215,94,.12)';
+          g.fillRect(x + 6, iy - 5, w - 12, 16);
+          cursor(g, x + 10, iy - 1, G.t);
+        }
+        Text.draw(g, items[i].label, x + 24, iy, on ? '#ffffff' : '#9d92b8', 1);
+        if (items[i].value) {
+          var v = items[i].value();
+          Text.draw(g, '<', x + w - 86, iy, on ? '#ffd75e' : '#5d5478', 1);
+          Text.draw(g, v, x + w - 76, iy, on ? '#ffd75e' : '#7f72a0', 1);
+          Text.draw(g, '>', x + w - 14, iy, on ? '#ffd75e' : '#5d5478', 1);
+        }
+      }
+      Text.center(g, 'INPUT: ' + Input.schemeLabel(), VIEW_W / 2, y + h - 12, '#6d6488', 1);
     }
   };
 
@@ -4256,6 +4367,7 @@ var Game = (function () {
     world: null,
     sel: 0,
     shopSel: 0,
+    pauseSel: 0,
     shopMsg: '', shopMsgT: 0,
     t: 0,
     lastStage: 0,
@@ -4268,17 +4380,35 @@ var Game = (function () {
     pending: null
   };
 
+  /* The design reference is 400x224. Rather than pinning one axis and
+     letting the other go short, the view is scaled so that reference
+     ALWAYS fits, then whichever axis has room shows more world. A 4:3
+     screen therefore gets the full width plus extra height instead of a
+     cramped, narrow picture, and an ultrawide gets extra width. Pixels
+     stay square in every case, and the picture fills the display. */
+  var BASE_W = 400, BASE_H = 224;
+
   function fitCanvas() {
-    var scale = Math.max(1, Math.min(
-      Math.floor(window.innerWidth / VIEW_W),
-      Math.floor(window.innerHeight / VIEW_H)
-    ));
-    /* allow fractional upscale on small screens so it still fills nicely */
-    if (window.innerWidth < VIEW_W || window.innerHeight < VIEW_H) {
-      scale = Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H);
+    var vw = window.innerWidth, vh = window.innerHeight;
+    if (!vw || !vh) return;
+
+    var scale = Math.min(vw / BASE_W, vh / BASE_H);
+    var w = Math.round(vw / scale / 2) * 2;
+    var h = Math.round(vh / scale / 2) * 2;
+    VIEW_W = Math.max(BASE_W, Math.min(760, w));
+    VIEW_H = Math.max(BASE_H, Math.min(440, h));
+
+    if (cv.width !== VIEW_W || cv.height !== VIEW_H) {
+      cv.width = VIEW_W;
+      cv.height = VIEW_H;
     }
-    cv.style.width = Math.floor(VIEW_W * scale) + 'px';
-    cv.style.height = Math.floor(VIEW_H * scale) + 'px';
+    g = cv.getContext('2d');
+    g.imageSmoothingEnabled = false;
+
+    /* one uniform scale for both axes - never stretched */
+    var s2 = Math.min(vw / VIEW_W, vh / VIEW_H);
+    cv.style.width = Math.round(VIEW_W * s2) + 'px';
+    cv.style.height = Math.round(VIEW_H * s2) + 'px';
   }
 
   G.go = function (state) {
@@ -4404,8 +4534,7 @@ var Game = (function () {
     Save.load();
     Sfx.setEnabled(Save.get().sound !== false);
     Input.init();
-    var d0 = Save.get();
-    if (d0.touch !== null) Input.setTouchVisible(!!d0.touch);
+    Input.setTouchMode(Save.get().touchMode || 'auto');
     fitCanvas();
     window.addEventListener('resize', fitCanvas);
     /* audio contexts need a gesture before they will make noise */

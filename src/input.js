@@ -18,8 +18,15 @@ var Input = (function () {
   var host = null, stickEl = null, knobEl = null;
   var stickId = null, originX = 0, originY = 0;
   var RADIUS = 46, DEAD = 0.18;
-  var touchPref = null;           /* null = auto, true/false = forced */
+  /* 'auto'  - the pad shows while you are touching and fades when you let go
+     'always' - the pad stays put
+     There is deliberately no "off": hiding the pad hid the pause button
+     with it, which left no way back in. */
+  var touchMode = 'auto';
   var sawTouch = false;
+  var lastTouch = 0;
+  var IDLE_MS = 1100;
+  var mode = 'keyboard';          /* keyboard | touch | controller */
 
   function set(name, on) {
     if (!name) return;
@@ -30,7 +37,12 @@ var Input = (function () {
   /* ---------------- keyboard ---------------- */
   window.addEventListener('keydown', function (e) {
     var n = MAP[e.code];
-    if (n) { e.preventDefault(); if (!e.repeat) set(n, true); hideTouch(); }
+    if (n) {
+      e.preventDefault();
+      if (!e.repeat) set(n, true);
+      if (mode !== 'controller') mode = 'keyboard';
+      hideTouch();
+    }
   });
   window.addEventListener('keyup', function (e) {
     var n = MAP[e.code];
@@ -40,13 +52,20 @@ var Input = (function () {
 
   /* Any keyboard or pad input puts the touch controls away again. */
   function hideTouch() {
-    if (touchPref === null && sawTouch) { sawTouch = false; apply(); }
+    if (sawTouch) { sawTouch = false; apply(); }
   }
   function apply() {
     if (!host) return;
-    var on = (touchPref === null) ? sawTouch : touchPref;
-    if (on) host.classList.remove('hidden');
-    else host.classList.add('hidden');
+    if (!sawTouch || mode === 'controller') { host.classList.add('hidden'); return; }
+    host.classList.remove('hidden');
+    var idle = (touchMode === 'auto') && (Date.now() - lastTouch > IDLE_MS) && stickId === null;
+    if (idle) host.classList.add('idle');
+    else host.classList.remove('idle');
+  }
+  function touched() {
+    lastTouch = Date.now();
+    if (!sawTouch || mode !== 'touch') { sawTouch = true; mode = 'touch'; }
+    apply();
   }
 
   /* ---------------- touch stick ---------------- */
@@ -69,6 +88,7 @@ var Input = (function () {
   function bindStick(zone) {
     zone.addEventListener('pointerdown', function (e) {
       if (stickId !== null) return;
+      if (e.pointerType === 'touch') touched();
       stickId = e.pointerId;
       originX = e.clientX; originY = e.clientY;
       stickEl.style.left = originX + 'px';
@@ -118,28 +138,34 @@ var Input = (function () {
           set(key, false);
           if (key === 'jump') set('confirm', false);
         };
-        b.addEventListener('pointerdown', press);
+        b.addEventListener('pointerdown', function (e) {
+          if (e.pointerType === 'touch') touched();
+          press(e);
+        });
         b.addEventListener('pointerup', release);
         b.addEventListener('pointercancel', release);
         b.addEventListener('pointerleave', release);
       })(btns[i]);
     }
 
-    /* first real touch anywhere reveals the pad */
-    window.addEventListener('touchstart', function () {
-      if (!sawTouch) { sawTouch = true; apply(); }
-    }, { passive: true });
+    /* any touch reveals the pad; it fades again once you let go */
+    window.addEventListener('touchstart', touched, { passive: true });
+    window.addEventListener('touchmove', touched, { passive: true });
+    window.addEventListener('touchend', function () { lastTouch = Date.now(); }, { passive: true });
+    setInterval(apply, 200);
     apply();
   }
 
   /* ---------------- gamepad ---------------- */
   var padPrev = {};
+  var padName = '';
   function pollPad() {
     if (!navigator.getGamepads) return;
     var pads = navigator.getGamepads();
     var gp = null;
     for (var i = 0; i < pads.length; i++) if (pads[i]) { gp = pads[i]; break; }
-    if (!gp) return;
+    if (!gp) { if (mode === 'controller') { mode = 'keyboard'; padName = ''; } return; }
+    padName = gp.id || 'Controller';
     var active = false;
     var ax = gp.axes && gp.axes.length ? gp.axes[0] : 0;
     if (Math.abs(ax) > 0.25) { stickX = ax; active = true; }
@@ -158,14 +184,27 @@ var Input = (function () {
         if (down) active = true;
       }
     }
-    if (active) hideTouch();
+    if (active) {
+      if (mode !== 'controller') { mode = 'controller'; }
+      hideTouch();
+    }
   }
 
   return {
     init: bindTouch,
     pollPad: pollPad,
-    setTouchVisible: function (on) { touchPref = on; apply(); },
-    touchIsOn: function () { return (touchPref === null) ? sawTouch : touchPref; },
+    /* 'auto' or 'always'; never an off switch, so the pause button
+       can never become unreachable */
+    setTouchMode: function (m) { touchMode = m; lastTouch = Date.now(); apply(); },
+    touchMode: function () { return touchMode; },
+    mode: function () { return mode; },
+    padName: function () { return padName; },
+    /* a short, friendly label for whatever is driving the game */
+    schemeLabel: function () {
+      if (mode === 'controller') return 'CONTROLLER';
+      if (mode === 'touch') return 'TOUCH';
+      return 'KEYBOARD';
+    },
     hasTouch: function () { return ('ontouchstart' in window) || navigator.maxTouchPoints > 0; },
     down: function (n) { return !!held[n]; },
     pressed: function (n) {

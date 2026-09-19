@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Builds Black Lab Blade into an Android APK.
+# Builds Buddy Blade into an Android APK.
 #
-# SELF-CONTAINED: put this script next to black-lab-blade.html and run it.
+# SELF-CONTAINED: put this script next to buddy-blade.html and run it.
 # You do NOT need the git repo.
 #
 #   bash build-apk-standalone.sh
-#   bash build-apk-standalone.sh /path/to/black-lab-blade.html
+#   bash build-apk-standalone.sh /path/to/buddy-blade.html
 #
 # Requires: Node 18+, a JDK (17 or 21), and the Android SDK.
 # Installing Android Studio gives you all three.
@@ -19,14 +19,14 @@ die()  { printf '\n\033[31mERROR: %s\033[0m\n\n' "$*" >&2; exit 1; }
 HTML="${1:-}"
 if [ -z "$HTML" ]; then
   HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  for guess in "$HERE/black-lab-blade.html" "$PWD/black-lab-blade.html" \
-               "$HOME/Downloads/black-lab-blade.html" "$HOME/Desktop/black-lab-blade.html"; do
+  for guess in "$HERE/buddy-blade.html" "$PWD/buddy-blade.html" \
+               "$HOME/Downloads/buddy-blade.html" "$HOME/Desktop/buddy-blade.html"; do
     [ -f "$guess" ] && HTML="$guess" && break
   done
 fi
-[ -n "$HTML" ] && [ -f "$HTML" ] || die "Can't find black-lab-blade.html.
+[ -n "$HTML" ] && [ -f "$HTML" ] || die "Can't find buddy-blade.html.
 Put this script in the same folder as the game, or pass the path:
-    bash $(basename "$0") ~/Downloads/black-lab-blade.html"
+    bash $(basename "$0") ~/Downloads/buddy-blade.html"
 HTML="$(cd "$(dirname "$HTML")" && pwd)/$(basename "$HTML")"
 OUTDIR="$(dirname "$HTML")"
 say "game file: $HTML"
@@ -55,7 +55,7 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 say "creating the Android project (first run downloads Cordova, ~1 min)"
-npx --yes cordova@12 create "$WORK/app" com.blacklabblade.game "Black Lab Blade" >/dev/null
+npx --yes cordova@12 create "$WORK/app" com.buddyblade.game "Buddy Blade" >/dev/null
 
 rm -rf "$WORK/app/www"/*
 cp "$HTML" "$WORK/app/www/index.html"
@@ -81,10 +81,10 @@ say "building the APK"
 APK="$(find "$WORK/app/platforms/android" -name '*.apk' | head -1 || true)"
 [ -n "$APK" ] || die "Build finished but produced no APK. Scroll up for the Gradle error."
 
-cp "$APK" "$OUTDIR/black-lab-blade.apk"
+cp "$APK" "$OUTDIR/buddy-blade.apk"
 say "done"
-printf '\nAPK: %s\n\n' "$OUTDIR/black-lab-blade.apk"
+printf '\nAPK: %s\n\n' "$OUTDIR/buddy-blade.apk"
 echo "Install it one of these ways:"
-echo "  1. Plug the phone in with USB debugging on:  adb install -r \"$OUTDIR/black-lab-blade.apk\""
+echo "  1. Plug the phone in with USB debugging on:  adb install -r \"$OUTDIR/buddy-blade.apk\""
 echo "  2. Copy the .apk to the phone and tap it (allow installs from unknown sources)."
 echo

@@ -57,7 +57,7 @@ var UI = (function () {
         g.fillRect(x, VIEW_H - h, 1, h);
       }
       var cx = VIEW_W / 2;
-      Text.centerShadow(g, 'BLACK LAB', cx, 34, '#ffffff', 3);
+      Text.centerShadow(g, 'BUDDY', cx, 34, '#ffffff', 3);
       Text.centerShadow(g, 'BLADE', cx, 62, '#ffd75e', 3);
       Text.centerShadow(g, 'A GOOD BOY WITH A VERY SHARP STICK', cx, 90, '#b8a8d8', 1);
 
@@ -80,7 +80,8 @@ var UI = (function () {
   /* ------------------------------------------------ WORLD MAP */
   function nodePos(i) {
     var w = Math.floor(i / 4), s = i % 4;
-    return { x: 52 + s * 78, y: 62 + w * 44 };
+    var step = Math.floor((VIEW_W - 104) / 3);
+    return { x: 52 + s * step, y: 62 + w * 44 };
   }
   var map = {
     update: function (G) {
@@ -186,40 +187,41 @@ var UI = (function () {
 
       var list = Save.SHOP;
       var top = Util.clamp(G.shopSel - 3, 0, Math.max(0, list.length - 7));
-      panel(g, 10, 30, 244, 150);
+      var listW = Math.round(VIEW_W * 0.60), detX = listW + 18;
+      panel(g, 10, 30, listW, 150);
       for (var i = 0; i < 7 && top + i < list.length; i++) {
         var it = list[top + i], y = 37 + i * 19;
         var own = Save.owned(it), avail = Save.available(it);
         var col = own ? '#5f7a5f' : (avail && Save.get().coins >= it.cost ? '#ffffff' : '#8d80ad');
         if (top + i === G.shopSel) {
           g.fillStyle = 'rgba(255,215,94,.14)';
-          g.fillRect(12, y - 4, 240, 17);
+          g.fillRect(12, y - 4, listW - 4, 17);
           cursor(g, 14, y, G.t);
         }
         Text.draw(g, it.name, 24, y, col, 1);
-        Text.draw(g, own ? 'OWNED' : String(it.cost), 202, y, own ? '#7fe0a0' : '#ffd75e', 1);
+        Text.draw(g, own ? 'OWNED' : String(it.cost), listW - 46, y, own ? '#7fe0a0' : '#ffd75e', 1);
       }
 
       /* detail card */
-      panel(g, 262, 30, 128, 150);
+      panel(g, detX, 30, VIEW_W - detX - 10, 150);
       var sel = list[G.shopSel];
       Text.draw(g, sel.kind === 'sword' ? 'BLADE' : (sel.kind === 'collar' ? 'COLLAR' : 'RELIC'),
-        270, 38, '#7f72a0', 1);
+        detX + 8, 38, '#7f72a0', 1);
       /* wrap the description */
       var words = sel.desc.split(' '), line = '', ly = 54;
       for (var wI = 0; wI < words.length; wI++) {
         var tryLine = line ? line + ' ' + words[wI] : words[wI];
-        if (Text.width(tryLine, 1) > 112) { Text.draw(g, line, 270, ly, '#d8cff0', 1); ly += 11; line = words[wI]; }
+        if (Text.width(tryLine, 1) > VIEW_W - detX - 26) { Text.draw(g, line, detX + 8, ly, '#d8cff0', 1); ly += 11; line = words[wI]; }
         else line = tryLine;
       }
-      if (line) Text.draw(g, line, 270, ly, '#d8cff0', 1);
+      if (line) Text.draw(g, line, detX + 8, ly, '#d8cff0', 1);
 
       if (sel.kind === 'sword') {
-        Art.drawBlade(g, 288, 152, -0.5, sel.tier, 1);
+        Art.drawBlade(g, detX + 26, 152, -0.5, sel.tier, 1);
       } else if (sel.kind === 'collar') {
-        for (var h = 0; h < 3 + sel.tier; h++) g.drawImage(Art.HEART_FULL, 270 + h * 11, 146);
+        for (var h = 0; h < 3 + sel.tier; h++) g.drawImage(Art.HEART_FULL, detX + 8 + h * 11, 146);
       } else {
-        g.drawImage(Art.BONE_GOLD, 282, 148);
+        g.drawImage(Art.BONE_GOLD, detX + 20, 148);
       }
 
       if (G.shopMsgT > 0) {
@@ -231,29 +233,83 @@ var UI = (function () {
   };
 
   /* ------------------------------------------------ PAUSE */
+  function pauseItems() {
+    var items = [
+      { k: 'resume', label: 'RESUME' },
+      { k: 'restart', label: 'RESTART STAGE' },
+      { k: 'sound', label: 'SOUND',
+        value: function () { return Sfx.isEnabled() ? 'ON' : 'OFF'; } }
+    ];
+    /* only worth offering once the screen has actually been touched */
+    if (Input.mode() === 'touch') {
+      items.push({ k: 'touch', label: 'TOUCH PAD',
+        value: function () { return Input.touchMode() === 'always' ? 'ALWAYS ON' : 'AUTO HIDE'; } });
+    }
+    items.push({ k: 'quit', label: 'QUIT TO MAP' });
+    return items;
+  }
+
   var pause = {
     update: function (G) {
+      var items = pauseItems();
+      if (G.pauseSel >= items.length) G.pauseSel = 0;
+
+      if (Input.pressed('down')) { G.pauseSel = (G.pauseSel + 1) % items.length; Sfx.select(); }
+      if (Input.pressed('up')) { G.pauseSel = (G.pauseSel + items.length - 1) % items.length; Sfx.select(); }
+
+      var it = items[G.pauseSel];
+      var nudge = Input.pressed('left') ? -1 : (Input.pressed('right') ? 1 : 0);
+      if (nudge && it.value) {
+        if (it.k === 'sound') {
+          var d = Save.get();
+          d.sound = !Sfx.isEnabled();
+          Sfx.setEnabled(d.sound);
+          Save.flush();
+          if (d.sound && G.world) Sfx.playSong(G.world.def.boss ? 'boss' : G.world.theme);
+        } else if (it.k === 'touch') {
+          var d2 = Save.get();
+          d2.touchMode = (Input.touchMode() === 'always') ? 'auto' : 'always';
+          Input.setTouchMode(d2.touchMode);
+          Save.flush();
+        }
+        Sfx.select();
+      }
+
+      if (Input.pressed('confirm') || Input.pressed('jump')) {
+        if (it.k === 'resume') { Sfx.select(); G.state = 'play'; }
+        else if (it.k === 'restart') { Sfx.confirm(); G.startStage(G.world.index); }
+        else if (it.k === 'quit') { Sfx.select(); G.go('map'); }
+        else Sfx.select();
+      }
       if (Input.pressed('pause')) { Sfx.select(); G.state = 'play'; }
       if (Input.pressed('restart')) { Sfx.confirm(); G.startStage(G.world.index); }
-      if (Input.pressed('confirm')) { Sfx.select(); G.go('map'); }
-      if (Input.pressed('down') || Input.pressed('up')) {
-        var d = Save.get();
-        d.touch = !Input.touchIsOn();
-        Input.setTouchVisible(d.touch);
-        Save.flush(); Sfx.select();
-      }
     },
     draw: function (g, G) {
       G.world.draw(g);
-      dim(g, 0.68);
-      panel(g, VIEW_W / 2 - 96, 58, 192, 108);
-      Text.centerShadow(g, 'PAUSED', VIEW_W / 2, 72, '#ffffff', 2);
-      Text.center(g, 'ESC   RESUME', VIEW_W / 2, 98, '#d8cff0', 1);
-      Text.center(g, 'R     RESTART STAGE', VIEW_W / 2, 112, '#d8cff0', 1);
-      Text.center(g, 'ENTER QUIT TO MAP', VIEW_W / 2, 126, '#d8cff0', 1);
-      var tOn = Input.touchIsOn();
-      Text.center(g, Sfx.isEnabled() ? 'M  SOUND ON' : 'M  SOUND OFF', VIEW_W / 2, 140, '#8d80ad', 1);
-      Text.center(g, tOn ? '^v TOUCH PAD ON' : '^v TOUCH PAD OFF', VIEW_W / 2, 152, '#8d80ad', 1);
+      dim(g, 0.72);
+      var items = pauseItems();
+      var w = 214, h = 48 + items.length * 18;
+      var x = Math.round(VIEW_W / 2 - w / 2), y = Math.round(VIEW_H / 2 - h / 2);
+      panel(g, x, y, w, h);
+      Text.centerShadow(g, 'PAUSED', VIEW_W / 2, y + 10, '#ffffff', 2);
+
+      for (var i = 0; i < items.length; i++) {
+        var iy = y + 32 + i * 18;
+        var on = i === G.pauseSel;
+        if (on) {
+          g.fillStyle = 'rgba(255,215,94,.12)';
+          g.fillRect(x + 6, iy - 5, w - 12, 16);
+          cursor(g, x + 10, iy - 1, G.t);
+        }
+        Text.draw(g, items[i].label, x + 24, iy, on ? '#ffffff' : '#9d92b8', 1);
+        if (items[i].value) {
+          var v = items[i].value();
+          Text.draw(g, '<', x + w - 86, iy, on ? '#ffd75e' : '#5d5478', 1);
+          Text.draw(g, v, x + w - 76, iy, on ? '#ffd75e' : '#7f72a0', 1);
+          Text.draw(g, '>', x + w - 14, iy, on ? '#ffd75e' : '#5d5478', 1);
+        }
+      }
+      Text.center(g, 'INPUT: ' + Input.schemeLabel(), VIEW_W / 2, y + h - 12, '#6d6488', 1);
     }
   };
 

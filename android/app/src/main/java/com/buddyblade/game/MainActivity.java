@@ -1,4 +1,4 @@
-package com.blacklabblade.game;
+package com.buddyblade.game;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;

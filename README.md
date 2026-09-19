@@ -1,10 +1,10 @@
-# Black Lab Blade
+# Buddy Blade
 
 A 2D action platformer in the handheld-dungeon-crawler mould: short, dense
 stages, sword combat, coins, hidden collectibles and a shop between runs.
 The hero is a black lab who carries his blade in his jaws.
 
-**To play: download `black-lab-blade.html` and double-click it.** That one
+**To play: download `buddy-blade.html` and double-click it.** That one
 file is the entire game — no server, no install, no dependencies. It works
 straight off your desktop.
 
@@ -35,7 +35,7 @@ Touch controls appear automatically on touch devices.
 
 ## Playing on a phone
 
-The single file works on a phone as-is: copy `black-lab-blade.html` to the
+The single file works on a phone as-is: copy `buddy-blade.html` to the
 device and open it from the Files app. Everything is inlined, so it runs
 offline with no network and no install. On-screen controls appear
 automatically on a touchscreen, and can be switched on or off from the
@@ -44,13 +44,13 @@ pause menu (`^v`) on any device.
 Want a real installable APK? Two scripts do it, both **on your own
 machine** (not in the Claude Code sandbox):
 
-* `tools/build-apk-standalone.sh` needs nothing but `black-lab-blade.html`.
+* `tools/build-apk-standalone.sh` needs nothing but `buddy-blade.html`.
   Drop it beside the game file and run it — handy if you only have the
   single-file build and not this repo.
 * `tools/make-apk.sh` builds from a checkout of this repo.
 
 Either way it wraps the game with Cordova — it wraps the game with Cordova, locks it to landscape
-fullscreen and drops `black-lab-blade.apk` in the project root. It needs a
+fullscreen and drops `buddy-blade.apk` in the project root. It needs a
 JDK and the Android SDK (Android Studio installs both). It cannot be run
 in the Claude Code sandbox, whose proxy blocks `dl.google.com`, where both
 the Android SDK and the Android Gradle Plugin are hosted.
