@@ -75,7 +75,10 @@ var Input = (function () {
       stickEl.style.top = originY + 'px';
       stickEl.classList.add('live');
       moveKnob(0, 0);
-      zone.setPointerCapture(e.pointerId);
+      /* capture keeps the drag alive if the thumb slides off the zone;
+         it can throw if the pointer is already gone, which must not
+         take the stick down with it */
+      try { zone.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
       e.preventDefault();
     });
     zone.addEventListener('pointermove', function (e) {
