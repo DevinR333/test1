@@ -27,6 +27,8 @@ var Input = (function () {
   var lastTouch = 0;
   var IDLE_MS = 1100;
   var mode = 'keyboard';          /* keyboard | touch | controller */
+  var menuMode = false;           /* on menus the pad never fades away */
+  var tapConfirm = false;         /* and on result screens a tap anywhere advances */
 
   function set(name, on) {
     if (!name) return;
@@ -58,7 +60,8 @@ var Input = (function () {
     if (!host) return;
     if (!sawTouch || mode === 'controller') { host.classList.add('hidden'); return; }
     host.classList.remove('hidden');
-    var idle = (touchMode === 'auto') && (Date.now() - lastTouch > IDLE_MS) && stickId === null;
+    var idle = !menuMode && (touchMode === 'auto') &&
+               (Date.now() - lastTouch > IDLE_MS) && stickId === null;
     if (idle) host.classList.add('idle');
     else host.classList.remove('idle');
   }
@@ -66,6 +69,14 @@ var Input = (function () {
     lastTouch = Date.now();
     if (!sawTouch || mode !== 'touch') { sawTouch = true; mode = 'touch'; }
     apply();
+  }
+
+  /* A screen with nothing to choose should take a tap anywhere. Without
+     this the pad is faded out on a results screen, and a tap only wakes
+     it up again, which feels exactly like dead input. */
+  function screenTap() {
+    touched();
+    if (tapConfirm) { set('confirm', true); }
   }
 
   /* ---------------- touch stick ---------------- */
@@ -149,9 +160,19 @@ var Input = (function () {
     }
 
     /* any touch reveals the pad; it fades again once you let go */
-    window.addEventListener('touchstart', touched, { passive: true });
+    window.addEventListener('touchstart', screenTap, { passive: true });
     window.addEventListener('touchmove', touched, { passive: true });
-    window.addEventListener('touchend', function () { lastTouch = Date.now(); }, { passive: true });
+    window.addEventListener('touchend', function () {
+      lastTouch = Date.now();
+      set('confirm', false);
+    }, { passive: true });
+    /* mouse works the same way on a desktop results screen */
+    window.addEventListener('pointerdown', function (e) {
+      if (e.pointerType !== 'touch' && tapConfirm) set('confirm', true);
+    });
+    window.addEventListener('pointerup', function (e) {
+      if (e.pointerType !== 'touch') set('confirm', false);
+    });
     setInterval(apply, 200);
     apply();
   }
@@ -196,6 +217,13 @@ var Input = (function () {
     /* 'auto' or 'always'; never an off switch, so the pause button
        can never become unreachable */
     setTouchMode: function (m) { touchMode = m; lastTouch = Date.now(); apply(); },
+    /* menus keep the pad up; tapConfirm is for screens whose only
+       action is "carry on" */
+    setMenuMode: function (on, tap) {
+      menuMode = !!on;
+      tapConfirm = !!tap;
+      apply();
+    },
     touchMode: function () { return touchMode; },
     mode: function () { return mode; },
     padName: function () { return padName; },

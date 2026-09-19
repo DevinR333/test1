@@ -135,6 +135,12 @@ var Game = (function () {
       if (G.fade <= 0) G.fadeDir = 0;
     }
 
+    /* Outside gameplay the touch pad stays put, and on screens that only
+       wait for "carry on" a tap anywhere counts. */
+    var justCarryOn = (G.state === 'clear' || G.state === 'fail' ||
+                       G.state === 'ending' || G.state === 'title');
+    Input.setMenuMode(G.state !== 'play', justCarryOn);
+
     if (G.state === 'play') {
       if (Input.pressed('pause')) { Sfx.select(); G.state = 'pause'; }
       else if (Input.pressed('restart')) { Sfx.confirm(); G.startStage(G.world.index); }
