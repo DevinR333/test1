@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Black Lab Blade</title>
+<link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="screen" width="400" height="224"></canvas>
+    <div id="touch" class="hidden">
+      <div class="pad">
+        <button class="tbtn" data-key="left">&#9664;</button>
+        <button class="tbtn" data-key="right">&#9654;</button>
+      </div>
+      <div class="acts">
+        <button class="tbtn" data-key="attack">SWING</button>
+        <button class="tbtn" data-key="jump">JUMP</button>
+      </div>
+    </div>
+  </div>
+  <script src="src/util.js"></script>
+  <script src="src/input.js"></script>
+  <script src="src/audio.js"></script>
+  <script src="src/text.js"></script>
+  <script src="src/art.js"></script>
+  <script src="src/levels.js"></script>
+  <script src="src/save.js"></script>
+  <script src="src/entities.js"></script>
+  <script src="src/world.js"></script>
+  <script src="src/ui.js"></script>
+  <script src="src/game.js"></script>
+</body>
+</html>
