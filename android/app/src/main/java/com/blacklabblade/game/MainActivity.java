@@ -1,6 +1,7 @@
 package com.blacklabblade.game;
 
 import android.annotation.SuppressLint;
+import android.app.Activity;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
@@ -11,10 +12,10 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
-import androidx.appcompat.app.AppCompatActivity;
-
-/** Hosts the game, which is a single self-contained HTML file in assets. */
-public class MainActivity extends AppCompatActivity {
+/** Hosts the game, which is a single self-contained HTML file in assets.
+ *  Deliberately extends the platform Activity rather than AppCompat, so
+ *  the project needs no libraries at all and nothing can clash. */
+public class MainActivity extends Activity {
 
     private WebView web;
 
@@ -66,4 +67,10 @@ public class MainActivity extends AppCompatActivity {
                             | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
         }
     }
+
+    @Override
+    protected void onPause() { super.onPause(); if (web != null) web.onPause(); }
+
+    @Override
+    protected void onResume() { super.onResume(); if (web != null) web.onResume(); }
 }

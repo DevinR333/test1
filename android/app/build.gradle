@@ -24,6 +24,7 @@ android {
     }
 }
 
-dependencies {
-    implementation 'androidx.appcompat:appcompat:1.7.0'
-}
+/* No libraries on purpose. The activity extends the platform Activity and
+   the game is plain HTML in assets, so there is nothing to conflict and
+   nothing to download beyond Gradle and the Android plugin. */
+dependencies { }

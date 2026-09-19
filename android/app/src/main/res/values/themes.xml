@@ -1,7 +1,6 @@
 <resources>
-    <style name="Theme.Game" parent="Theme.AppCompat.NoActionBar">
+    <!-- platform theme, so no support library is needed -->
+    <style name="Theme.Game" parent="@android:style/Theme.NoTitleBar.Fullscreen">
         <item name="android:windowBackground">#07060A</item>
-        <item name="android:windowNoTitle">true</item>
-        <item name="android:windowFullscreen">true</item>
     </style>
 </resources>
