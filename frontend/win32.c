@@ -61,6 +61,7 @@ static struct {
     volatile LONG keys;        /* currently held */
     volatile LONG keys_latched; /* pressed since the last frame, even if released */
     volatile LONG want_diag;
+    int           checked;
     volatile LONG seamless;    /* pace room crossings by Link, not by the clock */
     int           burst, shown_x, shown_y, settling;
     gb_fit_mode_t fit;
@@ -138,6 +139,38 @@ static void on_frame(gb_t *gb, void *user)
         char path[MAX_PATH];
         beside_exe(path, sizeof(path), "oracle-diag.txt");
         gb_write_diagnostics(gb, path);
+    }
+
+    /* Once the game is standing still somewhere in the overworld, check the
+     * compiled-in world against the hardware's own picture and write the
+     * result down. If the two disagree, the world was read from a different
+     * build of the game than the ROM was, and every symptom of that looks
+     * like a rendering fault. This says so in one line instead. */
+    if (!app.checked && app.track.in_world && !app.track.crossing
+        && gb->frames > 240) {
+        static char report[4096];
+        int ok = gb_world_self_check(gb, report, sizeof(report));
+        char path[MAX_PATH];
+        beside_exe(path, sizeof(path), "oracle-world.txt");
+        FILE *fh = fopen(path, "w");
+        if (fh) {
+            fprintf(fh, "oracle.exe  %s  %s\n", GB_BUILD_REV, GB_BUILD_STAMP);
+            fprintf(fh, "ROM: %s (%ld KiB)\n\n", GB_ROM_PATH, (long)GB_ROM_SIZE / 1024);
+            fputs(report, fh);
+            fclose(fh);
+        }
+        app.checked = 1;
+        if (!ok) {
+            MessageBox(NULL,
+                "The world data does not match this ROM.\n\n"
+                "The scenery outside the game's own screen is read from a "
+                "disassembly checkout, and the game's code is translated from "
+                "a ROM. Those are different builds of the game here, so the "
+                "surroundings describe a game you are not playing.\n\n"
+                "Details are in oracle-world.txt, beside the executable.\n\n"
+                "The game will keep running.",
+                "Oracle of Seasons - world data mismatch", MB_ICONWARNING);
+        }
     }
 
     if (!InterlockedCompareExchange(&app.running, 0, 0)) {
@@ -524,7 +557,7 @@ static void paint(HWND hwnd)
      * pixels out of place with the hearts and rupees painted into it, and the
      * status bar travelled around with the player. Sampling both here, by
      * index, through one position and scale, none of that can happen. */
-    gb_world_render(view, app.map_pixels, cw, ch, cam_x, cam_y, scale);
+    gb_world_render(view, app.map_pixels, cw, ch, cam_x, cam_y, scale, 1);
 
     /* Every object the game has active, drawn at its own position across the
      * whole view - not only where the hardware's screen happens to reach.
@@ -798,7 +831,14 @@ int main(int argc, char **argv)
     RECT want = { 0, 0, win_w, win_h };
     AdjustWindowRect(&want, WS_OVERLAPPEDWINDOW, FALSE);
 
-    app.hwnd = CreateWindow(WINDOW_CLASS, "Oracle of Seasons",
+    /* The build in the title bar. Whether the thing on screen is the build
+     * just made is otherwise guesswork, and guessing it wrong wastes a whole
+     * round of looking for a fault that was already fixed. */
+    char title[256];
+    snprintf(title, sizeof(title), "Oracle of Seasons  -  %s  %s",
+             GB_BUILD_REV, GB_BUILD_STAMP);
+
+    app.hwnd = CreateWindow(WINDOW_CLASS, title,
                             WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
                             want.right - want.left, want.bottom - want.top,
                             NULL, NULL, wc.hInstance, NULL);

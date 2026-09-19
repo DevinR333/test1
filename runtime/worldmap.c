@@ -10,6 +10,7 @@
  * and shrinking.
  */
 #include <limits.h>
+#include <stdio.h>
 #include <string.h>
 #include "worldmap.h"
 
@@ -97,7 +98,7 @@ float gb_world_cover_scale(int dst_w, int dst_h)
 }
 
 void gb_world_render(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
-                     float cam_x, float cam_y, float scale)
+                     float cam_x, float cam_y, float scale, int use_live)
 {
     if (!dst || dst_w <= 0 || dst_h <= 0 || scale <= 0.0f)
         return;
@@ -128,7 +129,7 @@ void gb_world_render(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
      * a crossing froze the animated tiles - water, flowers, torches - for its
      * duration, so they jumped a frame at each end of it. */
     int loaded_assets = -1;
-    if (gb_world_in_overworld(gb)) {
+    if (use_live && gb_world_in_overworld(gb)) {
         int loaded = gb->wram[W_LOADED_TILESET - 0xC000] & 0x7F;
         loaded_assets = gb_world_tileset_asset[season][loaded];
     }
@@ -640,4 +641,108 @@ int gb_world_in_overworld(const gb_t *gb)
         return 0;
 
     return 1;
+}
+
+
+/* Does the world data actually match the ROM this was built from?
+ *
+ * The world outside the live screen is read from a disassembly checkout while
+ * the code is translated from a ROM. If those are different builds of the game
+ * - and a checkout that builds a 4MB ROM paired with a 1MB cartridge is two
+ * different builds - then the rooms, the tilesets or the metatile tables can
+ * all be subtly wrong, and every symptom of that looks like a rendering bug.
+ *
+ * Rendering the room the game is standing in from this data and comparing it
+ * with the hardware's own picture settles it. Terrain should match pixel for
+ * pixel; only the objects, which are not in this data, should differ.
+ */
+int gb_world_self_check(const gb_t *gb, char *out, size_t n)
+{
+    static uint32_t mine[GB_SCREEN_W * (GB_SCREEN_H - GB_STATUS_H)];
+    const int room_h = GB_SCREEN_H - GB_STATUS_H;
+    gb_world_view_t view;
+    size_t at = 0;
+
+    memset(&view, 0, sizeof(view));
+    gb_world_track(&view, gb);
+    if (!view.in_world) {
+        snprintf(out, n, "not in the overworld; nothing to check\n");
+        return 0;
+    }
+
+    int room = gb_world_active_room(gb);
+    int season = gb_world_season(gb);
+    int tileset = gb_world_room_tileset[room] & 0x7F;
+
+    /* From the compiled-in data alone. Taking the machine's own tile
+     * graphics - which is what the surrounding world does for the room the
+     * game has loaded - would compare the machine against itself and agree
+     * no matter how wrong the data is. The rooms this has to be right about
+     * are the ones the machine is not holding. */
+    gb_world_render(gb, mine, GB_SCREEN_W, room_h,
+                    view.screen_x + GB_SCREEN_W / 2.0f,
+                    view.screen_y + room_h / 2.0f, 1.0f, 0);
+
+    long differ = 0;
+    int col[GB_SCREEN_W];
+    for (int x = 0; x < GB_SCREEN_W; x++) {
+        col[x] = 0;
+        for (int y = 0; y < room_h; y++)
+            if ((mine[y * GB_SCREEN_W + x] & 0xFFFFFF)
+                != (gb->framebuffer[(y + GB_STATUS_H) * GB_SCREEN_W + x] & 0xFFFFFF))
+                col[x]++;
+        differ += col[x];
+    }
+
+    /* Which alignment would have matched, if not this one. */
+    int best = -1, bdx = 0, bdy = 0;
+    for (int dy = -16; dy <= 16; dy++)
+        for (int dx = -40; dx <= 40; dx++) {
+            int same = 0;
+            for (int y = 8; y < room_h - 8; y += 2)
+                for (int x = 16; x < GB_SCREEN_W - 16; x += 2) {
+                    int px = x + dx, py = y + dy;
+                    if (px < 0 || px >= GB_SCREEN_W || py < 0 || py >= room_h) continue;
+                    if ((mine[py * GB_SCREEN_W + px] & 0xFFFFFF)
+                        == (gb->framebuffer[(y + GB_STATUS_H) * GB_SCREEN_W + x] & 0xFFFFFF))
+                        same++;
+                }
+            if (same > best) { best = same; bdx = dx; bdy = dy; }
+        }
+
+    double pct = 100.0 * differ / (GB_SCREEN_W * room_h);
+    at += snprintf(out + at, n - at,
+        "world data against the hardware's own picture\n"
+        "  frame            %llu\n"
+        "  room             %02x   group %d   season %d\n"
+        "  tileset          %02x -> layout %d, graphics %d\n"
+        "  screen at        %.0f, %.0f\n"
+        "  tables           %d layouts, %d metatile tables, %d tileset graphics\n"
+        "  pixels differing %ld of %d  (%.1f%%)\n"
+        "  best alignment   %+d, %+d\n",
+        (unsigned long long)gb->frames, room, gb_world_group, season,
+        tileset, gb_world_tileset_mapping[season][tileset],
+        gb_world_tileset_asset[season][tileset],
+        view.screen_x, view.screen_y,
+        gb_world_layout_count, gb_world_mapping_count, gb_world_tileset_count,
+        differ, GB_SCREEN_W * room_h, pct, bdx, bdy);
+
+    at += snprintf(out + at, n - at, "  per column (of %d rows), worst of 8:\n   ", room_h);
+    for (int x = 0; x < GB_SCREEN_W; x += 8) {
+        int m = 0;
+        for (int i = 0; i < 8; i++) if (col[x + i] > m) m = col[x + i];
+        at += snprintf(out + at, n - at, "%4d", m);
+    }
+    at += snprintf(out + at, n - at, "\n\n");
+
+    int ok = (bdx == 0 && bdy == 0 && pct < 30.0);
+    at += snprintf(out + at, n - at, "  verdict: %s\n", ok
+        ? "the world data matches the ROM. Terrain lines up; what differs is\n"
+          "           objects, which are not in this data and are drawn separately."
+        : "THE WORLD DATA DOES NOT MATCH THIS ROM.\n"
+          "           The disassembly the world was read from and the ROM the code was\n"
+          "           translated from are different builds of the game. Build both from\n"
+          "           the same one - the simplest way is to translate the ROM the\n"
+          "           checkout itself builds.");
+    return ok;
 }

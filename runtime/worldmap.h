@@ -70,8 +70,11 @@ int gb_world_season(const gb_t *gb);
 /* Draws the world into `dst` at `scale` (1.0 shows every pixel one for one,
  * lower values shrink it). `cam_x` and `cam_y` are world pixels at the centre
  * of the view. */
+/* `use_live` takes tile graphics from the machine for whichever tileset it
+ * currently holds, so animated tiles keep moving in step with the live
+ * screen. Pass 0 to draw purely from the compiled-in data. */
 void gb_world_render(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
-                     float cam_x, float cam_y, float scale);
+                     float cam_x, float cam_y, float scale, int use_live);
 
 /* Composites the hardware's screen into the world at `screen_x, screen_y`,
  * sampled exactly as the world around it is, so the two cannot disagree. */
@@ -129,6 +132,10 @@ void gb_world_track(gb_world_view_t *view, const gb_t *gb);
  * dungeons and interiors are not, and drawing overworld rooms around them
  * shows scenery that has nothing to do with what is on screen. */
 int  gb_world_in_overworld(const gb_t *gb);
+
+/* Checks the compiled-in world against the hardware's own picture and writes
+ * a report. Returns nonzero if they agree. */
+int gb_world_self_check(const gb_t *gb, char *out, size_t n);
 
 /* Outlines a room, so the player can see where they are on the map. */
 void gb_world_mark_room(uint32_t *dst, int dst_w, int dst_h,

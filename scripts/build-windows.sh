@@ -125,6 +125,40 @@ printf '%s\n' "$ROM" > "$REMEMBERED"
 printf '  ROM: %s\n       %s, %s KiB\n' "$ROM" "$(rom_title "$ROM")" \
        "$(( $(wc -c < "$ROM") / 1024 ))"
 
+# The world drawn around the game's own screen is read from a disassembly
+# checkout; the game's code is translated from the ROM. They have to be the
+# same build of the game, or the scenery describes a game the player is not
+# in - wrong tilesets, wrong metatiles, faults that look like rendering bugs
+# and are not. Checked here, before an hour of compiling, rather than after.
+for d in external/oracles-disasm ../oracles-disasm; do
+    [ -d "$d/rooms" ] || continue
+    built="$d/$(basename "$ROM")"
+    [ -f "$built" ] || built="$d/seasons.gbc"
+    [ -f "$built" ] || break
+    if ! cmp -s "$built" "$ROM" && [ -z "${MISMATCH_OK:-}" ]; then
+        die "this checkout builds a different ROM than the one being translated.
+
+  checkout builds: $built
+                   $(( $(wc -c < "$built") / 1024 )) KiB
+  translating:     $ROM
+                   $(( $(wc -c < "$ROM") / 1024 )) KiB
+
+  The world outside the game's own screen is read from the checkout; the
+  game's code is translated from the ROM. Those have to be the same build of
+  the game, or the scenery describes a game you are not playing.
+
+  Translate the ROM this checkout builds:
+
+      bash $REPO/scripts/build-windows.sh \"$built\"
+
+  or check the disassembly out at the revision your own ROM was built from.
+  To build anyway, knowing the scenery may be wrong:
+
+      MISMATCH_OK=1 bash $REPO/scripts/build-windows.sh \"$ROM\""
+    fi
+    break
+done
+
 # Find a Python 3 under whatever name this environment uses.
 PY=""
 for c in python3 python; do
@@ -278,22 +312,6 @@ for d in external/oracles-disasm ../oracles-disasm; do
     [ -n "$WORLD_SRC" ] && break
     if [ -d "$d/rooms" ]; then
         say "building world map data from $d"
-
-        # The world drawn around the live screen comes from this checkout,
-        # while the code comes from the ROM. They have to be the same build of
-        # the game, or the surroundings describe a game the player is not in.
-        # If the checkout has built a ROM of its own, compare the two.
-        built="$d/$(basename "$ROM")"
-        [ -f "$built" ] || built="$d/seasons.gbc"
-        if [ -f "$built" ] && ! cmp -s "$built" "$ROM"; then
-            printf '\033[33mwarning:\033[0m this checkout builds a different ROM than the one being translated.\n'
-            printf '  checkout builds: %s, %s KiB\n' "$built" "$(( $(wc -c < "$built") / 1024 ))"
-            printf '  translating:     %s, %s KiB\n' "$ROM" "$(( $(wc -c < "$ROM") / 1024 ))"
-            printf '  The world outside the live screen is read from the checkout, so where\n'
-            printf '  the two builds differ - tilesets especially - the surroundings will not\n'
-            printf '  match. Either translate the ROM this checkout builds, or check out the\n'
-            printf '  revision your ROM was built from.\n\n'
-        fi
 
         "$PY" tools/worldmap.py "$d" -o "$OUT_DIR/world_data.c"
         WORLD_SRC="$OUT_DIR/world_data.c runtime/worldmap.c"
