@@ -24,37 +24,55 @@ html, body {
   box-shadow: 0 0 0 2px #1b1826, 0 10px 50px rgba(0,0,0,.8);
 }
 
-/* ---- touch controls: hidden unless the device has a touchscreen,
-        and switchable from the pause menu ---- */
+/* ---- touch controls: invisible until the screen is actually touched,
+        so keyboard and gamepad players never see them ---- */
 #touch { position:fixed; inset:0; pointer-events:none; z-index:5; }
 #touch.hidden { display:none; }
-#touch .pad, #touch .acts {
-  position:absolute; bottom:calc(14px + env(safe-area-inset-bottom));
-  display:flex; gap:10px; pointer-events:auto; align-items:flex-end;
+
+/* the left half is a catch area; the stick springs up wherever you press */
+#stickzone {
+  position:absolute; left:0; top:0; bottom:0; width:50%;
+  pointer-events:auto; touch-action:none;
 }
-#touch .pad  { left:calc(14px + env(safe-area-inset-left)); }
-#touch .acts { right:calc(14px + env(safe-area-inset-right)); }
+#stick {
+  position:absolute; width:116px; height:116px; margin:-58px 0 0 -58px;
+  border-radius:50%; border:2px solid rgba(150,135,190,.42);
+  background:radial-gradient(circle at 50% 50%, rgba(40,32,60,.42), rgba(20,16,32,.30));
+  opacity:0; transition:opacity .12s ease; pointer-events:none;
+}
+#stick.live { opacity:1; }
+#knob {
+  position:absolute; left:50%; top:50%; width:52px; height:52px;
+  margin:-26px 0 0 -26px; border-radius:50%;
+  border:2px solid rgba(203,189,240,.85);
+  background:radial-gradient(circle at 40% 35%, rgba(150,130,205,.95), rgba(70,56,112,.9));
+  box-shadow:0 2px 10px rgba(0,0,0,.45);
+}
+#touch .acts {
+  position:absolute; right:calc(16px + env(safe-area-inset-right));
+  bottom:calc(16px + env(safe-area-inset-bottom));
+  display:flex; gap:12px; align-items:flex-end; pointer-events:auto;
+}
 .tbtn {
-  border-radius:16px; border:2px solid rgba(150,135,190,.55);
+  border-radius:50%; border:2px solid rgba(150,135,190,.55);
   background:rgba(24,20,36,.55); color:#e6dcf7;
-  font:700 13px/1 ui-monospace,monospace; touch-action:none;
+  font:700 12px/1 ui-monospace,monospace; touch-action:none;
   backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px);
   display:flex; align-items:center; justify-content:center;
 }
-.tbtn:active { background:rgba(120,100,175,.8); border-color:#cbbdf0; transform:translateY(1px); }
-.dpad  { width:74px; height:74px; font-size:22px; }
-.small { width:58px; height:58px; font-size:16px; opacity:.8; }
-.act   { width:80px; height:80px; font-size:12px; }
-.jmp   { background:rgba(58,40,96,.62); }
-.atk   { background:rgba(96,36,48,.62); margin-bottom:22px; }
+.tbtn:active { background:rgba(120,100,175,.85); border-color:#cbbdf0; transform:translateY(1px); }
+.act { width:84px; height:84px; }
+.jmp { background:rgba(58,40,96,.62); }
+.atk { background:rgba(96,36,48,.62); margin-bottom:26px; }
 .sys {
   position:absolute; top:calc(10px + env(safe-area-inset-top));
   right:calc(12px + env(safe-area-inset-right));
-  width:46px; height:38px; font-size:13px; pointer-events:auto; opacity:.75;
+  width:44px; height:40px; border-radius:14px; font-size:13px;
+  pointer-events:auto; opacity:.7;
 }
 @media (max-height:420px) {
-  .dpad { width:64px; height:64px; } .act { width:70px; height:70px; }
-  .small { width:50px; height:50px; }
+  .act { width:72px; height:72px; }
+  #stick { width:100px; height:100px; margin:-50px 0 0 -50px; }
 }
 </style>
 </head>
@@ -62,11 +80,8 @@ html, body {
   <div id="wrap">
     <canvas id="screen" width="400" height="224"></canvas>
     <div id="touch" class="hidden">
-      <div class="pad">
-        <button class="tbtn dpad" data-key="left" aria-label="Left">&#9664;</button>
-        <button class="tbtn dpad" data-key="right" aria-label="Right">&#9654;</button>
-        <button class="tbtn small" data-key="down" aria-label="Down">&#9660;</button>
-      </div>
+      <div id="stickzone"></div>
+      <div id="stick"><div id="knob"></div></div>
       <div class="acts">
         <button class="tbtn act atk" data-key="attack" aria-label="Swing">SWING</button>
         <button class="tbtn act jmp" data-key="jump" aria-label="Jump">JUMP</button>
@@ -153,7 +168,9 @@ var Util = (function () {
 })();
 
 /* ===== input.js ===== */
-/* Keyboard + touch input. Edge-triggered reads via Input.pressed(). */
+/* Keyboard, gamepad, and a floating analog touch stick.
+   The touch layer stays invisible until the screen is actually touched,
+   so keyboard and controller players never see it. */
 var Input = (function () {
   var MAP = {
     ArrowLeft: 'left', KeyA: 'left',
@@ -167,73 +184,168 @@ var Input = (function () {
     KeyM: 'mute', KeyR: 'restart'
   };
   var held = {}, fresh = {}, consumed = {};
-  var anyKeyFlag = false;
+  var stickX = 0;                 /* -1..1 from the touch stick or a pad */
+  var host = null, stickEl = null, knobEl = null;
+  var stickId = null, originX = 0, originY = 0;
+  var RADIUS = 46, DEAD = 0.18;
+  var touchPref = null;           /* null = auto, true/false = forced */
+  var sawTouch = false;
 
   function set(name, on) {
     if (!name) return;
-    if (on) { if (!held[name]) fresh[name] = true; held[name] = true; anyKeyFlag = true; }
-    else { held[name] = false; }
+    if (on) { if (!held[name]) fresh[name] = true; held[name] = true; }
+    else held[name] = false;
   }
 
+  /* ---------------- keyboard ---------------- */
   window.addEventListener('keydown', function (e) {
     var n = MAP[e.code];
-    if (n) { e.preventDefault(); if (!e.repeat) set(n, true); }
+    if (n) { e.preventDefault(); if (!e.repeat) set(n, true); hideTouch(); }
   });
   window.addEventListener('keyup', function (e) {
     var n = MAP[e.code];
     if (n) { e.preventDefault(); set(n, false); }
   });
-  window.addEventListener('blur', function () { held = {}; });
+  window.addEventListener('blur', function () { held = {}; stickX = 0; releaseStick(); });
 
-  var touchHost = null;
-
-  /* Touch controls are optional: shown automatically on a touchscreen,
-     and switchable from the pause menu on any device. */
-  function setTouchVisible(on) {
-    if (!touchHost) return;
-    if (on) touchHost.classList.remove('hidden');
-    else touchHost.classList.add('hidden');
+  /* Any keyboard or pad input puts the touch controls away again. */
+  function hideTouch() {
+    if (touchPref === null && sawTouch) { sawTouch = false; apply(); }
   }
-  function hasTouch() {
-    return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  function apply() {
+    if (!host) return;
+    var on = (touchPref === null) ? sawTouch : touchPref;
+    if (on) host.classList.remove('hidden');
+    else host.classList.add('hidden');
+  }
+
+  /* ---------------- touch stick ---------------- */
+  function moveKnob(dx, dy) {
+    var d = Math.sqrt(dx * dx + dy * dy);
+    if (d > RADIUS) { dx *= RADIUS / d; dy *= RADIUS / d; }
+    if (knobEl) knobEl.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+    var v = dx / RADIUS;
+    stickX = Math.abs(v) < DEAD ? 0 : Math.max(-1, Math.min(1, (v - Math.sign(v) * DEAD) / (1 - DEAD)));
+    /* a firm push downward still works as "down" for menus */
+    set('down', dy > RADIUS * 0.55);
+  }
+  function releaseStick() {
+    stickId = null; stickX = 0;
+    set('down', false);
+    if (stickEl) stickEl.classList.remove('live');
+    if (knobEl) knobEl.style.transform = 'translate(0,0)';
+  }
+
+  function bindStick(zone) {
+    zone.addEventListener('pointerdown', function (e) {
+      if (stickId !== null) return;
+      stickId = e.pointerId;
+      originX = e.clientX; originY = e.clientY;
+      stickEl.style.left = originX + 'px';
+      stickEl.style.top = originY + 'px';
+      stickEl.classList.add('live');
+      moveKnob(0, 0);
+      zone.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    zone.addEventListener('pointermove', function (e) {
+      if (e.pointerId !== stickId) return;
+      moveKnob(e.clientX - originX, e.clientY - originY);
+      e.preventDefault();
+    });
+    function up(e) {
+      if (e.pointerId !== stickId) return;
+      releaseStick();
+      e.preventDefault();
+    }
+    zone.addEventListener('pointerup', up);
+    zone.addEventListener('pointercancel', up);
+    zone.addEventListener('lostpointercapture', up);
   }
 
   function bindTouch() {
-    var host = document.getElementById('touch');
+    host = document.getElementById('touch');
     if (!host) return;
-    touchHost = host;
+    stickEl = document.getElementById('stick');
+    knobEl = document.getElementById('knob');
+    var zone = document.getElementById('stickzone');
+    if (zone) bindStick(zone);
+
     var btns = host.querySelectorAll('.tbtn');
     for (var i = 0; i < btns.length; i++) {
       (function (b) {
         var key = b.getAttribute('data-key');
-        var press = function (e) { e.preventDefault(); set(key, true); if (key === 'jump') set('confirm', true); };
-        var release = function (e) { e.preventDefault(); set(key, false); set('confirm', false); };
-        b.addEventListener('touchstart', press, { passive: false });
-        b.addEventListener('touchend', release, { passive: false });
-        b.addEventListener('touchcancel', release, { passive: false });
-        b.addEventListener('mousedown', press);
-        b.addEventListener('mouseup', release);
-        b.addEventListener('mouseleave', release);
+        var press = function (e) {
+          e.preventDefault();
+          set(key, true);
+          if (key === 'jump') set('confirm', true);
+        };
+        var release = function (e) {
+          e.preventDefault();
+          set(key, false);
+          if (key === 'jump') set('confirm', false);
+        };
+        b.addEventListener('pointerdown', press);
+        b.addEventListener('pointerup', release);
+        b.addEventListener('pointercancel', release);
+        b.addEventListener('pointerleave', release);
       })(btns[i]);
     }
+
+    /* first real touch anywhere reveals the pad */
+    window.addEventListener('touchstart', function () {
+      if (!sawTouch) { sawTouch = true; apply(); }
+    }, { passive: true });
+    apply();
+  }
+
+  /* ---------------- gamepad ---------------- */
+  var padPrev = {};
+  function pollPad() {
+    if (!navigator.getGamepads) return;
+    var pads = navigator.getGamepads();
+    var gp = null;
+    for (var i = 0; i < pads.length; i++) if (pads[i]) { gp = pads[i]; break; }
+    if (!gp) return;
+    var active = false;
+    var ax = gp.axes && gp.axes.length ? gp.axes[0] : 0;
+    if (Math.abs(ax) > 0.25) { stickX = ax; active = true; }
+    var B = gp.buttons || [];
+    function btn(i) { return B[i] && B[i].pressed; }
+    var map = { 14: 'left', 15: 'right', 12: 'up', 13: 'down',
+                0: 'jump', 2: 'attack', 1: 'attack', 3: 'jump',
+                9: 'pause', 8: 'restart' };
+    for (var k in map) {
+      var down = btn(Number(k));
+      if (down !== !!padPrev[k]) {
+        set(map[k], down);
+        if (map[k] === 'jump' && down) set('confirm', true);
+        if (map[k] === 'jump' && !down) set('confirm', false);
+        padPrev[k] = down;
+        if (down) active = true;
+      }
+    }
+    if (active) hideTouch();
   }
 
   return {
     init: bindTouch,
-    setTouchVisible: setTouchVisible,
-    hasTouch: hasTouch,
+    pollPad: pollPad,
+    setTouchVisible: function (on) { touchPref = on; apply(); },
+    touchIsOn: function () { return (touchPref === null) ? sawTouch : touchPref; },
+    hasTouch: function () { return ('ontouchstart' in window) || navigator.maxTouchPoints > 0; },
     down: function (n) { return !!held[n]; },
     pressed: function (n) {
       if (fresh[n] && !consumed[n]) { consumed[n] = true; return true; }
       return false;
     },
-    anyPressed: function () {
-      return !!(fresh.jump || fresh.attack || fresh.confirm);
-    },
-    /* Called at the end of each fixed update. */
-    endFrame: function () { fresh = {}; consumed = {}; anyKeyFlag = false; },
-    /* Axis helper: -1, 0 or 1. */
-    axis: function () { return (held.right ? 1 : 0) - (held.left ? 1 : 0); }
+    endFrame: function () { fresh = {}; consumed = {}; },
+    /* -1..1; analog from a stick, full tilt from keys */
+    axis: function () {
+      var k = (held.right ? 1 : 0) - (held.left ? 1 : 0);
+      if (k !== 0) return k;
+      return stickX;
+    }
   };
 })();
 
@@ -1872,285 +1984,358 @@ Art._king = function (g, e, t) {
 };
 
 /* ===== levels.js ===== */
-/* Stage data - generated by tools/build_levels.py, then verified by
-   tools/reach.js against the hero's measured jump arc.
+/* Stage data - generated by tools/build_levels.py and proved completable
+   by tools/reach.js, which reads the jump constants from src/entities.js.
 
-   Legend:  # solid   = one-way platform   ^ spikes   % hazard water
-            K crate   S bounce pad   D exit   P spawn   X boss
-            o coin    B golden bone   H meat
-            g grub    b batling   h bonehound   t thorn turret
+   Legend:  # solid   = ledge (solid on every face)   ^ spikes
+            % hazard water   K crate   S bounce pad   F false wall
+            D exit   P spawn   X boss
+            o coin   G gem   C chest   H meat
+            g grub   b batling   h bonehound   t thorn turret
 
-   Terrain is assembled from segments (plateaus, steps, mesas, water
-   crossings) with structures cut in: pillars to hop, arches to pass
-   under or stand on, and platform tiers two tiles apart. */
+   Levels are carved out of solid rock on a two-deck room grid, so the
+   route wanders up and down instead of running in a straight line, and
+   secret vaults are sealed pockets whose only way in is a false wall. */
 var LEVELS = [
   {
     id: '1-1', world: 1, name: 'Backyard Gate', theme: 'meadow',
     hint: 'X swings the blade. Z jumps.',
     rows: [
-      '                                                                                         ',
-      '                                                                                         ',
-      '                                                                                         ',
-      '                                                     G                                   ',
-      '                                                   =====                                 ',
-      '       ooKo                                       oo o                  go               ',
-      '       =====                   o                  =====             ######               ',
-      '       o o                 ######                 o o               F    #               ',
-      '      =====     o     o  ##########              =====              F CoG#               ',
-      ' P      go   ######  ################               g   ######  ###########   o        D ',
-      '###################%%######################%%%################%%################F########',
-      '###################%%######################%%%################%%###############G   ######',
-      '###################%%######################%%%################%%###############  C ######',
-      '###################%%######################%%%################%%#########################'
+      '################################################################################',
+      '#################              ##              ##              ##              #',
+      '#################              ##              ##              ##              #',
+      '#################              ##              ##              ##              #',
+      '#################              ##              ##              ##              #',
+      '#################              ##              ##              ##              #',
+      '#################                     G                                        #',
+      '##           ####                    ====                =====                 #',
+      '##           FFFFF  ===  ===                                                   #',
+      '##  C   o  GHFFFFF           oo  o               o^^^        o        og    D  #',
+      '##################==    o   ==#######%%%%###############%%%#####################',
+      '####################    ====####################################################',
+      '#              ##              #################################################',
+      '#              ##   ====       #################################################',
+      '#              ##              #################################################',
+      '#              ##       ====   #################################################',
+      '#              ##   o          #################################################',
+      '#                   ====       #################################################',
+      '#                        o     ####           ##################################',
+      '#                       ====  FFFFF           ##################################',
+      '#  P              K         o FFFFF gC   o  GK##################################',
+      '####################%%%%%%%%####################################################'
     ]
   },
   {
     id: '1-2', world: 1, name: 'Thistle Run', theme: 'meadow',
-    hint: 'Hop the pillars. Mind the drop.',
+    hint: 'Push into walls. Some of them give.',
     rows: [
-      '                                                                                         ',
-      '                                                                                         ',
-      '                              G           b  b                                           ',
-      '                            =====                                 b                      ',
-      '                            o o                                                          ',
-      '                           =====                                  o o Ko                 ',
-      '                           o o                                    ######                 ',
-      '        o                 =====              o K          #####   F    #                 ',
-      '     #  #  #      o    o       o         #######          #   #   FgC G#   g   H     o D ',
-      ' P  g#  #  #  ######   ##########    g ###########        #o  ##############  ##F########',
-      '####################%%%#############################%%%#####################%%#G   ######',
-      '####################%%%#############################%%%#####################%%#  C ######',
-      '####################%%%#############################%%%#####################%%###########',
-      '####################%%%#############################%%%#####################%%###########'
+      '################################################################################################',
+      '#################################              ##              #################################',
+      '#################################      b       ##     b        #################################',
+      '#################################              ##              #################################',
+      '#################################              ##       G      #################################',
+      '#################################              ##     =====    #################################',
+      '#################################     o                        #################################',
+      '##################           ####    ===            #      g   ####           ##################',
+      '##################           FFFFF                  #      #  FFFFF           ##################',
+      '##################  C      G FFFFF H         g     g   g   go FFFFF  C   og G ##################',
+      '##################################==        ==####==        ==##################################',
+      '####################################    ====########    ====####################################',
+      '#              ##              ##              ##              ##              ##              #',
+      '#              ##              ##   ====       ##   ====       ##              ##              #',
+      '#              ##              ##          o   ##              ##              ##              #',
+      '#              ##              ##       ====   ##       ====   ##              ##              #',
+      '#              ##     =====    ##    o         ##              ##              ##              #',
+      '#                                   ====       ##   ====          ==      ===                  #',
+      '#                                              ##        o K    b    ===                       #',
+      '#                   #      #            ====   ##       ====                                   #',
+      '#  P       o       g#  g   #o    o g o h o g   ##o g   h o g        ^^^^^^^^K     o         D  #',
+      '################################################################################################'
     ]
   },
   {
     id: '1-3', world: 1, name: 'The Old Well', theme: 'meadow',
-    hint: 'Mind the water. Some things bite back.',
+    hint: 'Mind the water.',
     rows: [
-      '                                                                                           ',
-      '                                                                                           ',
-      '                           gGo            b                                                ',
-      '                          =====                                                  b         ',
-      '                          ooo b                                                            ',
-      '                         =====                                                             ',
-      '                         ooo                                      g    h oo                ',
-      '                        =====             o                      ###########               ',
-      '         H              t              ######                    #   #F    #     o o     D ',
-      ' P      ==   ==   #############     o##########     ==   ==      #   #FhC G#o#####F########',
-      '#####%%%%%%%%%%%%%###############################%%%%%%%%%%%%%###################G   ######',
-      '#####%%%%%%%%%%%%%###############################%%%%%%%%%%%%%###################  C ######',
-      '#####%%%%%%%%%%%%%###############################%%%%%%%%%%%%%#############################',
-      '#####%%%%%%%%%%%%%###############################%%%%%%%%%%%%%#############################'
+      '################################################################################################',
+      '#################################################################              ##              #',
+      '#################################################################              ##        b     #',
+      '#################################################################              ##              #',
+      '#################################################################       G      ##              #',
+      '#################################################################     =====    ##              #',
+      '#################################################################                              #',
+      '##################################################           ####                              #',
+      '##################################################    b      FFFFF  #      #                   #',
+      '##################################################  C      G FFFFF h   h   g       g        DK #',
+      '##################################################################==        ==##################',
+      '####################################################################    ====####################',
+      '#              ##              ##              ##              ##      g       #################',
+      '#              ##  b           ##              ##              ##   ====       #################',
+      '#              ##              ##              ##              ##          o   #################',
+      '#              ##     o        ##              ##              ##       ====   #################',
+      '#              ##     =====    ##           o  ##          H   ##      o       #################',
+      '#                                        ====            ====       ====       #################',
+      '#                                        ====                           t      ####           ##',
+      '#                   #      #                                            ====  FFFFF           ##',
+      '#  P   o   o  o  g g#  go  #           o    h             K        g o go  h  FFFFF  Co oo  G ##',
+      '######################################################%%%#######################################'
     ]
   },
   {
     id: '1-4', world: 1, name: 'Grumblegut', theme: 'meadow', boss: 'boar',
     hint: 'He charges. Let him hit the wall.',
     rows: [
-      '                                        ',
-      '##                                    ##',
-      '##                                    ##',
-      '##                                    ##',
-      '##                                    ##',
-      '##   ======                  ======   ##',
-      '##                                    ##',
-      '##                                    ##',
-      '##            ============            ##',
-      '##                                    ##',
-      '##  P                           X     ##',
-      '########################################',
-      '########################################',
-      '########################################'
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '#                                              #',
+      '#                                              #',
+      '#                                              #',
+      '#                    ======                    #',
+      '#                                              #',
+      '#             ======        ======             #',
+      '#                                              #',
+      '#    ======                          ======    #',
+      '#  P                                    X      #',
+      '################################################'
     ]
   },
   {
     id: '2-1', world: 2, name: 'Dripstone Deep', theme: 'cavern',
     hint: 'Spikes hurt. Everything down here hurts.',
     rows: [
-      '######################################################################################################',
-      '         #          #          #          #          #          #          #          #          #    ',
-      '                                                                      o G g                           ',
-      '                  b                                            b      =====                           ',
-      '         b        o o                                                oo o        b                    ',
-      '                 =====                                               =====                            ',
-      '                 o o               o                                 o o      g o                     ',
-      '                =====        #  #  #             K                  =====     ######                  ',
-      '                o H         o#  #  #          #######              o  Kg g    F    #                  ',
-      ' P    ^^^ #############   ############    oo###########   ^^^ #############   F C G#g o       o     D ',
-      '#######################%%%##############################################################%%%##F########',
-      '#######################%%%##############################################################%%%#G   ######',
-      '#######################%%%##############################################################%%%#  C ######',
-      '#######################%%%##############################################################%%%###########'
+      '################################################################################################',
+      '#################              ##              ##              ##              #################',
+      '#################  b           ## b    b       ##              ##              #################',
+      '#################              ##              ##              ##              #################',
+      '#################              ##              ##       G      ##              #################',
+      '#################              ##              ##     =====    ##   t          #################',
+      '#################===      ===      ===                            ====         #################',
+      '##           ####    ===                            #      #              ==== #################',
+      '##           FFFFF                                  #      #                   #################',
+      '##  Ct  o  G FFFFF           oo    g             g g#  g   #     o ^        o o#################',
+      '##################==        ==######%%%###########################==      o ==##################',
+      '####################    ====########################################    ====####################',
+      '#              ##              ##################################    o g       ##              #',
+      '#              ##   ====       ##################################   ====       ##   b          #',
+      '#              ##              ##################################              ##              #',
+      '#              ##       ====   ##################################       ====   ##              #',
+      '#              ##              ##################################              ##              #',
+      '#                   ====       ##################################   ====    ==                 #',
+      '#                       oo     ####           ###################       Ho                     #',
+      '#                       ====  FFFFF           ###################       ====                   #',
+      '#  P    K        o g   goK go FFFFF  C      G ###################o ^     g                  D  #',
+      '######################################################################%%%#######################'
     ]
   },
   {
     id: '2-2', world: 2, name: 'Crystal Drop', theme: 'cavern',
-    hint: 'Ride the stones. Do not rush.',
+    hint: 'Look up. And look down.',
     rows: [
-      '######################################################################################################',
-      '         #          #          #          #          #          #          #          #          #    ',
-      '                              b                                                                       ',
-      '                                    b         tG                           b                          ',
-      '                                             =====                                                    ',
-      '                                             ogoo                                  o                  ',
-      '                            o  o            =====                                ######               ',
-      '                          #######           o oob                    #  #  #  #  F    #               ',
-      '              g      g  ###########        =====           o         #  #  #  #  F CoG#               ',
-      ' P      ==   ==   ###################    g  oKoo     ==   ==   #########################      t   HoD ',
-      '#####%%%%%%%%%%%%%################################%%%%%%%%%%%%%##############################F########',
-      '#####%%%%%%%%%%%%%################################%%%%%%%%%%%%%#############################G   ######',
-      '#####%%%%%%%%%%%%%################################%%%%%%%%%%%%%#############################  C ######',
-      '#####%%%%%%%%%%%%%################################%%%%%%%%%%%%%#######################################'
+      '################################################################################################################',
+      '#################              ##              ##              #################################################',
+      '#################       b      ##              ##          b   #################################################',
+      '#################              ##              ##              #################################################',
+      '#################       G      ##              ##              #################################################',
+      '#################     =====    ##  o           ##              #################################################',
+      '#################                 == o   ===          ==== === #################################################',
+      '##           ####          #         ===                       #################################################',
+      '##           FFFFF  #      #                                   #################################################',
+      '##  Co     GtFFFFF h   g   ho      h^^^^^^^^                 oo#################################################',
+      '##################==      h ==####################==      o ==##################################################',
+      '####################    ====########################    ====####################################################',
+      '#              ##     g        ##################              ##              ##              ##              #',
+      '#             b##   ====       ##################   ====       ##         b    ##              ##              #',
+      '#              ##              ##################          o   ##              ##              ##              #',
+      '#              ##       ====   ##################       ====   ##     g        ##              ##              #',
+      '#              ##    o         ##################      H       ##     =====    ##     =====    ##              #',
+      '#                   ====       ##################=======                                                       #',
+      '#                        g     ####           ###                   #                      #                   #',
+      '#                       ====  FFFFF           ###       ====        #      #        #      #                   #',
+      '#  P        ot     h   goo h  FFFFFo C o K  Gg### K     oo         h#  g   #       g#  g   #                D  #',
+      '################################################################################################################'
     ]
   },
   {
     id: '2-3', world: 2, name: 'Gnaw Tunnels', theme: 'cavern',
     hint: 'Bonehounds leap when you get close.',
     rows: [
-      '#####################################################################################################',
-      '         #          #          #          #          #          #          #          #          #   ',
-      '                                                                                                     ',
-      '         b           b     b           G h                  b                                        ',
-      '                                     =====                                                           ',
-      '                                    oo oo                                  g K                       ',
-      '     K  o                           =====                                  #####    hhh              ',
-      '    #####           #  #  #         otog         o  o              o       #   #   ######            ',
-      '    #   #       ^^^ #  #  #        =====       #######        g    ==    oo# o #   F    #            ',
-      ' P  #  H#####################       o        ###########  ######        ########   F C G#ot     o  D ',
-      '##########################################%%%###################%%%%%%%%####################F########',
-      '##########################################%%%###################%%%%%%%%###################G   ######',
-      '##########################################%%%###################%%%%%%%%###################  C ######',
-      '##########################################%%%###################%%%%%%%%#############################'
+      '################################################################################################################',
+      '#################              ##              ##              ##              ##              ##              #',
+      '#################              ##           b  ##     b        ##              ##             b##              #',
+      '#################              ##              ##              ##              ##              ##              #',
+      '#################              ##      oG      ##              ##              ##              ##              #',
+      '#################              ##     =====    ##              ##              ## t            ##              #',
+      '#################        o o                   ##                         ==== ## ==== h                       #',
+      '##           ####       ====               #   ##    go                        ##      ====                    #',
+      '##           FFFFF                  #      #   ##   === ===                    ##                              #',
+      '##  C      G FFFFF                 g   h   g   ##                 g         o  ##                h h        D  #',
+      '##################==      o ==####==      g ==####==      o ==####==        ==####==        ==##################',
+      '####################    ====########    ====########    ====########    ====########    ====####################',
+      '#              ##              ##              ##      K       ##              ##              #################',
+      '#              ##   ====       ##   ====       ##   ====       ##   ====       ##   ====       #################',
+      '#              ##              ##          o   ##              ##              ##              #################',
+      '#              ##       ====   ##       ====   ##       ====   ##       ====   ##       ====   #################',
+      '#              ##      K       ##      K       ##              ##     o        ##     o        #################',
+      '#                  =====       ##   ====            ====       ##   ====            ====       #################',
+      '#                       o      ##       h                      ##              b        o      ####           ##',
+      '#                       ====   ##       ====            ====   ##       ====            ====  FFFFF           ##',
+      '#  P     t        o o          ##                  g   h   gH  ##  g   h   g       g   g   g  FFFFF  Co    oG ##',
+      '#####################%%%%###########%%%%%%%%####################################################################'
     ]
   },
   {
     id: '2-4', world: 2, name: 'Gloomwing', theme: 'cavern', boss: 'gloomwing',
     hint: 'It dives. Swing when it drops low.',
     rows: [
-      '########################################',
-      '##       #          #          #      ##',
-      '##                                    ##',
-      '##                                    ##',
-      '##                  X                 ##',
-      '##   ======                  ======   ##',
-      '##                                    ##',
-      '##                                    ##',
-      '##            ============            ##',
-      '##                                    ##',
-      '##  P                                 ##',
-      '########################################',
-      '########################################',
-      '########################################'
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '#                                              #',
+      '#                                       X      #',
+      '#                                              #',
+      '#                    ======                    #',
+      '#                                              #',
+      '#             ======        ======             #',
+      '#                                              #',
+      '#    ======                          ======    #',
+      '#  P                                           #',
+      '################################################'
     ]
   },
   {
     id: '3-1', world: 3, name: 'The Ramparts', theme: 'keep',
     hint: 'The keep is awake.',
     rows: [
-      '############################################################################################################',
-      '         #          #          #          #          #          #          #          #          #          ',
-      '      b  b                   o Gg                                          b                                ',
-      '                             =====                                                                          ',
-      '                             o oh            b                                                              ',
-      '                            =====                                                                           ',
-      '                           Ko o         o                                      g oo         hg              ',
-      '          g                =====  #  #  #        #####                      #######       ######            ',
-      '      ######            Ko  o   h #  #  #        #   #          o        o###########     F    #            ',
-      ' P  ##########   ^^^ ######################   oH #og #         ==   ###################   F C G#  o h    oD ',
-      '######################################################%%%###%%%%%%%%###############################F########',
-      '######################################################%%%###%%%%%%%%##############################G   ######',
-      '######################################################%%%###%%%%%%%%##############################  C ######',
-      '######################################################%%%###%%%%%%%%########################################'
+      '################################################################################################################',
+      '#################################              ##              ##################              ##              #',
+      '#################################              ##     b        ##################   b          ##  b           #',
+      '#################################              ##              ##################              ##              #',
+      '#################################              ##       Goo    ##################              ##              #',
+      '#################################              ##     =====    ##################     =====    ##              #',
+      '#################################                              ##################                              #',
+      '##################           ####  ====             #          ####           ###          o                   #',
+      '##################      b    FFFFF                  #      #  FFFFF           ###   #      #                   #',
+      '################## oC      G FFFFF                 g   g   hoKFFFFF gC     oG ###  g   h   h      o      o hD  #',
+      '##################################==     oo ==####==       o==####################==      o ==##################',
+      '####################################    ====########    ====########################    ====####################',
+      '#              ##              ##      H       ##              ##              ##      h       #################',
+      '#              ##              ##   ====       ##   ====       ##              ##   ====       #################',
+      '#              ##              ##              ##       o      ##              ##              #################',
+      '#              ##              ##       ====   ##       ====   ##              ##       ====   #################',
+      '#              ##              ##              ##              ##              ##              #################',
+      '#                                   ====    K  ##   ====              g             ====       #################',
+      '#                    K                   g  =  ##                   ===                        #################',
+      '#                   ===  ===            ====   ##       ====                            ====   #################',
+      '#  P          g                              o ##o g   ht  g     t ^^^h      o     gh  g   h   #################',
+      '####################%%%%%%%%########%%%################################%%%%#####################################'
     ]
   },
   {
     id: '3-2', world: 3, name: 'Iron Halls', theme: 'keep',
     hint: 'Break the crates. Some hide coin.',
     rows: [
-      '#########################################################################################################',
-      '         #          #          #          #          #          #          #          #          #       ',
-      '                             t G                      b                                                  ',
-      '                             =====                                         b                             ',
-      '               b  b         oo ot                                             oo o                       ',
-      '                            =====                                             =====  g                   ',
-      '                            ogoo        gg  o                                 ohoK  ######               ',
-      '         g  t  h  o        =====        #####         K K                    =====  F    #               ',
-      '         #  #  #  #             h       #   #       #######       K       H o       F C G#               ',
-      ' P   ^^^ #  #  #  #  #############      #   # ^^^ ###########     ==   ####################   oo   oo oD ',
-      '###############################################################%%%%%%%%#########################F########',
-      '###############################################################%%%%%%%%########################G   ######',
-      '###############################################################%%%%%%%%########################  C ######',
-      '###############################################################%%%%%%%%##################################'
+      '################################################################################################################',
+      '#################              ##              #################################################################',
+      '#################              ## b         b  #################################################################',
+      '#################              ##              #################################################################',
+      '#################              ##              #################################################################',
+      '#################              ## G            #################################################################',
+      '#################                 ==     ===   #################################################################',
+      '##           ####       ====         ===       ####           ##################################################',
+      '##           FFFFF                            FFFFF           ##################################################',
+      '##  C h    G FFFFF           o   g o         HFFFFF  C      G ##################################################',
+      '##################==     o  ==####==    o   ==##################################################################',
+      '####################    ====########    ====####################################################################',
+      '#              ##              ##   oKog       ##              ##              ##              ##              #',
+      '#              ##   ====       ##   ====       ##b             ##              ##   b          ##              #',
+      '#              ##              ##              ##              ##              ##              ##              #',
+      '#              ##       ====   ##       ====   ##              ##        h     ##              ##              #',
+      '#              ##              ##    h o       ##              ##     =====    ##     =====    ##              #',
+      '#                   ====       ##   ====                                                                       #',
+      '#                              ##         h                g        #               #                          #',
+      '#                       ====   ##       ====        ===  ===        #      #        #      #                   #',
+      '#  P     ooo     tog t g   g o ##  g   g   ho               o    o h# Kh   # K    th#  g   # og        K    D  #',
+      '####################################################%%%%%%%%####################################################'
     ]
   },
   {
     id: '3-3', world: 3, name: 'Throne Approach', theme: 'keep',
     hint: 'Last stretch. Everything at once.',
     rows: [
-      '############################################################################################################',
-      '         #          #          #          #          #          #          #          #          #          ',
-      '                               ghG                                                                          ',
-      '                               =====                        b                                               ',
-      '      b  b                    ho oo                                        b  b                             ',
-      '                              =====                                                                         ',
-      '    tto o        o            oho                     KhK                K   o           o  o               ',
-      '    #####     #  #  #        =====     g           #######               #####         ######               ',
-      '    #   #     #  #  #         h o o    ==   ==   ###########   ^^^       #   ##  #  #  F    #    go o to gD ',
-      ' P  # g # ^^^ #  #  #  #############             ##################   H o#   ##  #  #  FgC G# #####F########',
-      '####################################%%%%%%%%%%%%%#################################################G   ######',
-      '####################################%%%%%%%%%%%%%#################################################  C ######',
-      '####################################%%%%%%%%%%%%%###########################################################',
-      '####################################%%%%%%%%%%%%%###########################################################'
+      '################################################################################################################################',
+      '#################              ##              ##              ##              ##################              ##              #',
+      '#################              ##              ##          b   ##    b         ##################       b      ##              #',
+      '#################              ##              ##              ##              ##################              ##              #',
+      '#################              ##       G      ##              ##              ##################      o       ##              #',
+      '#################              ##     =====    ##  K           ## o            ##################     =====    ##              #',
+      '################# ===                          ##====   g         ===          ##################                              #',
+      '##           ####                   #          ##      ===                     ####           ###                              #',
+      '##           FFFFF                  #      #   ##                             FFFFF           ###   #      #                   #',
+      '##  C   oo GHFFFFFo         o      g   g   gt  ##             g               FFFFF  C   KgoG ### og   g   g h       h      D  #',
+      '##################==        ==####==       h==####==        ==####==        ==####################==        ==##################',
+      '####################    ====########    ====########    ====########    ====########################    ====####################',
+      '#              ##              ##              ##              ##              ##              ##              #################',
+      '#              ##   ====       ##   ====       ##   ====       ##   ====       ##        b    b##   ====       #################',
+      '#              ##              ##              ##              ##              ##              ##         h    #################',
+      '#              ##       ====   ##       ====   ##       ====   ##       ====   ##     o   o    ##       ====   #################',
+      '#              ##              ##              ##  o        o  ##              ##     =====    ##      h       #################',
+      '#                   ====       ##   ====           =====    =  ##   ====            o               ====       #################',
+      '#                         t    ##          t            o      ##                   #                   o      #################',
+      '#                       ====   ##       ====            ====   ##       ====        #      #            ====   #################',
+      '#  P    o    K     o           ##g h   hg  g                   ##                  g#  g   # o                 #################',
+      '####################%%%%%%%%##########################%%%###########%%%%%%%%########################%%%%%%%%####################'
     ]
   },
   {
     id: '3-4', world: 3, name: 'The Kennel King', theme: 'keep', boss: 'king',
     hint: 'Jump his shockwaves.',
     rows: [
-      '########################################',
-      '##       #          #          #      ##',
-      '##                                    ##',
-      '##                                    ##',
-      '##                                    ##',
-      '##   ======                  ======   ##',
-      '##                                    ##',
-      '##                                    ##',
-      '##            ============            ##',
-      '##                                    ##',
-      '##  P                           X     ##',
-      '########################################',
-      '########################################',
-      '########################################'
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '################################################',
+      '#                                              #',
+      '#                                              #',
+      '#                                              #',
+      '#                    ======                    #',
+      '#                                              #',
+      '#             ======        ======             #',
+      '#                                              #',
+      '#    ======                          ======    #',
+      '#  P                                    X      #',
+      '################################################'
     ]
   }
 ];
 
-/* Moving platforms, keyed by stage id. Tile coords; dx/dy are px per
-   frame and span is the round-trip distance in pixels. */
-var MOVERS = {
-  '1-3': [
-    { tx: 8, ty: 4, tw: 3, dx: 0, dy: 0.45, span: 48 }
-  ],
-  '2-1': [
-    { tx: 8, ty: 5, tw: 3, dx: 0, dy: 0.45, span: 48 }
-  ],
-  '2-2': [
-    { tx: 8, ty: 4, tw: 3, dx: 0.5, dy: 0, span: 48 }
-  ],
-  '2-3': [
-    { tx: 9, ty: 4, tw: 3, dx: 0, dy: 0.45, span: 48 }
-  ],
-  '3-1': [
-    { tx: 11, ty: 4, tw: 3, dx: 0, dy: 0.45, span: 48 }
-  ],
-  '3-2': [
-    { tx: 8, ty: 4, tw: 3, dx: 0.5, dy: 0, span: 48 }
-  ],
-  '3-3': [
-    { tx: 9, ty: 5, tw: 3, dx: 0, dy: 0.45, span: 48 }
-  ]
-};
+var MOVERS = {};
 
 var WORLDS = [
   { n: 1, name: 'Sunken Garden', theme: 'meadow' },
@@ -2286,18 +2471,18 @@ var Save = (function () {
 /* ===== entities.js ===== */
 /* Actors: the hero, the beasts, the bosses and everything they throw. */
 var TILE = 16;
-var GRAV = 0.42;
-var MAXFALL = 6.6;
+var GRAV = 0.62;
+var MAXFALL = 8.0;
 
 /* Jump feel. A tap gives a real jump that clears a two-tile ledge on its
    own; holding adds lift for a few frames for roughly half again the
    height. Tuned by simulation - see tools/reach.js, which reads these. */
 var RUN_SPEED = 1.75;
 var RUN_SPEED_SWIFT = 2.2;
-var JUMP_IMPULSE = 6.0;      /* tap  -> 40px (2.5 tiles) */
-var JUMP_LIFT = 0.14;        /* added per frame while held */
-var JUMP_LIFT_FRAMES = 12;   /* hold -> 57px (3.6 tiles)  */
-var DBL_JUMP_IMPULSE = 5.3;
+var JUMP_IMPULSE = 6.8;      /* tap  -> 34px, about 2.4x the hero */
+var JUMP_LIFT = 0.16;        /* added per frame while held */
+var JUMP_LIFT_FRAMES = 10;   /* hold -> 46px (2.8 tiles), 26f airtime */
+var DBL_JUMP_IMPULSE = 5.6;
 var BASE_JUMPS = 2;          /* ground jump + one in mid-air, always */
 var ATTACK_FRAMES = 17;
 
@@ -2515,7 +2700,7 @@ Enemy.prototype.update = function (w) {
     /* turn at a ledge */
     if (this.grounded) {
       var ahead = this.x + (this.facing > 0 ? this.w + 2 : -2);
-      if (!w.solidAt(ahead, this.y + this.h + 2)) this.facing *= -1;
+      if (!w.solidFor(this, w.codeAtPx(ahead, this.y + this.h + 2))) this.facing *= -1;
     }
   } else if (this.type === 'bat') {
     var near = Math.abs(p.x - this.x) < 104 && Math.abs(p.y - this.y) < 84;
@@ -2557,7 +2742,7 @@ Enemy.prototype.update = function (w) {
     if (this.hitWall && this.state === 'walk') this.facing *= -1;
     if (this.grounded && this.state === 'walk') {
       var a2 = this.x + (this.facing > 0 ? this.w + 2 : -2);
-      if (!w.solidAt(a2, this.y + this.h + 2)) this.facing *= -1;
+      if (!w.solidFor(this, w.codeAtPx(a2, this.y + this.h + 2))) this.facing *= -1;
     }
   } else { /* thorn turret */
     this.facing = p.x + p.w / 2 > this.x + this.w / 2 ? 1 : -1;
@@ -2872,7 +3057,7 @@ Player.prototype.update = function (w) {
     return;
   }
 
-  var ax = Input.axis();
+  var ax = Input.axis();          /* -1..1, analog on a touch stick */
   var speed = Save.has('swift') ? RUN_SPEED_SWIFT : RUN_SPEED;
   var accel = this.grounded ? 0.42 : 0.26;
 
@@ -2881,7 +3066,7 @@ Player.prototype.update = function (w) {
     this.vx = Util.approach(this.vx, 0, 0.35);
   } else if (ax !== 0) {
     this.vx = Util.approach(this.vx, ax * speed, accel);
-    if (this.attack <= 0) this.facing = ax;
+    if (this.attack <= 0) this.facing = ax > 0 ? 1 : -1;
   } else {
     this.vx = Util.approach(this.vx, 0, this.grounded ? 0.4 : 0.12);
   }
@@ -3122,11 +3307,20 @@ World.prototype.tileAt = function (tx, ty) {
   return this.tiles[ty][tx];
 };
 World.prototype.isSolidCode = function (c) {
-  return c === T_SOLID || c === T_CRATE || c === T_SPRING;
+  /* Ledges collide on every face. Nothing in this game passes through
+     floors - you go around, or you find another way up. */
+  return c === T_SOLID || c === T_CRATE || c === T_SPRING || c === T_PLAT;
 };
 /* Drawn as masonry, so it has to be hashed like masonry too. */
 World.prototype.isWallLooking = function (c) {
   return c === T_SOLID || c === T_FAKE;
+};
+/* Only the hero slips through a false wall. For everything else it is
+   ordinary stone - otherwise a patrolling enemy strolls through the
+   secret and advertises exactly where it is. */
+World.prototype.solidFor = function (e, c) {
+  if (c === T_FAKE) return e !== this.player;
+  return this.isSolidCode(c);
 };
 World.prototype.solidAt = function (px, py) {
   return this.isSolidCode(this.tileAt(Math.floor(px / TILE), Math.floor(py / TILE)));
@@ -3148,7 +3342,7 @@ World.prototype.moveActor = function (e, loose, flyer) {
   y1 = Math.floor(e.y / TILE); y2 = Math.floor((e.y + e.h - 1) / TILE);
   for (ty = y1; ty <= y2; ty++) {
     for (tx = x1; tx <= x2; tx++) {
-      if (!this.isSolidCode(this.tileAt(tx, ty))) continue;
+      if (!this.solidFor(e, this.tileAt(tx, ty))) continue;
       if (e.vx > 0) { e.x = tx * TILE - e.w; e.vx = 0; e.hitWall = true; }
       else if (e.vx < 0) { e.x = (tx + 1) * TILE; e.vx = 0; e.hitWall = true; }
       x1 = Math.floor(e.x / TILE); x2 = Math.floor((e.x + e.w - 1) / TILE);
@@ -3170,7 +3364,7 @@ World.prototype.moveActor = function (e, loose, flyer) {
   for (ty = y1; ty <= y2; ty++) {
     for (tx = x1; tx <= x2; tx++) {
       var code = this.tileAt(tx, ty);
-      if (this.isSolidCode(code)) {
+      if (this.solidFor(e, code)) {
         if (e.vy > 0) {
           e.y = ty * TILE - e.h; e.vy = 0; e.grounded = true;
           if (code === T_SPRING && e === this.player) {
@@ -3179,13 +3373,6 @@ World.prototype.moveActor = function (e, loose, flyer) {
           }
         } else if (e.vy < 0) { e.y = (ty + 1) * TILE; e.vy = 0; }
         y1 = Math.floor(e.y / TILE); y2 = Math.floor((e.y + e.h - 1) / TILE);
-      } else if (code === T_PLAT && !flyer && e.vy >= 0) {
-        var top = ty * TILE;
-        var dropping = (e === this.player) && Input.down('down');
-        if (!dropping && prevBottom <= top + 2 && e.y + e.h >= top) {
-          e.y = top - e.h; e.vy = 0; e.grounded = true;
-          y1 = Math.floor(e.y / TILE); y2 = Math.floor((e.y + e.h - 1) / TILE);
-        }
       }
     }
   }
@@ -3198,7 +3385,24 @@ World.prototype.moveActor = function (e, loose, flyer) {
       e.y = m.y + m.h; e.vy = 0;
     }
   }
-  if (e.grounded && !Util.aabb(e, { x: e.x, y: e.y, w: e.w, h: e.h + 0 })) e.riding = null;
+  if (!e.grounded && e.vy >= 0 && this.onGround(e)) e.grounded = true;
+};
+
+/* Is there footing directly under this actor? Checked separately from the
+   collision snap: an actor resting exactly on a tile boundary does not
+   overlap the floor tile, so the snap alone reports it as airborne and the
+   grounded flag flickers frame to frame. */
+World.prototype.onGround = function (e) {
+  var probe = e.y + e.h + 1;
+  var xl = e.x + 1, xr = e.x + e.w - 2;
+  if (this.solidFor(e, this.codeAtPx(xl, probe)) ||
+      this.solidFor(e, this.codeAtPx(xr, probe))) return true;
+  for (var i = 0; i < this.movers.length; i++) {
+    var m = this.movers[i];
+    if (e.x + e.w > m.x && e.x < m.x + m.w &&
+        e.y + e.h >= m.y - 2 && e.y + e.h <= m.y + 3) return true;
+  }
+  return false;
 };
 
 /* ---------------- spawning helpers ---------------- */
@@ -3940,8 +4144,7 @@ var UI = (function () {
       if (Input.pressed('confirm')) { Sfx.select(); G.go('map'); }
       if (Input.pressed('down') || Input.pressed('up')) {
         var d = Save.get();
-        var now = (d.touch === null) ? Input.hasTouch() : !!d.touch;
-        d.touch = !now;
+        d.touch = !Input.touchIsOn();
         Input.setTouchVisible(d.touch);
         Save.flush(); Sfx.select();
       }
@@ -3954,8 +4157,7 @@ var UI = (function () {
       Text.center(g, 'ESC   RESUME', VIEW_W / 2, 98, '#d8cff0', 1);
       Text.center(g, 'R     RESTART STAGE', VIEW_W / 2, 112, '#d8cff0', 1);
       Text.center(g, 'ENTER QUIT TO MAP', VIEW_W / 2, 126, '#d8cff0', 1);
-      var td = Save.get().touch;
-      var tOn = (td === null) ? Input.hasTouch() : !!td;
+      var tOn = Input.touchIsOn();
       Text.center(g, Sfx.isEnabled() ? 'M  SOUND ON' : 'M  SOUND OFF', VIEW_W / 2, 140, '#8d80ad', 1);
       Text.center(g, tOn ? '^v TOUCH PAD ON' : '^v TOUCH PAD OFF', VIEW_W / 2, 152, '#8d80ad', 1);
     }
@@ -4125,6 +4327,7 @@ var Game = (function () {
 
   function update() {
     G.t++;
+    Input.pollPad();
     Sfx.tick();
 
     if (Input.pressed('mute')) {
@@ -4199,7 +4402,7 @@ var Game = (function () {
     Sfx.setEnabled(Save.get().sound !== false);
     Input.init();
     var d0 = Save.get();
-    Input.setTouchVisible(d0.touch === null ? Input.hasTouch() : !!d0.touch);
+    if (d0.touch !== null) Input.setTouchVisible(!!d0.touch);
     fitCanvas();
     window.addEventListener('resize', fitCanvas);
     /* audio contexts need a gesture before they will make noise */

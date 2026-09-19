@@ -1,17 +1,17 @@
 /* Actors: the hero, the beasts, the bosses and everything they throw. */
 var TILE = 16;
-var GRAV = 0.42;
-var MAXFALL = 6.6;
+var GRAV = 0.62;
+var MAXFALL = 8.0;
 
 /* Jump feel. A tap gives a real jump that clears a two-tile ledge on its
    own; holding adds lift for a few frames for roughly half again the
    height. Tuned by simulation - see tools/reach.js, which reads these. */
 var RUN_SPEED = 1.75;
 var RUN_SPEED_SWIFT = 2.2;
-var JUMP_IMPULSE = 6.0;      /* tap  -> 40px (2.5 tiles) */
-var JUMP_LIFT = 0.14;        /* added per frame while held */
-var JUMP_LIFT_FRAMES = 12;   /* hold -> 57px (3.6 tiles)  */
-var DBL_JUMP_IMPULSE = 5.3;
+var JUMP_IMPULSE = 6.8;      /* tap  -> 34px, about 2.4x the hero */
+var JUMP_LIFT = 0.16;        /* added per frame while held */
+var JUMP_LIFT_FRAMES = 10;   /* hold -> 46px (2.8 tiles), 26f airtime */
+var DBL_JUMP_IMPULSE = 5.6;
 var BASE_JUMPS = 2;          /* ground jump + one in mid-air, always */
 var ATTACK_FRAMES = 17;
 
@@ -229,7 +229,7 @@ Enemy.prototype.update = function (w) {
     /* turn at a ledge */
     if (this.grounded) {
       var ahead = this.x + (this.facing > 0 ? this.w + 2 : -2);
-      if (!w.solidAt(ahead, this.y + this.h + 2)) this.facing *= -1;
+      if (!w.solidFor(this, w.codeAtPx(ahead, this.y + this.h + 2))) this.facing *= -1;
     }
   } else if (this.type === 'bat') {
     var near = Math.abs(p.x - this.x) < 104 && Math.abs(p.y - this.y) < 84;
@@ -271,7 +271,7 @@ Enemy.prototype.update = function (w) {
     if (this.hitWall && this.state === 'walk') this.facing *= -1;
     if (this.grounded && this.state === 'walk') {
       var a2 = this.x + (this.facing > 0 ? this.w + 2 : -2);
-      if (!w.solidAt(a2, this.y + this.h + 2)) this.facing *= -1;
+      if (!w.solidFor(this, w.codeAtPx(a2, this.y + this.h + 2))) this.facing *= -1;
     }
   } else { /* thorn turret */
     this.facing = p.x + p.w / 2 > this.x + this.w / 2 ? 1 : -1;
@@ -586,7 +586,7 @@ Player.prototype.update = function (w) {
     return;
   }
 
-  var ax = Input.axis();
+  var ax = Input.axis();          /* -1..1, analog on a touch stick */
   var speed = Save.has('swift') ? RUN_SPEED_SWIFT : RUN_SPEED;
   var accel = this.grounded ? 0.42 : 0.26;
 
@@ -595,7 +595,7 @@ Player.prototype.update = function (w) {
     this.vx = Util.approach(this.vx, 0, 0.35);
   } else if (ax !== 0) {
     this.vx = Util.approach(this.vx, ax * speed, accel);
-    if (this.attack <= 0) this.facing = ax;
+    if (this.attack <= 0) this.facing = ax > 0 ? 1 : -1;
   } else {
     this.vx = Util.approach(this.vx, 0, this.grounded ? 0.4 : 0.12);
   }

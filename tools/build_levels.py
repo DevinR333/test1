@@ -1,423 +1,395 @@
 # -*- coding: utf-8 -*-
-import os
-"""Builds the stage maps as architecture rather than a flat floor.
+"""Builds the stages as carved rock rather than a flat ribbon.
 
-Terrain is a surface heightmap assembled from segments - plateaus,
-steps, mesas, water crossings - and structures are then cut into it:
-pillars to hop across, arches to walk through, stepped ledges and
-platform tiers. Everything is placed against the hero's measured jump
-arc (3 tiles up, 3 tiles of air across) and verified by reach.js.
+The level starts as SOLID STONE and rooms are cut out of it. That single
+choice fixes the two things a ribbon can never do:
+
+  * secrets are enclosed by construction - a vault is a pocket carved in
+    rock whose only opening is a false-wall tile, so a chest can never end
+    up sitting in open air, and
+  * levels stop being a straight line - rooms sit on a grid two deep, the
+    route wanders up and down through vertical shafts, and side rooms hang
+    off the path.
+
+Layout follows the usual platformer pacing ideas: a teach beat before a
+test beat, action rooms alternating with quieter ones, verticality through
+shafts, and dedicated combat arenas rather than enemies sprinkled evenly.
+
+Every stage is then proved completable by tools/reach.js, which reads the
+real jump constants out of src/entities.js.
 """
-H = 14
-FLOOR = 13          # deepest row
-CEIL_THEMES = ('cavern', 'keep')
+import os, random
 
-class Builder:
-    def __init__(self, w, theme, base=10):
-        self.w = w; self.theme = theme
-        self.g = [[' '] * w for _ in range(H)]
-        self.surf = [None] * w      # surface row per column; None = open pit
-        self.x = 0
-        self.y = base
-        self.flats = []             # (x0, x1, row) runs safe for actors
-        self.jobs = []              # structures painted after the ground
+RW, RH = 16, 11          # room size in tiles
+SOLID, AIR = '#', ' '
 
-    # ---- raw cell access -------------------------------------------------
-    def put(self, r, c, ch, force=False):
-        if 0 <= r < H and 0 <= c < self.w:
-            if force or self.g[r][c] == ' ':
+
+class Stage:
+    def __init__(self, rcols, rrows, theme, seed):
+        self.rc, self.rr = rcols, rrows
+        self.W, self.H = rcols * RW, rrows * RH
+        self.theme = theme
+        self.rng = random.Random(seed)
+        self.g = [[SOLID] * self.W for _ in range(self.H)]
+        self.floors = []        # (x0, x1, row) walkable runs, for placement
+        self.rooms = {}
+
+    # ---------------- raw access ----------------
+    def inside(self, r, c):
+        return 0 <= r < self.H and 0 <= c < self.W
+
+    def set(self, r, c, ch):
+        if self.inside(r, c):
+            self.g[r][c] = ch
+
+    def get(self, r, c):
+        return self.g[r][c] if self.inside(r, c) else SOLID
+
+    def carve(self, r0, r1, c0, c1, ch=AIR):
+        for r in range(max(0, r0), min(self.H, r1 + 1)):
+            for c in range(max(0, c0), min(self.W, c1 + 1)):
                 self.g[r][c] = ch
-                return True
+
+    def put_free(self, r, c, ch):
+        """Place only into empty space, so actors never replace geometry."""
+        if self.inside(r, c) and self.g[r][c] == AIR:
+            self.g[r][c] = ch
+            return True
         return False
 
-    def free(self, r, c):
-        return 0 <= r < H and 0 <= c < self.w and self.g[r][c] == ' '
+    # ---------------- room geometry ----------------
+    def room_bounds(self, rx, ry):
+        return (ry * RH, ry * RH + RH - 1, rx * RW, rx * RW + RW - 1)
 
-    # ---- terrain segments ------------------------------------------------
-    def flat(self, n, tag=True):
-        x0 = self.x
-        for i in range(n):
-            if self.x < self.w:
-                self.surf[self.x] = self.y
-                self.x += 1
-        if tag and n >= 3:
-            self.flats.append((x0, min(self.x, self.w) - 1, self.y))
-        return self
+    def room_floor(self, rx, ry):
+        return ry * RH + RH - 1
 
-    def step(self, delta, run=3):
-        """Change surface height by delta (positive = downhill), in 1-tile stairs."""
-        d = 1 if delta > 0 else -1
-        for _ in range(abs(delta)):
-            self.y = max(6, min(11, self.y + d))
-            self.flat(run, tag=False)
-        return self
+    def open_room(self, rx, ry, top_pad=1):
+        """Hollow a room out, leaving its bottom row as floor."""
+        r0, r1, c0, c1 = self.room_bounds(rx, ry)
+        self.carve(r0 + top_pad, r1 - 1, c0 + 1, c1 - 1)
+        self.floors.append((c0 + 1, c1 - 1, r1))
+        self.rooms[(rx, ry)] = True
 
-    def pit(self, air=3, water=True):
-        air = min(air, 3)                       # never wider than the jump arc
-        for i in range(air):
-            if self.x < self.w:
-                self.surf[self.x] = None
-                if water:
-                    for r in range(10, H):
-                        self.put(r, self.x, '%', force=True)
-                self.x += 1
-        return self
+    # ---------------- connections ----------------
+    def door(self, rx, ry, rx2, ry2):
+        """A walkable opening between two horizontally adjacent rooms."""
+        r1 = self.room_floor(rx, ry)
+        r2 = self.room_floor(rx2, ry2)
+        edge = max(rx, rx2) * RW
+        lo, hi = min(r1, r2), max(r1, r2)
+        self.carve(lo - 4, hi - 1, edge - 2, edge + 1)
+        # step the sill if the two floors sit at different heights
+        if r1 != r2:
+            for c in range(edge - 2, edge + 2):
+                self.set(hi - 1, c, SOLID)
 
-    def crossing(self, spans=2, air=3):
-        """Water with standable stepping platforms, each one tile above."""
-        for s in range(spans):
-            self.pit(air)
-            if self.x < self.w - 2:
-                px = self.x
-                row = self.y - 1
-                self.jobs.append(('plat', px, row, 2))
-                for i in range(2):
-                    if self.x < self.w:
-                        self.surf[self.x] = None
-                        for r in range(10, H):
-                            self.put(r, self.x, '%', force=True)
-                        self.x += 1
-                self.flats.append((px, px + 1, row))
-        self.pit(air)
-        return self
+    def shaft(self, rx, ry_low, ry_high):
+        """A vertical passage climbed in zig-zag. Ledges sit two rows
+        apart, inside the jump arc, and alternate sides so each hop is a
+        short diagonal rather than a straight vertical wall."""
+        c0 = rx * RW + 4
+        top = self.room_floor(rx, ry_high)
+        bottom = self.room_floor(rx, ry_low)
+        # break clean through the upper room's floor as well
+        self.carve(top - 1, bottom - 1, c0, c0 + 7)
+        side = 0
+        r = bottom - 2
+        while r > top - 1:
+            lx = c0 if side else c0 + 4
+            self.carve(r, r, lx, lx + 3, '=')
+            self.floors.append((lx, lx + 3, r))
+            side ^= 1
+            r -= 2
+        # a lip to step off onto at the top, both sides of the opening
+        self.carve(top, top, c0 - 2, c0 - 1, '=')
+        self.carve(top, top, c0 + 8, c0 + 9, '=')
+        self.floors.append((c0 - 2, c0 - 1, top))
+        self.floors.append((c0 + 8, c0 + 9, top))
 
-    def mesa(self, n, rise=2):
-        """A raised block with a stepped approach on both sides."""
-        self.step(-rise, run=2)
-        self.flat(n)
-        self.step(rise, run=2)
-        return self
+    # ---------------- room archetypes ----------------
+    def arch_corridor(self, rx, ry, hard):
+        """Traversal: a couple of ledges and a hazard to time."""
+        r0, r1, c0, c1 = self.room_bounds(rx, ry)
+        floor = self.room_floor(rx, ry)
+        if self.rng.random() < 0.7:
+            w = self.rng.randint(3, 4)
+            x = c0 + self.rng.randint(4, RW - w - 5)        # clear of the doorways
+            self.carve(floor, floor, x, x + w - 1, '%')     # water to clear
+        for _ in range(self.rng.randint(1, 2)):
+            lw = self.rng.randint(3, 4)
+            lx = c0 + self.rng.randint(1, RW - lw - 2)
+            ly = floor - self.rng.choice([3, 4])
+            self.carve(ly, ly, lx, lx + lw - 1, '=')
+            self.floors.append((lx, lx + lw - 1, ly))
+        if hard:
+            sx = c0 + self.rng.randint(2, RW - 5)
+            self.carve(floor - 1, floor - 1, sx, sx + 2, '^')
 
-    def pillars(self, count=3, gap=2, tall=2):
-        """Free-standing columns rising from the floor; hop across the tops."""
-        for i in range(count):
-            px = self.x
-            self.jobs.append(('pillar', px, self.y, tall))
-            self.flats.append((px, px, self.y - tall))
-            self.flat(1, tag=False)
-            self.flat(gap, tag=False)
-        return self
+    def arch_arena(self, rx, ry, hard):
+        """Combat space: open floor, cover pillars, a high ledge to retreat to."""
+        r0, r1, c0, c1 = self.room_bounds(rx, ry)
+        floor = self.room_floor(rx, ry)
+        for px in (c0 + 4, c0 + 11):
+            h = self.rng.choice([2, 3])
+            for r in range(floor - h, floor):
+                self.set(r, px, SOLID)
+            self.floors.append((px, px, floor - h))
+        ly = floor - 5
+        self.carve(ly, ly, c0 + 6, c0 + 10, '=')
+        self.floors.append((c0 + 6, c0 + 10, ly))
+        self.rooms[(rx, ry, 'arena')] = True
 
-    def arch(self):
-        """Two legs and a lintel - walk under it or stand on top."""
-        x0 = self.x
-        self.jobs.append(('arch', x0, self.y))
-        self.flat(5)
-        return self
+    def arch_gauntlet(self, rx, ry, hard):
+        """Precision: stepping ledges over spikes."""
+        r0, r1, c0, c1 = self.room_bounds(rx, ry)
+        floor = self.room_floor(rx, ry)
+        self.carve(floor - 1, floor - 1, c0 + 4, c1 - 4, '^')
+        x = c0 + 1
+        up = True
+        while x < c1 - 3:
+            ly = floor - (4 if up else 3)
+            self.carve(ly, ly, x, x + 2, '=')
+            self.floors.append((x, x + 2, ly))
+            x += self.rng.randint(4, 5)
+            up = not up
 
-    def tower(self, tiers=3, bone=False):
-        """Platform tiers, each exactly 2 above the one below."""
-        x0 = self.x
-        self.jobs.append(('tower', x0, self.y, tiers, bone))
-        self.flat(7)
-        return self
+    def arch_cistern(self, rx, ry, hard):
+        """Water room crossed on ledges, with headroom above."""
+        r0, r1, c0, c1 = self.room_bounds(rx, ry)
+        floor = self.room_floor(rx, ry)
+        self.carve(floor, floor, c0 + 4, c1 - 4, '%')
+        x = c0 + 4
+        while x < c1 - 3:
+            self.carve(floor - 2, floor - 2, x, x + 2, '=')
+            self.floors.append((x, x + 2, floor - 2))
+            x += self.rng.randint(4, 5)
 
-    def secret_wall(self):
-        """A block of masonry with a chamber hollowed out inside it. The
-        approach face is false - walk into the wall and you pass through."""
-        x0 = self.x
-        self.jobs.append(('secret_wall', x0, self.y))
-        self.flat(7)
-        return self
+    # ---------------- secrets ----------------
+    def vault(self, rx, ry, from_side):
+        """A sealed pocket inside the rock. The only way in is one false
+        tile, so the chest cannot be visible from the open level."""
+        r0, r1, c0, c1 = self.room_bounds(rx, ry)
+        floor = self.room_floor(rx, ry)
+        top = floor - 3
+        vc0, vc1 = c0 + 3, c0 + RW - 4
+        self.carve(top, floor - 1, vc0, vc1)
+        self.carve(floor, floor, vc0, vc1, SOLID)       # give it a floor
+        # the false tile, on the wall facing the route
+        if from_side == 'left':
+            for r in range(top + 1, floor):
+                self.set(r, vc0 - 1, 'F')
+        elif from_side == 'right':
+            for r in range(top + 1, floor):
+                self.set(r, vc1 + 1, 'F')
+        else:                                            # from above
+            self.set(top - 1, vc0 + 2, 'F')
+            self.carve(top - 1, top - 1, vc0 + 2, vc0 + 2, 'F')
+        self.put_free(floor - 1, vc0 + 2, 'C')
+        self.put_free(floor - 1, vc1 - 1, 'G')
+        return True
 
-    def secret_floor(self):
-        """A chamber under the walkway, entered by falling through a
-        floor tile that looks like every other floor tile."""
-        x0 = self.x
-        self.jobs.append(('secret_floor', x0, self.y))
-        self.flat(6)
-        return self
-
-    def spikes(self, n=3):
-        x0 = self.x
-        self.jobs.append(('spikes', x0, self.y, n))
-        self.flat(n + 2, tag=False)
-        return self
-
-    # ---- painting --------------------------------------------------------
-    def build(self):
-        # ground body
-        for c in range(self.w):
-            s = self.surf[c]
-            if s is None:
-                continue
-            for r in range(s, H):
-                self.put(r, c, '#', force=True)
-        # ceiling for interiors
-        if self.theme in CEIL_THEMES:
-            for c in range(self.w):
-                self.put(0, c, '#', force=True)
-                if (c * 7 + 3) % 11 == 0:
-                    self.put(1, c, '#', force=True)
-                    if (c * 5) % 13 == 0:
-                        self.put(2, c, '#', force=True)
-        # structures
-        for job in self.jobs:
-            kind = job[0]
-            if kind == 'pillar':
-                _, px, row, tall = job
-                for t in range(1, tall + 1):
-                    self.put(row - t, px, '#', force=True)
-            elif kind == 'arch':
-                _, x0, row = job
-                for t in range(1, 3):                      # two legs, 2 tall
-                    self.put(row - t, x0, '#', force=True)
-                    self.put(row - t, x0 + 4, '#', force=True)
-                for c in range(x0, x0 + 5):                # lintel
-                    self.put(row - 3, c, '#', force=True)
-                self.flats.append((x0, x0 + 4, row - 3))
-            elif kind == 'plat':
-                _, px, row, n = job
-                for c in range(px, px + n):
-                    self.put(row, c, '=', force=True)
-            elif kind == 'tower':
-                _, x0, row, tiers, bone = job
-                for t in range(tiers):
-                    py = row - 2 * (t + 1)
-                    px = x0 + t
-                    for c in range(px, px + 5):
-                        self.put(py, c, '=', force=True)
-                    self.flats.append((px, px + 4, py))
-                    if t == tiers - 1 and bone:
-                        self.put(py - 1, px + 2, 'G', force=True)
-                    else:
-                        self.put(py - 1, px + 1, 'o', force=True)
-                        self.put(py - 1, px + 3, 'o', force=True)
-            elif kind == 'secret_wall':
-                _, x0, row = job
-                for c in range(x0, x0 + 6):
-                    for r in range(row - 3, row):
-                        self.put(r, c, '#', force=True)
-                for c in range(x0 + 1, x0 + 5):       # hollow it out
-                    for r in range(row - 2, row):
-                        self.put(r, c, ' ', force=True)
-                for r in range(row - 2, row):          # false face
-                    self.put(r, x0, 'F', force=True)
-                self.put(row - 1, x0 + 2, 'C', force=True)
-                self.put(row - 1, x0 + 4, 'G', force=True)
-                self.flats.append((x0, x0 + 5, row - 3))
-            elif kind == 'secret_floor':
-                _, x0, row = job
-                for c in range(x0 + 1, x0 + 5):
-                    for r in range(row + 1, row + 3):
-                        self.put(r, c, ' ', force=True)
-                self.put(row, x0 + 2, 'F', force=True)  # the floor gives way
-                self.put(row + 2, x0 + 3, 'C', force=True)
-                self.put(row + 1, x0 + 1, 'G', force=True)
-            elif kind == 'spikes':
-                _, x0, row, n = job
-                for c in range(x0 + 1, x0 + 1 + n):
-                    self.put(row - 1, c, '^', force=True)
-        return self
-
-    # ---- actors ----------------------------------------------------------
+    # ---------------- population ----------------
     def scatter(self, spec):
-        """spec: list of (char, count). Placed on tagged flat runs, never
-        overwriting existing geometry."""
-        import random
-        rng = random.Random(hash(tuple(sorted(spec))) & 0xffff)
         slots = []
-        for (x0, x1, row) in self.flats:
+        for (x0, x1, row) in self.floors:
             for c in range(x0, x1 + 1):
-                if self.free(row - 1, c) and self.g[row][c] in '#=':
+                if self.get(row - 1, c) == AIR and self.get(row, c) in '#=':
                     slots.append((row - 1, c))
-        rng.shuffle(slots)
+        self.rng.shuffle(slots)
         i = 0
-        for (ch, count) in spec:
+        for ch, count in spec:
             placed = 0
             while placed < count and i < len(slots):
                 r, c = slots[i]; i += 1
-                # keep a little breathing room around the spawn point
                 if c < 4:
                     continue
-                if self.put(r, c, ch):
+                if self.put_free(r, c, ch):
                     placed += 1
-        return self
-
-    def spawn(self):
-        for c in range(1, self.w):
-            if self.surf[c] is not None:
-                self.put(self.surf[c] - 1, c, 'P', force=True)
-                return self
-        return self
-
-    def exit(self):
-        for c in range(self.w - 2, 0, -1):
-            if self.surf[c] is not None and self.free(self.surf[c] - 1, c):
-                self.put(self.surf[c] - 1, c, 'D', force=True)
-                return self
-        return self
 
     def rows(self):
         return [''.join(r) for r in self.g]
 
-    def crop(self):
-        """Trim to the columns actually used, keeping a solid final column."""
-        self.w = self.x
-        self.g = [row[:self.w] for row in self.g]
-        self.surf = self.surf[:self.w]
-        return self
 
-    def air(self, spec):
-        """Place flyers in open air above the terrain."""
-        import random
-        rng = random.Random(len(self.g[0]) * 31 + 7)
-        slots = []
-        for c in range(6, self.w - 4, 3):
-            s = self.surf[c]
-            if s is None:
-                continue
-            for r in range(max(2, s - 6), s - 2):
-                if self.free(r, c) and self.free(r, c + 1):
-                    slots.append((r, c))
-                    break
-        rng.shuffle(slots)
-        i = 0
-        for (ch, count) in spec:
-            placed = 0
-            while placed < count and i < len(slots):
-                r, c = slots[i]; i += 1
-                if self.put(r, c, ch):
-                    placed += 1
-        return self
+# ============================================================ assembly
+def route(rc, rr, rng):
+    """A wandering path: right across the grid, changing deck as it goes,
+    so the level is never a straight line."""
+    x, y = 0, rr - 1
+    path = [(x, y)]
+    while x < rc - 1:
+        if rr > 1 and 0 < x < rc - 1 and rng.random() < 0.5:
+            ny = 0 if y == rr - 1 else rr - 1
+            if (x, ny) not in path:
+                path.append((x, ny))
+                y = ny
+        x += 1
+        path.append((x, y))
+    return path
 
 
-def stage(sid, world, name, theme, hint, script, ground, flyers, boss=None):
-    b = Builder(160, theme)
-    script(b)
-    b.crop().build().spawn().exit()
-    b.scatter(ground)
-    b.air(flyers)
+def build(sid, world, name, theme, hint, rcols, seed, spec, flyers):
+    rng = random.Random(seed)
+    st = Stage(rcols, 2, theme, seed)
+    path = route(rcols, 2, rng)
+
+    # open every room on the route
+    for (rx, ry) in path:
+        st.open_room(rx, ry)
+
+    # archetypes, paced teach -> test -> twist
+    kinds = []
+    for i, (rx, ry) in enumerate(path):
+        if i == 0:
+            kinds.append('teach')
+        elif i == len(path) - 1:
+            kinds.append('exit')
+        else:
+            kinds.append(rng.choice(['corridor', 'arena', 'gauntlet', 'cistern',
+                                     'corridor', 'arena']))
+    arenas = []
+    for i, (rx, ry) in enumerate(path):
+        k, hard = kinds[i], i > len(path) // 2
+        if k == 'corridor':
+            st.arch_corridor(rx, ry, hard)
+        elif k == 'arena':
+            st.arch_arena(rx, ry, hard); arenas.append((rx, ry))
+        elif k == 'gauntlet':
+            st.arch_gauntlet(rx, ry, hard)
+        elif k == 'cistern':
+            st.arch_cistern(rx, ry, hard)
+
+    # Connections are punched LAST. Room features paint over floors (water
+    # pits, spike beds), and a door or shaft carved earlier would simply be
+    # sealed up again by them.
+    for i in range(len(path) - 1):
+        ax, ay = path[i]
+        bx, by = path[i + 1]
+        if ax == bx:
+            st.shaft(ax, max(ay, by), min(ay, by))
+        else:
+            st.door(ax, ay, bx, by)
+
+    # vaults in rooms OFF the route, reached only through false wall
+    onpath = set(path)
+    vaults = 0
+    for (rx, ry) in path:
+        if vaults >= 2:
+            break
+        for nx in (rx + 1, rx - 1):
+            if vaults >= 2:
+                break
+            if 0 <= nx < rcols and (nx, ry) not in onpath:
+                r0, r1, c0, c1 = st.room_bounds(nx, ry)
+                floor = st.room_floor(nx, ry)
+                top = floor - 3
+                if nx > rx:
+                    vc0, vc1 = c0 + 3, c1 - 2
+                    st.carve(top, floor - 1, vc0, vc1)
+                    for c in range(c0 - 2, vc0):
+                        for r in range(floor - 2, floor):
+                            st.set(r, c, 'F')
+                else:
+                    vc0, vc1 = c0 + 2, c1 - 3
+                    st.carve(top, floor - 1, vc0, vc1)
+                    for c in range(vc1 + 1, c1 + 3):
+                        for r in range(floor - 2, floor):
+                            st.set(r, c, 'F')
+                st.put_free(floor - 1, vc0 + 2, 'C')
+                st.put_free(floor - 1, vc1 - 1, 'G')
+                st.floors.append((vc0, vc1, floor))
+                onpath.add((nx, ry))
+                vaults += 1
+
+    # spawn and exit
+    sx, sy = path[0]
+    st.put_free(st.room_floor(sx, sy) - 1, sx * RW + 3, 'P')
+    ex, ey = path[-1]
+    st.put_free(st.room_floor(ex, ey) - 1, ex * RW + RW - 4, 'D')
+
+    # the third gem goes somewhere awkward but visible: a high ledge
+    high = sorted(st.floors, key=lambda f: f[2])
+    for (x0, x1, row) in high:
+        if st.put_free(row - 1, (x0 + x1) // 2, 'G'):
+            break
+
+    # arenas get the crowd; the rest is sprinkled
+    for (rx, ry) in arenas:
+        floor = st.room_floor(rx, ry)
+        for k in range(3):
+            st.put_free(floor - 1, rx * RW + 3 + k * 4, rng.choice(['g', 'h', 'g']))
+    st.scatter(spec)
+
+    # flyers ride the open air
+    slots = []
+    for c in range(4, st.W - 4, 5):
+        for r in range(2, st.H - 3):
+            if st.get(r, c) == AIR and st.get(r + 1, c) == AIR and st.get(r - 1, c) == AIR:
+                slots.append((r, c)); break
+    rng.shuffle(slots)
+    i = 0
+    for ch, n in flyers:
+        placed = 0
+        while placed < n and i < len(slots):
+            r, c = slots[i]; i += 1
+            if st.put_free(r, c, ch):
+                placed += 1
+
     return dict(id=sid, world=world, name=name, theme=theme, hint=hint,
-                boss=boss, rows=b.rows(), w=b.w)
+                boss=None, rows=st.rows(), w=st.W)
 
 
-def arena(sid, world, name, theme, boss, hint):
-    W = 40
-    b = Builder(W, theme, base=11)
-    b.flat(W)
-    b.crop().build()
-    for r in range(1, 11):                 # side walls
-        b.put(r, 0, '#', force=True); b.put(r, 1, '#', force=True)
-        b.put(r, W - 1, '#', force=True); b.put(r, W - 2, '#', force=True)
-    for c in range(5, 11):                 # ledges to fight from
-        b.put(5, c, '=', force=True)
-        b.put(5, W - 1 - c, '=', force=True)
-    for c in range(14, 26):
-        b.put(8, c, '=', force=True)
-    b.put(10, 4, 'P', force=True)
-    b.put(10 if boss != 'gloomwing' else 4, W - 8 if boss != 'gloomwing' else 20,
-          'X', force=True)
+def arena_stage(sid, world, name, theme, boss, hint):
+    st = Stage(3, 2, theme, 99)
+    st.open_room(0, 1); st.open_room(1, 1); st.open_room(2, 1)
+    floor = st.room_floor(0, 1)
+    st.carve(floor - 9, floor - 1, 1, st.W - 2)
+    st.carve(floor, floor, 0, st.W - 1, SOLID)
+    # stepped so every ledge is within one jump of the one below it
+    st.carve(floor - 2, floor - 2, 5, 10, '=')
+    st.carve(floor - 2, floor - 2, st.W - 11, st.W - 6, '=')
+    st.carve(floor - 4, floor - 4, 14, 19, '=')
+    st.carve(floor - 4, floor - 4, st.W - 20, st.W - 15, '=')
+    st.carve(floor - 6, floor - 6, 21, 26, '=')
+    st.put_free(floor - 1, 3, 'P')
+    # the flyer starts high, the others on the floor; force it so a ledge
+    # tile can never silently swallow the spawn marker
+    st.set(floor - 1 if boss != 'gloomwing' else floor - 8, st.W - 8, 'X')
     return dict(id=sid, world=world, name=name, theme=theme, hint=hint,
-                boss=boss, rows=b.rows(), w=W)
+                boss=boss, rows=st.rows(), w=st.W)
 
 
-LEVELS = [
-    stage('1-1', 1, 'Backyard Gate', 'meadow', 'X swings the blade. Z jumps.',
-          lambda b: (b.flat(6).tower(2).step(-1).flat(3).pit(2).flat(4).mesa(4)
-                      .step(1).flat(3).pit(3).flat(3).tower(3, bone=True)
-                      .step(-1).flat(3).pit(2).flat(4).secret_wall().step(1).secret_floor().flat(5)),
-          [('g', 3), ('o', 9), ('K', 1)], []),
+STAGES = [
+    build('1-1', 1, 'Backyard Gate', 'meadow', 'X swings the blade. Z jumps.',
+          5, 11, [('o', 12), ('g', 2), ('K', 2), ('H', 1)], []),
+    build('1-2', 1, 'Thistle Run', 'meadow', 'Push into walls. Some of them give.',
+          6, 22, [('o', 14), ('g', 3), ('K', 2), ('H', 1)], [('b', 3)]),
+    build('1-3', 1, 'The Old Well', 'meadow', 'Mind the water.',
+          6, 33, [('o', 14), ('g', 3), ('h', 1), ('t', 1), ('K', 2), ('H', 1)], [('b', 3)]),
+    arena_stage('1-4', 1, 'Grumblegut', 'meadow', 'boar', 'He charges. Let him hit the wall.'),
 
-    stage('1-2', 1, 'Thistle Run', 'meadow', 'Hop the pillars. Mind the drop.',
-          lambda b: (b.flat(5).pillars(3, 2, 2).step(-1).flat(3).pit(3).flat(3)
-                      .tower(3, bone=True).step(1).flat(3).mesa(5).pit(3)
-                      .flat(3).arch().step(-1).secret_wall().flat(3).pit(2).secret_floor().flat(5)),
-          [('g', 4), ('o', 10), ('K', 2), ('H', 1)], [('b', 3)]),
+    build('2-1', 2, 'Dripstone Deep', 'cavern', 'Spikes hurt. Everything down here hurts.',
+          6, 44, [('o', 15), ('g', 4), ('t', 2), ('K', 2), ('H', 1)], [('b', 4)]),
+    build('2-2', 2, 'Crystal Drop', 'cavern', 'Look up. And look down.',
+          7, 55, [('o', 16), ('g', 4), ('h', 2), ('t', 2), ('K', 2), ('H', 1)], [('b', 4)]),
+    build('2-3', 2, 'Gnaw Tunnels', 'cavern', 'Bonehounds leap when you get close.',
+          7, 66, [('o', 16), ('h', 4), ('g', 3), ('t', 2), ('K', 3), ('H', 1)], [('b', 4)]),
+    arena_stage('2-4', 2, 'Gloomwing', 'cavern', 'gloomwing', 'It dives. Swing when it drops low.'),
 
-    stage('1-3', 1, 'The Old Well', 'meadow', 'Mind the water. Some things bite back.',
-          lambda b: (b.flat(5).crossing(2).step(-1).flat(3).tower(3, bone=True)
-                      .step(1).flat(3).mesa(4).crossing(2).flat(3).arch().secret_wall()
-                      .step(-1).secret_floor().flat(5)),
-          [('h', 2), ('g', 2), ('t', 1), ('o', 10), ('H', 1)], [('b', 3)]),
-
-    arena('1-4', 1, 'Grumblegut', 'meadow', 'boar', 'He charges. Let him hit the wall.'),
-
-    stage('2-1', 2, 'Dripstone Deep', 'cavern', 'Spikes hurt. Everything down here hurts.',
-          lambda b: (b.flat(5).spikes(3).step(-1).flat(3).tower(2).pit(3)
-                      .flat(3).pillars(3, 2, 2).step(1).flat(3).mesa(5)
-                      .spikes(3).step(-1).flat(3).tower(3, bone=True)
-                      .step(1).secret_wall().flat(3).pit(3).secret_floor().flat(5)),
-          [('g', 5), ('o', 11), ('K', 2), ('H', 1)], [('b', 4)]),
-
-    stage('2-2', 2, 'Crystal Drop', 'cavern', 'Ride the stones. Do not rush.',
-          lambda b: (b.flat(5).crossing(2).step(-1).flat(3).mesa(5).step(1)
-                      .flat(3).tower(3, bone=True).crossing(2).step(-1)
-                      .flat(3).pillars(4, 2, 2).secret_wall().step(1).secret_floor().flat(5)),
-          [('g', 4), ('t', 2), ('o', 11), ('K', 1), ('H', 1)], [('b', 4)]),
-
-    stage('2-3', 2, 'Gnaw Tunnels', 'cavern', 'Bonehounds leap when you get close.',
-          lambda b: (b.flat(4).arch().step(-1).flat(3).spikes(3)
-                      .pillars(3, 2, 2).step(1).flat(3).tower(3, bone=True)
-                      .pit(3).mesa(5).step(-1).flat(3).crossing(1).flat(3)
-                      .arch().step(1).secret_wall().secret_floor().flat(5)),
-          [('h', 4), ('g', 3), ('t', 2), ('o', 12), ('K', 2), ('H', 1)], [('b', 4)]),
-
-    arena('2-4', 2, 'Gloomwing', 'cavern', 'gloomwing', 'It dives. Swing when it drops low.'),
-
-    stage('3-1', 3, 'The Ramparts', 'keep', 'The keep is awake.',
-          lambda b: (b.flat(4).mesa(4).spikes(3).step(-1).flat(3)
-                      .tower(3, bone=True).pillars(3, 2, 2).step(1).flat(3)
-                      .arch().pit(3).flat(3).crossing(1).step(-1).flat(3)
-                      .mesa(5).step(1).secret_wall().secret_floor().flat(5)),
-          [('g', 5), ('h', 4), ('o', 12), ('K', 2), ('H', 1)], [('b', 4)]),
-
-    stage('3-2', 3, 'Iron Halls', 'keep', 'Break the crates. Some hide coin.',
-          lambda b: (b.flat(4).spikes(3).pillars(4, 2, 2).step(-1).flat(3)
-                      .tower(3, bone=True).step(1).flat(3).arch().spikes(3)
-                      .mesa(5).crossing(1).step(-1).flat(3).tower(2).secret_wall()
-                      .step(1).secret_floor().flat(5)),
-          [('g', 5), ('h', 3), ('t', 3), ('o', 11), ('K', 4), ('H', 1)], [('b', 4)]),
-
-    stage('3-3', 3, 'Throne Approach', 'keep', 'Last stretch. Everything at once.',
-          lambda b: (b.flat(4).arch().spikes(3).pillars(3, 2, 3).step(-1)
-                      .flat(3).tower(3, bone=True).crossing(2).mesa(5)
-                      .spikes(3).step(1).flat(3).arch().pillars(3, 2, 2).secret_wall()
-                      .step(-1).secret_floor().flat(5)),
-          [('g', 6), ('h', 5), ('t', 3), ('o', 13), ('K', 3), ('H', 1)], [('b', 5)]),
-
-    arena('3-4', 3, 'The Kennel King', 'keep', 'king', 'Jump his shockwaves.')
+    build('3-1', 3, 'The Ramparts', 'keep', 'The keep is awake.',
+          7, 77, [('o', 16), ('g', 4), ('h', 4), ('t', 2), ('K', 3), ('H', 1)], [('b', 4)]),
+    build('3-2', 3, 'Iron Halls', 'keep', 'Break the crates. Some hide coin.',
+          7, 88, [('o', 16), ('g', 4), ('h', 4), ('t', 3), ('K', 4), ('H', 1)], [('b', 4)]),
+    build('3-3', 3, 'Throne Approach', 'keep', 'Last stretch. Everything at once.',
+          8, 99, [('o', 18), ('g', 5), ('h', 5), ('t', 3), ('K', 3), ('H', 1)], [('b', 5)]),
+    arena_stage('3-4', 3, 'The Kennel King', 'keep', 'king', 'Jump his shockwaves.')
 ]
 
-# ---- moving platforms: search for genuinely empty air -------------------
-def find_mover(L, want_vertical):
-    rows = L['rows']; w = L['w']
-    def free(r, c):
-        return 0 <= r < H and 0 <= c < w and rows[r][c] == ' '
-    span = 3
-    for c in range(8, w - 10):
-        for r in range(4, 8):
-            cells = []
-            ok = True
-            steps = 3
-            for s in range(steps + 1):
-                for i in range(span):
-                    rr = r + (s if want_vertical else 0)
-                    cc = c + i + (0 if want_vertical else s)
-                    if not free(rr, cc):
-                        ok = False; break
-                    cells.append((rr, cc))
-                if not ok: break
-            if ok:
-                return dict(tx=c, ty=r, tw=span,
-                            dx=0 if want_vertical else 0.5,
-                            dy=0.45 if want_vertical else 0,
-                            span=48)
-    return None
-
-MOVERS = {}
-for i, L in enumerate(LEVELS):
-    if L['boss'] or L['id'] in ('1-1', '1-2'):
-        continue
-    m = find_mover(L, want_vertical=(i % 2 == 0))
-    if m:
-        MOVERS[L['id']] = [m]
-
-# ---- emit ---------------------------------------------------------------
+# ---------------------------------------------------------------- emit
 chunks = []
-for L in LEVELS:
+for L in STAGES:
     extra = (" boss: '%s'," % L['boss']) if L['boss'] else ''
-    body = ',\n'.join("      '%s'" % r for r in L['rows'])
+    body = ',\n'.join("      '%s'" % r.replace("\\", "\\\\").replace("'", "\\'") for r in L['rows'])
     chunks.append(
 """  {
     id: '%s', world: %d, name: '%s', theme: '%s',%s
@@ -427,46 +399,38 @@ for L in LEVELS:
     ]
   }""" % (L['id'], L['world'], L['name'], L['theme'], extra, L['hint'], body))
 
-mover_js = ',\n'.join(
-    "  '%s': [\n%s\n  ]" % (sid, ',\n'.join(
-        "    { tx: %d, ty: %d, tw: %d, dx: %s, dy: %s, span: %d }"
-        % (s['tx'], s['ty'], s['tw'], s['dx'], s['dy'], s['span']) for s in mv))
-    for sid, mv in MOVERS.items())
+header = """/* Stage data - generated by tools/build_levels.py and proved completable
+   by tools/reach.js, which reads the jump constants from src/entities.js.
 
-header = """/* Stage data - generated by tools/build_levels.py, then verified by
-   tools/reach.js against the hero's measured jump arc.
+   Legend:  # solid   = ledge (solid on every face)   ^ spikes
+            % hazard water   K crate   S bounce pad   F false wall
+            D exit   P spawn   X boss
+            o coin   G gem   C chest   H meat
+            g grub   b batling   h bonehound   t thorn turret
 
-   Legend:  # solid   = one-way platform   ^ spikes   % hazard water
-            K crate   S bounce pad   D exit   P spawn   X boss
-            o coin    B golden bone   H meat
-            g grub    b batling   h bonehound   t thorn turret
-
-   Terrain is assembled from segments (plateaus, steps, mesas, water
-   crossings) with structures cut in: pillars to hop, arches to pass
-   under or stand on, and platform tiers two tiles apart. */
+   Levels are carved out of solid rock on a two-deck room grid, so the
+   route wanders up and down instead of running in a straight line, and
+   secret vaults are sealed pockets whose only way in is a false wall. */
 var LEVELS = [
 """
 footer = """
 ];
 
-/* Moving platforms, keyed by stage id. Tile coords; dx/dy are px per
-   frame and span is the round-trip distance in pixels. */
-var MOVERS = {
-%s
-};
+var MOVERS = {};
 
 var WORLDS = [
   { n: 1, name: 'Sunken Garden', theme: 'meadow' },
   { n: 2, name: 'Root Caverns', theme: 'cavern' },
   { n: 3, name: 'Kennel Keep', theme: 'keep' }
 ];
-""" % mover_js
+"""
 
-open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src', 'levels.js'), 'w').write(header + ',\n'.join(chunks) + footer)
+dest = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src', 'levels.js')
+open(dest, 'w').write(header + ',\n'.join(chunks) + footer)
 print('wrote levels.js')
-for L in LEVELS:
-    flat = ''.join(L['rows'])
-    print(' ', L['id'], 'w=%-3d' % L['w'],
-          'P=%d D=%d X=%d' % (flat.count('P'), flat.count('D'), flat.count('X')),
-          'coins=%-3d bone=%d' % (flat.count('o'), flat.count('B')),
-          'enemies=%d' % sum(flat.count(c) for c in 'gbht'))
+for L in STAGES:
+    f = ''.join(L['rows'])
+    print('  %-4s %dx%d  P=%d D=%d X=%d  gems=%d chests=%d false=%d  enemies=%d'
+          % (L['id'], L['w'], len(L['rows']), f.count('P'), f.count('D'), f.count('X'),
+             f.count('G'), f.count('C'), f.count('F'),
+             sum(f.count(c) for c in 'gbht')))

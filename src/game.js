@@ -83,6 +83,7 @@ var Game = (function () {
 
   function update() {
     G.t++;
+    Input.pollPad();
     Sfx.tick();
 
     if (Input.pressed('mute')) {
@@ -157,7 +158,7 @@ var Game = (function () {
     Sfx.setEnabled(Save.get().sound !== false);
     Input.init();
     var d0 = Save.get();
-    Input.setTouchVisible(d0.touch === null ? Input.hasTouch() : !!d0.touch);
+    if (d0.touch !== null) Input.setTouchVisible(!!d0.touch);
     fitCanvas();
     window.addEventListener('resize', fitCanvas);
     /* audio contexts need a gesture before they will make noise */

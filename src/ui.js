@@ -238,8 +238,7 @@ var UI = (function () {
       if (Input.pressed('confirm')) { Sfx.select(); G.go('map'); }
       if (Input.pressed('down') || Input.pressed('up')) {
         var d = Save.get();
-        var now = (d.touch === null) ? Input.hasTouch() : !!d.touch;
-        d.touch = !now;
+        d.touch = !Input.touchIsOn();
         Input.setTouchVisible(d.touch);
         Save.flush(); Sfx.select();
       }
@@ -252,8 +251,7 @@ var UI = (function () {
       Text.center(g, 'ESC   RESUME', VIEW_W / 2, 98, '#d8cff0', 1);
       Text.center(g, 'R     RESTART STAGE', VIEW_W / 2, 112, '#d8cff0', 1);
       Text.center(g, 'ENTER QUIT TO MAP', VIEW_W / 2, 126, '#d8cff0', 1);
-      var td = Save.get().touch;
-      var tOn = (td === null) ? Input.hasTouch() : !!td;
+      var tOn = Input.touchIsOn();
       Text.center(g, Sfx.isEnabled() ? 'M  SOUND ON' : 'M  SOUND OFF', VIEW_W / 2, 140, '#8d80ad', 1);
       Text.center(g, tOn ? '^v TOUCH PAD ON' : '^v TOUCH PAD OFF', VIEW_W / 2, 152, '#8d80ad', 1);
     }

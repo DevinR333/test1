@@ -12,35 +12,53 @@ html, body {
   box-shadow: 0 0 0 2px #1b1826, 0 10px 50px rgba(0,0,0,.8);
 }
 
-/* ---- touch controls: hidden unless the device has a touchscreen,
-        and switchable from the pause menu ---- */
+/* ---- touch controls: invisible until the screen is actually touched,
+        so keyboard and gamepad players never see them ---- */
 #touch { position:fixed; inset:0; pointer-events:none; z-index:5; }
 #touch.hidden { display:none; }
-#touch .pad, #touch .acts {
-  position:absolute; bottom:calc(14px + env(safe-area-inset-bottom));
-  display:flex; gap:10px; pointer-events:auto; align-items:flex-end;
+
+/* the left half is a catch area; the stick springs up wherever you press */
+#stickzone {
+  position:absolute; left:0; top:0; bottom:0; width:50%;
+  pointer-events:auto; touch-action:none;
 }
-#touch .pad  { left:calc(14px + env(safe-area-inset-left)); }
-#touch .acts { right:calc(14px + env(safe-area-inset-right)); }
+#stick {
+  position:absolute; width:116px; height:116px; margin:-58px 0 0 -58px;
+  border-radius:50%; border:2px solid rgba(150,135,190,.42);
+  background:radial-gradient(circle at 50% 50%, rgba(40,32,60,.42), rgba(20,16,32,.30));
+  opacity:0; transition:opacity .12s ease; pointer-events:none;
+}
+#stick.live { opacity:1; }
+#knob {
+  position:absolute; left:50%; top:50%; width:52px; height:52px;
+  margin:-26px 0 0 -26px; border-radius:50%;
+  border:2px solid rgba(203,189,240,.85);
+  background:radial-gradient(circle at 40% 35%, rgba(150,130,205,.95), rgba(70,56,112,.9));
+  box-shadow:0 2px 10px rgba(0,0,0,.45);
+}
+#touch .acts {
+  position:absolute; right:calc(16px + env(safe-area-inset-right));
+  bottom:calc(16px + env(safe-area-inset-bottom));
+  display:flex; gap:12px; align-items:flex-end; pointer-events:auto;
+}
 .tbtn {
-  border-radius:16px; border:2px solid rgba(150,135,190,.55);
+  border-radius:50%; border:2px solid rgba(150,135,190,.55);
   background:rgba(24,20,36,.55); color:#e6dcf7;
-  font:700 13px/1 ui-monospace,monospace; touch-action:none;
+  font:700 12px/1 ui-monospace,monospace; touch-action:none;
   backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px);
   display:flex; align-items:center; justify-content:center;
 }
-.tbtn:active { background:rgba(120,100,175,.8); border-color:#cbbdf0; transform:translateY(1px); }
-.dpad  { width:74px; height:74px; font-size:22px; }
-.small { width:58px; height:58px; font-size:16px; opacity:.8; }
-.act   { width:80px; height:80px; font-size:12px; }
-.jmp   { background:rgba(58,40,96,.62); }
-.atk   { background:rgba(96,36,48,.62); margin-bottom:22px; }
+.tbtn:active { background:rgba(120,100,175,.85); border-color:#cbbdf0; transform:translateY(1px); }
+.act { width:84px; height:84px; }
+.jmp { background:rgba(58,40,96,.62); }
+.atk { background:rgba(96,36,48,.62); margin-bottom:26px; }
 .sys {
   position:absolute; top:calc(10px + env(safe-area-inset-top));
   right:calc(12px + env(safe-area-inset-right));
-  width:46px; height:38px; font-size:13px; pointer-events:auto; opacity:.75;
+  width:44px; height:40px; border-radius:14px; font-size:13px;
+  pointer-events:auto; opacity:.7;
 }
 @media (max-height:420px) {
-  .dpad { width:64px; height:64px; } .act { width:70px; height:70px; }
-  .small { width:50px; height:50px; }
+  .act { width:72px; height:72px; }
+  #stick { width:100px; height:100px; margin:-50px 0 0 -50px; }
 }

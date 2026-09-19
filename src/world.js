@@ -113,11 +113,20 @@ World.prototype.tileAt = function (tx, ty) {
   return this.tiles[ty][tx];
 };
 World.prototype.isSolidCode = function (c) {
-  return c === T_SOLID || c === T_CRATE || c === T_SPRING;
+  /* Ledges collide on every face. Nothing in this game passes through
+     floors - you go around, or you find another way up. */
+  return c === T_SOLID || c === T_CRATE || c === T_SPRING || c === T_PLAT;
 };
 /* Drawn as masonry, so it has to be hashed like masonry too. */
 World.prototype.isWallLooking = function (c) {
   return c === T_SOLID || c === T_FAKE;
+};
+/* Only the hero slips through a false wall. For everything else it is
+   ordinary stone - otherwise a patrolling enemy strolls through the
+   secret and advertises exactly where it is. */
+World.prototype.solidFor = function (e, c) {
+  if (c === T_FAKE) return e !== this.player;
+  return this.isSolidCode(c);
 };
 World.prototype.solidAt = function (px, py) {
   return this.isSolidCode(this.tileAt(Math.floor(px / TILE), Math.floor(py / TILE)));
@@ -139,7 +148,7 @@ World.prototype.moveActor = function (e, loose, flyer) {
   y1 = Math.floor(e.y / TILE); y2 = Math.floor((e.y + e.h - 1) / TILE);
   for (ty = y1; ty <= y2; ty++) {
     for (tx = x1; tx <= x2; tx++) {
-      if (!this.isSolidCode(this.tileAt(tx, ty))) continue;
+      if (!this.solidFor(e, this.tileAt(tx, ty))) continue;
       if (e.vx > 0) { e.x = tx * TILE - e.w; e.vx = 0; e.hitWall = true; }
       else if (e.vx < 0) { e.x = (tx + 1) * TILE; e.vx = 0; e.hitWall = true; }
       x1 = Math.floor(e.x / TILE); x2 = Math.floor((e.x + e.w - 1) / TILE);
@@ -161,7 +170,7 @@ World.prototype.moveActor = function (e, loose, flyer) {
   for (ty = y1; ty <= y2; ty++) {
     for (tx = x1; tx <= x2; tx++) {
       var code = this.tileAt(tx, ty);
-      if (this.isSolidCode(code)) {
+      if (this.solidFor(e, code)) {
         if (e.vy > 0) {
           e.y = ty * TILE - e.h; e.vy = 0; e.grounded = true;
           if (code === T_SPRING && e === this.player) {
@@ -170,13 +179,6 @@ World.prototype.moveActor = function (e, loose, flyer) {
           }
         } else if (e.vy < 0) { e.y = (ty + 1) * TILE; e.vy = 0; }
         y1 = Math.floor(e.y / TILE); y2 = Math.floor((e.y + e.h - 1) / TILE);
-      } else if (code === T_PLAT && !flyer && e.vy >= 0) {
-        var top = ty * TILE;
-        var dropping = (e === this.player) && Input.down('down');
-        if (!dropping && prevBottom <= top + 2 && e.y + e.h >= top) {
-          e.y = top - e.h; e.vy = 0; e.grounded = true;
-          y1 = Math.floor(e.y / TILE); y2 = Math.floor((e.y + e.h - 1) / TILE);
-        }
       }
     }
   }
@@ -189,7 +191,24 @@ World.prototype.moveActor = function (e, loose, flyer) {
       e.y = m.y + m.h; e.vy = 0;
     }
   }
-  if (e.grounded && !Util.aabb(e, { x: e.x, y: e.y, w: e.w, h: e.h + 0 })) e.riding = null;
+  if (!e.grounded && e.vy >= 0 && this.onGround(e)) e.grounded = true;
+};
+
+/* Is there footing directly under this actor? Checked separately from the
+   collision snap: an actor resting exactly on a tile boundary does not
+   overlap the floor tile, so the snap alone reports it as airborne and the
+   grounded flag flickers frame to frame. */
+World.prototype.onGround = function (e) {
+  var probe = e.y + e.h + 1;
+  var xl = e.x + 1, xr = e.x + e.w - 2;
+  if (this.solidFor(e, this.codeAtPx(xl, probe)) ||
+      this.solidFor(e, this.codeAtPx(xr, probe))) return true;
+  for (var i = 0; i < this.movers.length; i++) {
+    var m = this.movers[i];
+    if (e.x + e.w > m.x && e.x < m.x + m.w &&
+        e.y + e.h >= m.y - 2 && e.y + e.h <= m.y + 3) return true;
+  }
+  return false;
 };
 
 /* ---------------- spawning helpers ---------------- */

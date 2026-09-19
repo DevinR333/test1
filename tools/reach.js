@@ -19,17 +19,23 @@ const JUMP = Number(process.argv[2] || konst('JUMP_IMPULSE'));
 const LIFT = konst('JUMP_LIFT');
 const LIFT_FRAMES = konst('JUMP_LIFT_FRAMES');
 
-/* Simulate one full held jump: peak height and the airtime available
-   before falling back to each height along the way. */
+/* Simulate a full held jump followed by the air jump, which the hero
+   always has. The second impulse fires at the apex, where a player would
+   naturally use it, giving the true reachable envelope. */
+const DBL = konst('DBL_JUMP_IMPULSE', 0);
+const BASE_JUMPS = konst('BASE_JUMPS', 1);
 function arc() {
-  let vy = -JUMP, y = 0, lift = LIFT_FRAMES;
+  let vy = -JUMP, y = 0, lift = LIFT_FRAMES, used = 1;
   const path = [];
   for (let f = 0; f < 400; f++) {
     if (lift > 0 && vy < 0) { vy -= LIFT; lift--; }
+    if (used < BASE_JUMPS && vy >= 0) {      // apex: spend the air jump
+      vy = -DBL; lift = LIFT_FRAMES; used++;
+    }
     vy = Math.min(vy + GRAV, MAXFALL);
     y += vy;
     path.push(y);
-    if (y > 16 * 14) break;
+    if (y > 16 * 22) break;
   }
   return path;
 }
@@ -138,7 +144,37 @@ function analyze(L) {
       if (!reachable) stranded.push(at(x, y) + '@' + x + ',' + y);
     }
   }
-  return { id: L.id, ok, stranded, reached: seen.size, total: nodes.length };
+  /* Every chest must sit in a pocket that cannot be entered without
+     passing through a false wall. Flood from the chest and from the spawn
+     with false walls treated as SOLID: if the two ever meet, the chest is
+     standing in open level and is not a secret at all. */
+  function flood(sx0, sy0) {
+    const hit = new Set([key(sx0, sy0)]);
+    const q = [[sx0, sy0]];
+    while (q.length) {
+      const [cx, cy] = q.shift();
+      for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+        const nx = cx + dx, ny = cy + dy;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= H) continue;
+        const t = at(nx, ny);
+        if ('#KS=F'.includes(t)) continue;        // false wall counts as rock
+        const k2 = key(nx, ny);
+        if (!hit.has(k2)) { hit.add(k2); q.push([nx, ny]); }
+      }
+    }
+    return hit;
+  }
+  const openArea = flood(spawn[0], spawn[1]);
+  const exposedChests = [];
+  for (let y = 0; y < H; y++) for (let x = 0; x < w; x++) {
+    if (at(x, y) !== 'C') continue;
+    const pocket = flood(x, y);
+    let leaks = false;
+    pocket.forEach(k2 => { if (openArea.has(k2)) leaks = true; });
+    if (leaks) exposedChests.push(x + ',' + y);
+  }
+
+  return { id: L.id, ok, stranded, exposedChests, reached: seen.size, total: nodes.length };
 }
 
 console.log('physics (read from src/entities.js): impulse ' + JUMP + ', lift ' + LIFT +
@@ -150,6 +186,9 @@ for (const L of LEVELS) {
   const r = analyze(L);
   if (!r.ok) fails++;
   const st = r.stranded && r.stranded.length ? '  STRANDED: ' + r.stranded.slice(0, 6).join(' ') : '';
-  console.log((r.ok ? 'PASS ' : 'FAIL ') + r.id + (r.why ? ' (' + r.why + ')' : '') + st);
+  const ex = r.exposedChests && r.exposedChests.length
+    ? '  CHEST IN THE OPEN: ' + r.exposedChests.join(' ') : '';
+  if (ex) fails++;
+  console.log(((r.ok && !ex) ? 'PASS ' : 'FAIL ') + r.id + (r.why ? ' (' + r.why + ')' : '') + st + ex);
 }
 console.log(fails ? fails + ' stage(s) not completable' : 'all stages completable');
