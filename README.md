@@ -41,8 +41,15 @@ offline with no network and no install. On-screen controls appear
 automatically on a touchscreen, and can be switched on or off from the
 pause menu (`^v`) on any device.
 
-Want a real installable APK? Run `bash tools/make-apk.sh` **on your own
-machine** — it wraps the game with Cordova, locks it to landscape
+Want a real installable APK? Two scripts do it, both **on your own
+machine** (not in the Claude Code sandbox):
+
+* `tools/build-apk-standalone.sh` needs nothing but `black-lab-blade.html`.
+  Drop it beside the game file and run it — handy if you only have the
+  single-file build and not this repo.
+* `tools/make-apk.sh` builds from a checkout of this repo.
+
+Either way it wraps the game with Cordova — it wraps the game with Cordova, locks it to landscape
 fullscreen and drops `black-lab-blade.apk` in the project root. It needs a
 JDK and the Android SDK (Android Studio installs both). It cannot be run
 in the Claude Code sandbox, whose proxy blocks `dl.google.com`, where both
