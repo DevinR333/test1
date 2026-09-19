@@ -4,8 +4,19 @@ A 2D action platformer in the handheld-dungeon-crawler mould: short, dense
 stages, sword combat, coins, hidden collectibles and a shop between runs.
 The hero is a black lab who carries his blade in his jaws.
 
-Open `index.html` in a browser. No build step, no dependencies, no asset
-files — every sprite, tile, sound and note is generated at runtime from code.
+**To play: download `black-lab-blade.html` and double-click it.** That one
+file is the entire game — no server, no install, no dependencies. It works
+straight off your desktop.
+
+The `src/` version is the same game split into readable modules; open
+`index.html` to run that. Rebuild the single file after editing any source:
+
+```sh
+python3 tools/bundle.py
+```
+
+Every sprite, tile, sound and note is generated at runtime from code — there
+are no image or audio files anywhere in the project.
 
 ## Controls
 
