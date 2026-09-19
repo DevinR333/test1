@@ -121,8 +121,14 @@ void gb_world_render(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
      * water, flowers, the torches - can be taken from it rather than from a
      * fixed copy that would be frozen on one frame beside a live screen that
      * is not. Only worth trusting once a room is actually loaded. */
+    /* This never reads the hardware's tilemap - the room layouts come from
+     * the game's own data - so a crossing rewriting that tilemap is nothing
+     * to do with us. Only the tile graphics are taken from the machine, and
+     * those sit still unless the tileset itself changes. Refusing them during
+     * a crossing froze the animated tiles - water, flowers, torches - for its
+     * duration, so they jumped a frame at each end of it. */
     int loaded_assets = -1;
-    if (gb_world_in_overworld(gb) && !gb_world_scrolling(gb)) {
+    if (gb_world_in_overworld(gb)) {
         int loaded = gb->wram[W_LOADED_TILESET - 0xC000] & 0x7F;
         loaded_assets = gb_world_tileset_asset[season][loaded];
     }
@@ -421,13 +427,17 @@ void gb_world_mark_room(uint32_t *dst, int dst_w, int dst_h,
  * elsewhere on the map there is genuinely nothing to draw.
  */
 void gb_world_draw_objects(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
-                           float cam_x, float cam_y, float scale, int room)
+                           float cam_x, float cam_y, float scale,
+                           float screen_x, float screen_y)
 {
-    if (!dst || room < 0 || room >= GB_WORLD_ROOMS || scale <= 0.0f)
+    if (!dst || scale <= 0.0f)
         return;
 
-    float room_x = (float)(room % GB_WORLD_COLS) * ROOM_PX_W;
-    float room_y = (float)(room / GB_WORLD_COLS) * ROOM_PX_H;
+    /* Objects are positioned against the hardware's screen, so that is what
+     * they are anchored to - not the corner of a room, which is a different
+     * place for the whole of a crossing. The sixteen is the status bar: the
+     * game scrolls the room down past it, so display row 16 is the top of
+     * the room. */
     float left = cam_x - (dst_w * 0.5f) / scale;
     float top  = cam_y - (dst_h * 0.5f) / scale;
 
@@ -436,16 +446,19 @@ void gb_world_draw_objects(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
     /* Later entries draw first so earlier ones end up on top, matching the
      * hardware's priority. */
     for (int i = 39; i >= 0; i--) {
-        int oy = gb->oam[i * 4] - 16;
-        int ox = gb->oam[i * 4 + 1] - 8;
+        int raw_y = gb->oam[i * 4];
+        int raw_x = gb->oam[i * 4 + 1];
         uint8_t index = gb->oam[i * 4 + 2];
         uint8_t attr = gb->oam[i * 4 + 3];
 
         /* The hardware hides an object by parking it outside the screen. */
-        if (gb->oam[i * 4] == 0 || gb->oam[i * 4] >= 160) continue;
-        if (gb->oam[i * 4 + 1] == 0 || gb->oam[i * 4 + 1] >= 168) continue;
+        if (raw_y == 0 || raw_y >= 160) continue;
+        if (raw_x == 0 || raw_x >= 168) continue;
 
         if (tall == 16) index &= 0xFE;
+
+        float ox = screen_x + (raw_x - 8);
+        float oy = screen_y + (raw_y - 16) - GB_STATUS_H;
 
         for (int py = 0; py < tall; py++) {
             for (int px = 0; px < 8; px++) {
@@ -463,8 +476,8 @@ void gb_world_draw_objects(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
 
                 /* One world pixel can cover several screen pixels, so fill
                  * the whole footprint rather than leaving gaps when zoomed. */
-                float wx = room_x + ox + px;
-                float wy = room_y + oy + py;
+                float wx = ox + px;
+                float wy = oy + py;
                 int sx0 = (int)((wx - left) * scale);
                 int sy0 = (int)((wy - top) * scale);
                 int sx1 = (int)((wx + 1 - left) * scale);
@@ -584,6 +597,7 @@ void gb_world_track(gb_world_view_t *view, const gb_t *gb)
         view->link_y   = link_y;
     }
     view->have_link = have_link;
+    view->crossing = gb_world_scrolling(gb);
     view->in_world = 1;
 
     view->last_screen_x = screen_x;

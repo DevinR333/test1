@@ -113,6 +113,7 @@ typedef struct {
     float anchor_x, anchor_y;    /* the room object coordinates are counted in */
     float link_x, link_y;        /* where Link is; crosses rooms unbroken */
     int   have_link;
+    int   crossing;              /* part way from one room to the next */
 
     /* The frame before: what the hardware has actually drawn is one frame
      * behind what the game has computed. */
@@ -133,9 +134,11 @@ int  gb_world_in_overworld(const gb_t *gb);
 void gb_world_mark_room(uint32_t *dst, int dst_w, int dst_h,
                         float cam_x, float cam_y, float scale, int room);
 
-/* Draws the objects the game currently has active, in the room it is
- * simulating, at their live positions. */
+/* Draws every object the game has active, at its live position, anywhere in
+ * the view - so nothing is cut off at the edge of the hardware's screen, and
+ * nothing is lost to its limit of ten objects on a line. */
 void gb_world_draw_objects(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
-                           float cam_x, float cam_y, float scale, int room);
+                           float cam_x, float cam_y, float scale,
+                           float screen_x, float screen_y);
 
 #endif

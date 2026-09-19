@@ -525,8 +525,29 @@ static void paint(HWND hwnd)
      * status bar travelled around with the player. Sampling both here, by
      * index, through one position and scale, none of that can happen. */
     gb_world_render(view, app.map_pixels, cw, ch, cam_x, cam_y, scale);
-    gb_world_draw_screen(view, app.map_pixels, cw, ch, cam_x, cam_y, scale,
-                         screen_x, screen_y);
+
+    /* Every object the game has active, drawn at its own position across the
+     * whole view - not only where the hardware's screen happens to reach.
+     * Objects at a room's edge used to be sliced off by that edge, and the
+     * hardware drops any beyond ten on a line, so they flickered. Drawn
+     * before the live screen, so where that screen is used its own rendering
+     * wins and keeps the game's own ordering; the only pixels left are the
+     * ones it never covered. */
+    gb_world_draw_objects(view, app.map_pixels, cw, ch, cam_x, cam_y, scale,
+                          screen_x, screen_y);
+
+    /* Crossing between rooms, the hardware's screen is not to be trusted.
+     *
+     * Its background is one tilemap 256 pixels wide and a room is 160, so as
+     * the game scrolls the next room's columns in, it writes over the columns
+     * of the old one still on display. There is no room for both. Measured
+     * part way through a crossing, the leftmost sixteen pixels disagreed with
+     * the world on 72 rows of 128 - a stripe of the wrong room, sweeping
+     * across. The world drawn here has both rooms and is right about each, so
+     * for the quarter of a second a crossing lasts, it is used on its own. */
+    if (!where->crossing)
+        gb_world_draw_screen(view, app.map_pixels, cw, ch, cam_x, cam_y, scale,
+                             screen_x, screen_y);
 
     /* The status bar is the player's, not the world's: it stays across the
      * top of the window at its natural size, whatever the camera is doing and
