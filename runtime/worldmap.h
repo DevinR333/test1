@@ -173,6 +173,13 @@ typedef struct {
     gb_world_ghost_t obj[GB_WORLD_ROOMS][GB_REMEMBERED];
     uint8_t          count[GB_WORLD_ROOMS];
     uint8_t          known[GB_WORLD_ROOMS];
+
+    /* The fullest view of each room, rather than the latest. A single look is
+     * a poor record: the player standing next to someone hides them, and the
+     * object table is briefly empty while a room loads, so a room caught at
+     * either moment would be remembered as deserted. */
+    int8_t           fullest[GB_WORLD_ROOMS];
+    int              watching;      /* the room loaded when last recorded */
 } gb_world_memory_t;
 
 /* Records what is in the room the game currently has loaded. */

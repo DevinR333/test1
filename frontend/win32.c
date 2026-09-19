@@ -175,6 +175,19 @@ static void on_frame(gb_t *gb, void *user)
                             (long)GB_ROM_SIZE / 1024);
                     fprintf(fh, "best of %d samples so far\n\n", app.samples);
                     fputs(report, fh);
+
+                    /* What the world has been told to remember, so an
+                     * emptying room can be seen rather than described. */
+                    int rooms = 0, total = 0;
+                    for (int r = 0; r < GB_WORLD_ROOMS; r++)
+                        if (app.memory.known[r]) {
+                            rooms++;
+                            total += app.memory.count[r];
+                        }
+                    fprintf(fh, "\nremembered objects: %d in %d rooms\n", total, rooms);
+                    for (int r = 0; r < GB_WORLD_ROOMS; r++)
+                        if (app.memory.known[r])
+                            fprintf(fh, "  room %02x: %d\n", r, app.memory.count[r]);
                     fclose(fh);
                 }
             }
@@ -576,9 +589,8 @@ static void paint(HWND hwnd)
      * player is not. They hold their last pose until their room is loaded
      * again, at which point the live ones take over. */
     int loaded = gb_world_active_room(view);
-    if (!where->crossing)
-        gb_world_remember(&app.memory, view, screen_x, screen_y,
-                          cam_x, cam_y, loaded);
+    gb_world_remember(&app.memory, view, screen_x, screen_y,
+                      cam_x, cam_y, where->crossing ? -1 : loaded);
     gb_world_draw_remembered(&app.memory, app.map_pixels, cw, ch,
                              cam_x, cam_y, scale, where->crossing ? -1 : loaded);
 

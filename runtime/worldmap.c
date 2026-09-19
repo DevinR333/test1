@@ -462,17 +462,26 @@ static void ghost_pixels(const gb_t *gb, int i, int tall, uint32_t *px)
 
 void gb_world_remember(gb_world_memory_t *mem, const gb_t *gb,
                        float screen_x, float screen_y,
-                       float link_x, float link_y, int room)
+                       float link_x, float link_y, int loaded_room)
 {
-    if (!mem || room < 0 || room >= GB_WORLD_ROOMS)
+    static gb_world_ghost_t seen[40];
+    static int seen_room[40];
+
+    if (!mem)
         return;
 
-    float room_x = (float)((room % GB_WORLD_COLS) * ROOM_PX_W);
-    float room_y = (float)((room / GB_WORLD_COLS) * ROOM_PX_H);
+    /* Arriving in a room starts its record over, so what is remembered is
+     * this visit rather than a previous one. */
+    if (loaded_room != mem->watching) {
+        mem->watching = loaded_room;
+        if (loaded_room >= 0 && loaded_room < GB_WORLD_ROOMS)
+            mem->fullest[loaded_room] = -1;
+    }
+
     int tall = (gb->io[0x40] & 0x04) ? 16 : 8;
     int kept = 0;
 
-    for (int i = 0; i < 40 && kept < GB_REMEMBERED; i++) {
+    for (int i = 0; i < 40; i++) {
         int oy = gb->oam[i * 4], ox = gb->oam[i * 4 + 1];
         if (oy == 0 || oy >= 160 || ox == 0 || ox >= 168) continue;
 
@@ -480,23 +489,49 @@ void gb_world_remember(gb_world_memory_t *mem, const gb_t *gb,
         float wy = screen_y + (oy - 16) - GB_STATUS_H;
 
         /* Not the player. He is drawn live wherever he is, and a copy of him
-         * left behind in every room he has walked through would be absurd. */
+         * left in every room he has walked through would be absurd. Kept
+         * tight: anything wider takes in whoever he is standing next to. */
         float dx = wx + 4 - link_x, dy = wy + tall / 2 - link_y;
-        if (dx * dx + dy * dy < 20.0f * 20.0f) continue;
+        if (dx * dx + dy * dy < 12.0f * 12.0f) continue;
 
-        /* Only what belongs to this room. */
-        if (wx < room_x - 8 || wx > room_x + ROOM_PX_W
-            || wy < room_y - 8 || wy > room_y + ROOM_PX_H) continue;
+        /* Filed by where it actually is, not by which room happens to be
+         * loaded. Crossing a boundary the screen spans two rooms, and an
+         * object at the far edge of either belongs to that one - requiring
+         * everything to sit inside the loaded room threw all of it away, so
+         * a room walked through and left was remembered as empty. */
+        int rx = (int)(wx / ROOM_PX_W), ry = (int)(wy / ROOM_PX_H);
+        if (wx < 0 || wy < 0 || rx >= GB_WORLD_COLS || ry >= GB_WORLD_ROWS)
+            continue;
 
-        gb_world_ghost_t *g = &mem->obj[room][kept++];
-        g->x = (int16_t)(wx - room_x);
-        g->y = (int16_t)(wy - room_y);
+        gb_world_ghost_t *g = &seen[kept];
+        g->x = (int16_t)(wx - rx * ROOM_PX_W);
+        g->y = (int16_t)(wy - ry * ROOM_PX_H);
         g->h = (uint8_t)tall;
         ghost_pixels(gb, i, tall, g->px);
+        seen_room[kept++] = ry * GB_WORLD_COLS + rx;
     }
 
-    mem->count[room] = (uint8_t)kept;
-    mem->known[room] = 1;
+    /* Each room that anything was seen in, kept only if this is the fullest
+     * look at it so far. */
+    for (int i = 0; i < kept; i++) {
+        int room = seen_room[i];
+        int already = 0;
+        for (int j = 0; j < i; j++)
+            if (seen_room[j] == room) { already = 1; break; }
+        if (already) continue;
+
+        int count = 0;
+        for (int j = i; j < kept && count < GB_REMEMBERED; j++)
+            if (seen_room[j] == room) count++;
+        if (count <= mem->fullest[room]) continue;
+
+        mem->fullest[room] = (int8_t)count;
+        int at = 0;
+        for (int j = i; j < kept && at < GB_REMEMBERED; j++)
+            if (seen_room[j] == room) mem->obj[room][at++] = seen[j];
+        mem->count[room] = (uint8_t)at;
+        mem->known[room] = 1;
+    }
 }
 
 void gb_world_draw_remembered(const gb_world_memory_t *mem,
