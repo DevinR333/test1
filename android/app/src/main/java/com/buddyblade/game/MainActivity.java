@@ -2,12 +2,15 @@ package com.buddyblade.game;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -34,6 +37,10 @@ public class MainActivity extends Activity {
         s.setSupportZoom(false);
         s.setBuiltInZoomControls(false);
         web.setWebViewClient(new WebViewClient());
+    /* Progress goes through here rather than localStorage: a WebView
+       showing a file:// page does not reliably keep web storage between
+       app launches, which wiped saves on every restart. */
+    web.addJavascriptInterface(new SaveBridge(this), "AndroidSave");
         web.setOverScrollMode(View.OVER_SCROLL_NEVER);
         web.setBackgroundColor(0xFF07060A);
 
@@ -65,6 +72,25 @@ public class MainActivity extends Activity {
                             | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                             | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                             | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+        }
+    }
+
+    /** Durable save storage for the game, backed by SharedPreferences. */
+    public static class SaveBridge {
+        private final SharedPreferences prefs;
+
+        SaveBridge(Activity host) {
+            prefs = host.getSharedPreferences("buddyblade", Context.MODE_PRIVATE);
+        }
+
+        @JavascriptInterface
+        public String load() {
+            return prefs.getString("save", "");
+        }
+
+        @JavascriptInterface
+        public void save(String json) {
+            prefs.edit().putString("save", json).apply();
         }
     }
 

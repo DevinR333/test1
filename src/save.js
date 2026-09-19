@@ -26,9 +26,34 @@ var Save = (function () {
     };
   }
 
+  /* Android WebView does not reliably keep localStorage for file:// pages
+     between app launches, which silently wiped progress in the APK. When
+     the app exposes a native bridge we use that instead, and fall back to
+     localStorage everywhere else. */
+  function readRaw() {
+    try {
+      if (window.AndroidSave && window.AndroidSave.load) {
+        var n = window.AndroidSave.load();
+        if (n) return n;
+      }
+    } catch (e) { /* bridge missing or unhappy */ }
+    try { return localStorage.getItem(KEY); } catch (e2) { return null; }
+  }
+  function writeRaw(str) {
+    var ok = false;
+    try {
+      if (window.AndroidSave && window.AndroidSave.save) {
+        window.AndroidSave.save(str);
+        ok = true;
+      }
+    } catch (e) { /* fall through to web storage */ }
+    try { localStorage.setItem(KEY, str); ok = true; } catch (e2) { /* private mode */ }
+    return ok;
+  }
+
   function load() {
     try {
-      var raw = localStorage.getItem(KEY);
+      var raw = readRaw();
       data = raw ? JSON.parse(raw) : fresh();
     } catch (e) { data = fresh(); }
     var f = fresh();
@@ -43,7 +68,7 @@ var Save = (function () {
     return data;
   }
   function flush() {
-    try { localStorage.setItem(KEY, JSON.stringify(data)); } catch (e) { /* private mode */ }
+    try { writeRaw(JSON.stringify(data)); } catch (e) { /* nothing we can do */ }
   }
   function get() { return data || load(); }
   function wipe() { data = fresh(); flush(); return data; }
