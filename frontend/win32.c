@@ -38,6 +38,9 @@ static struct {
     HWND          hwnd;
     HANDLE        thread;
     HANDLE        timer;
+    LARGE_INTEGER due;         /* when the next frame is owed, in QPC ticks */
+    LONGLONG      frame_ticks;
+    LONGLONG      qpc_freq;
     CRITICAL_SECTION lock;
 
     /* The machine as of one finished frame, and the window's own copy of it.
@@ -108,6 +111,49 @@ static int key_to_button(WPARAM vk)
  * these, and both appear before their definitions. */
 static void write_log(const gb_t *gb, const char *note);
 static void beside_exe(char *out, size_t n, const char *name);
+
+/* Hold the machine to the speed the cartridge ran at.
+ *
+ * The deadline moves on by exactly one frame every time this is called, and
+ * it is called once per frame of the hardware whether or not that frame was
+ * drawn - so a frame skipped during a room crossing still costs its own
+ * sixteen and three quarter milliseconds, and the game cannot outrun itself.
+ * The period is counted in the performance counter's own ticks rather than
+ * whole milliseconds, which a frame is not: rounding it to sixteen ran the
+ * game four and a half percent fast, every second of the way.
+ *
+ * Time lost is not repaid. If the machine falls behind - a slow paint, the
+ * window being dragged - those frames are gone, because catching up means
+ * running fast, which is the thing this exists to prevent.
+ */
+static void pace_frame(void)
+{
+    LARGE_INTEGER now;
+
+    if (!app.timer || !app.frame_ticks)
+        return;
+
+    QueryPerformanceCounter(&now);
+    if (!app.due.QuadPart)
+        app.due = now;
+
+    app.due.QuadPart += app.frame_ticks;
+
+    LONGLONG late = now.QuadPart - app.due.QuadPart;
+    if (late > 4 * app.frame_ticks) {       /* too far behind to chase */
+        app.due = now;
+        return;
+    }
+    if (late >= 0)
+        return;                             /* already late: straight on */
+
+    LARGE_INTEGER rel;
+    rel.QuadPart = -((-late) * 10000000LL / app.qpc_freq);
+    if (rel.QuadPart == 0)
+        return;
+    SetWaitableTimer(app.timer, &rel, 0, NULL, NULL, FALSE);
+    WaitForSingleObject(app.timer, 100);
+}
 
 /* Called from the game thread each time the PPU finishes a frame. */
 static void on_frame(gb_t *gb, void *user)
@@ -266,7 +312,7 @@ static void on_frame(gb_t *gb, void *user)
         if (step_x == app.shown_x && step_y == app.shown_y && app.burst < 32) {
             app.burst++;
             app.hurried++;
-            return;                     /* not moved yet: no repaint, no wait */
+            goto paced;                 /* not moved yet: no repaint */
         }
         /* Arriving in the new room wraps his coordinates by a whole room
          * width, which is not him moving - counting it as movement ends the
@@ -286,10 +332,8 @@ static void on_frame(gb_t *gb, void *user)
     if (app.hwnd)
         InvalidateRect(app.hwnd, NULL, FALSE);
 
-    /* Pace to real time. A waitable timer is used rather than Sleep because
-     * Sleep's granularity is coarser than a frame. */
-    if (app.timer)
-        WaitForSingleObject(app.timer, 100);
+paced:
+    pace_frame();
 }
 
 /* A fault inside recompiled code would otherwise close the window with no
@@ -960,10 +1004,12 @@ int main(int argc, char **argv)
     app.bmi.bmiHeader.biCompression = BI_RGB;
 
     app.timer = CreateWaitableTimer(NULL, FALSE, NULL);
-    if (app.timer) {
-        LARGE_INTEGER due; due.QuadPart = -FRAME_100NS;
-        SetWaitableTimer(app.timer, &due, FRAME_100NS / 10000, NULL, NULL, FALSE);
-    }
+    LARGE_INTEGER freq;
+    QueryPerformanceFrequency(&freq);
+    app.qpc_freq = freq.QuadPart;
+    /* A frame of the hardware in the counter's own ticks, kept exact. */
+    app.frame_ticks = (LONGLONG)((freq.QuadPart * (double)FRAME_100NS) / 10000000.0);
+    app.due.QuadPart = 0;
 
     WNDCLASS wc = {0};
     wc.lpfnWndProc = wndproc;

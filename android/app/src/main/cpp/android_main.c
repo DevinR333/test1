@@ -18,6 +18,7 @@
 #include <GLES2/gl2.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include <time.h>
 #include <string.h>
 
 #include "gb.h"
@@ -77,9 +78,54 @@ static struct {
 
 /* ---------------------------------------------------------------- the game */
 
+/* One frame of the hardware, in nanoseconds: 70224 cycles at 4.194304MHz. */
+#define FRAME_NS 16742706L
+
+/* Hold the machine to the speed the cartridge ran at.
+ *
+ * This used to say the display paced it, which was wrong: the display paces
+ * the thread that draws, and the game runs on its own thread, so nothing
+ * held it back at all and it ran as fast as the processor could carry it.
+ * The deadline below moves on by exactly one frame each time, whatever the
+ * frame did, so a frame that was not drawn still costs its own sixteen and a
+ * half milliseconds and the game cannot run ahead of itself.
+ *
+ * Falling behind is not repaid. If the machine stalls - the app is in the
+ * background, the phone throttles - the lost frames are simply lost, because
+ * the alternative is running at double speed to catch up, which is the very
+ * thing this is here to prevent.
+ */
+static void pace(void)
+{
+    static struct timespec due;
+    static int started;
+    struct timespec now;
+
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    if (!started) { due = now; started = 1; }
+
+    due.tv_nsec += FRAME_NS;
+    while (due.tv_nsec >= 1000000000L) { due.tv_nsec -= 1000000000L; due.tv_sec++; }
+
+    long late = (long)(now.tv_sec - due.tv_sec) * 1000000000L
+              + (now.tv_nsec - due.tv_nsec);
+    if (late > 4 * FRAME_NS) { due = now; return; }   /* too far behind to chase */
+    if (late >= 0) return;                            /* late already: no wait */
+
+    clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &due, NULL);
+}
+
+static void frame_body(gb_t *gb);
+
 static void on_frame(gb_t *gb, void *user)
 {
     (void)user;
+    frame_body(gb);
+    pace();
+}
+
+static void frame_body(gb_t *gb)
+{
 
     gb_world_track(&ORA.track, gb);
 
@@ -114,7 +160,6 @@ static void on_frame(gb_t *gb, void *user)
         ORA.shown_x = step_x; ORA.shown_y = step_y; ORA.burst = 0;
     }
 
-    /* Paced by the display, which is what vsync on the render thread does. */
 }
 
 static void *game_thread(void *unused)
