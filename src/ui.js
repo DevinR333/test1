@@ -433,12 +433,16 @@ var UI = (function () {
       if (Input.pressed('left')) { G.shopTab = (G.shopTab + 2) % 3; G.shopSel = 0; Sfx.select(); return; }
       if (G.shopTab === 1) return shop.blades(G);
       if (G.shopTab === 2) return shop.wardrobe(G);
-      var list = Save.SHOP;
+      var list = Save.catalogue();
       var gtop = Util.clamp(G.shopSel - 3, 0, Math.max(0, list.length - 7));
       if (shopTap(G, Math.min(7, list.length), function () {
         var it2 = list[G.shopSel];
         if (Save.buy(it2)) { Sfx.buy(); G.shopMsg = 'BOUGHT ' + it2.name + '!'; }
-        else { Sfx.deny(); G.shopMsg = Save.owned(it2) ? 'ALREADY YOURS' : 'NOT ENOUGH COIN'; }
+        else {
+          Sfx.deny();
+          G.shopMsg = Save.owned(it2) ? 'ALREADY YOURS'
+            : (it2.cost < 0 ? 'THIS ONE IS IN A CHEST SOMEWHERE' : 'NOT ENOUGH COIN');
+        }
         G.shopMsgT = 100;
       }, gtop)) return;
       if (Input.pressed('down')) { G.shopSel = (G.shopSel + 1) % list.length; Sfx.select(); }
@@ -455,8 +459,9 @@ var UI = (function () {
           G.shopMsg = 'BOUGHT ' + it.name + '!'; G.shopMsgT = 100;
         } else {
           Sfx.deny();
-          G.shopMsg = Save.owned(it) ? 'ALREADY YOURS' :
-            (!Save.available(it) ? 'BUY THE EARLIER TIER FIRST' : 'NOT ENOUGH COIN');
+          G.shopMsg = Save.owned(it) ? 'ALREADY YOURS'
+            : (it.cost < 0 ? 'THIS ONE IS IN A CHEST SOMEWHERE'
+            : (!Save.available(it) ? 'BUY THE EARLIER TIER FIRST' : 'NOT ENOUGH COIN'));
           G.shopMsgT = 100;
         }
       }
@@ -471,7 +476,10 @@ var UI = (function () {
       if (shopTap(G, list.length, function () {
         var b2 = list[G.shopSel];
         if (Save.ownsBlade(b2.id)) { Save.equipBlade(b2.id); G.shopMsg = 'DRAWING ' + b2.name.toUpperCase(); Sfx.confirm(); }
-        else { G.shopMsg = 'BUY IT IN GEAR FIRST'; Sfx.deny(); }
+        else {
+          G.shopMsg = Save.isChestOnly(b2.id) ? 'FIND IT IN A CHEST' : 'BUY IT IN GEAR FIRST';
+          Sfx.deny();
+        }
         G.shopMsgT = 100;
       })) return;
       if (Input.pressed('down')) { G.shopSel = (G.shopSel + 1) % list.length; Sfx.select(); }
@@ -483,7 +491,7 @@ var UI = (function () {
           G.shopMsg = 'DRAWING ' + bl.name.toUpperCase();
           Sfx.confirm();
         } else {
-          G.shopMsg = 'BUY IT IN GEAR FIRST';
+          G.shopMsg = Save.isChestOnly(bl.id) ? 'FIND IT IN A CHEST' : 'BUY IT IN GEAR FIRST';
           Sfx.deny();
         }
         G.shopMsgT = 100;
@@ -593,25 +601,28 @@ var UI = (function () {
       g.drawImage(Art.COIN, 10, 10);
       Text.draw(g, String(Save.get().coins), 21, 11, '#ffe27a', 1);
 
-      var list = Save.SHOP;
+      var list = Save.catalogue();
       var top = Util.clamp(G.shopSel - 3, 0, Math.max(0, list.length - 7));
       var listW = Math.round(VIEW_W * 0.60), detX = listW + 18;
       panel(g, 10, 38, listW, 142);
       for (var i = 0; i < 7 && top + i < list.length; i++) {
         var it = list[top + i], y = 45 + i * 18;
         var own = Save.owned(it), avail = Save.available(it);
-        var col = own ? '#5f7a5f' : (avail && Save.get().coins >= it.cost ? '#ffffff' : '#8d80ad');
+        var locked = it.cost < 0;
+        var col = own ? '#5f7a5f'
+          : (locked ? '#9a86c8'
+          : (avail && Save.get().coins >= it.cost ? '#ffffff' : '#8d80ad'));
         if (top + i === G.shopSel) {
           g.fillStyle = 'rgba(255,215,94,.14)';
           g.fillRect(12, y - 4, listW - 4, 17);
           cursor(g, 14, y, G.t);
         }
         Text.draw(g, it.name, 24, y, col, 1);
-        var tag = own ? 'OWNED' : String(it.cost);
+        var tag = own ? 'OWNED' : (locked ? 'IN A CHEST' : String(it.cost));
         if (it.kind === 'outfit' && own) tag = (Save.worn() === it.id) ? 'WORN' : 'WEAR';
-        Text.draw(g, tag, listW - 46, y,
+        Text.draw(g, tag, listW - 58, y,
           (it.kind === 'outfit' && Save.worn() === it.id) ? '#a8ffd0'
-            : (own ? '#7fe0a0' : '#ffd75e'), 1);
+            : (own ? '#7fe0a0' : (locked ? '#9a86c8' : '#ffd75e')), 1);
       }
 
       /* detail card */

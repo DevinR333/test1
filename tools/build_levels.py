@@ -733,7 +733,29 @@ FORMS = {
 }
 
 # ============================================================ population
-HEART_PIECE_STAGES = ('1-2', '2-1', '2-3', '3-2')
+"""What every chest in the game holds, in the order the chests appear when
+the stage is read top-to-bottom. Authored rather than rolled, because the
+four vessel pieces have to land in four widely separated stages to add up
+to exactly one extra heart, and because a blade or an upgrade is only a
+reward if you can be sure it is out there somewhere.
+
+  vessel        a quarter of a heart container
+  blade:<id>    a sword, and one you cannot buy
+  relic:<id>    an upgrade, likewise
+  outfit        whichever costume is still missing
+  gems / coins  the consolation prizes
+"""
+CHEST_LOOT = {
+    '1-1': ['outfit',         'coins'],
+    '1-2': ['vessel',         'outfit'],
+    '1-3': ['blade:cleaver',  'gems'],
+    '2-1': ['vessel',         'relic:spring'],
+    '2-2': ['blade:whip',     'outfit'],
+    '2-3': ['vessel',         'gems'],
+    '3-1': ['relic:guard',    'outfit'],
+    '3-2': ['vessel',         'gems'],
+    '3-3': ['relic:lucky',    'coins'],
+}
 
 
 def reachable(st):
@@ -825,10 +847,6 @@ def build(sid, world, name, theme, hint, form, w, h, seed, spec, flyers):
     for (row, c) in perch:
         if st.put_free(row - 1, c, 'G'):
             break
-    if sid in HEART_PIECE_STAGES:
-        for (row, c) in perch[3:] or perch:
-            if st.put_free(row - 1, c, 'V'):
-                break
 
     scatter(st, rng, spec, ok)
 
@@ -934,6 +952,19 @@ STAGES = [
 ]
 
 # ---------------------------------------------------------------- emit
+# Chests are numbered in the order a stage is read, which is the order the
+# game finds them in, so the plan above lines up with the tiles on the map.
+loot_lines = []
+for L in STAGES:
+    found = sum(row.count('C') for row in L['rows'])
+    plan = CHEST_LOOT.get(L['id'], [])
+    if found > len(plan):
+        raise SystemExit('%s has %d chests but only %d planned'
+                         % (L['id'], found, len(plan)))
+    if found:
+        loot_lines.append("  '%s': [%s]"
+                          % (L['id'], ', '.join("'%s'" % q for q in plan[:found])))
+
 chunks = []
 for L in STAGES:
     extra = (" boss: '%s'," % L['boss']) if L['boss'] else ''
@@ -965,6 +996,11 @@ var LEVELS = [
 footer = """
 ];
 
+/* What each stage's chests hold, in the order the stage is read. */
+var CHEST_LOOT = {
+%CHESTS%
+};
+
 var MOVERS = {};
 
 var WORLDS = [
@@ -975,7 +1011,8 @@ var WORLDS = [
 """
 
 dest = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src', 'levels.js')
-open(dest, 'w').write(header + ',\n'.join(chunks) + footer)
+open(dest, 'w').write(header + ',\n'.join(chunks) +
+                     footer.replace('%CHESTS%', ',\n'.join(loot_lines)))
 print('wrote levels.js')
 for L in STAGES:
     f = ''.join(L['rows'])

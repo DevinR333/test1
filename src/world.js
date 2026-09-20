@@ -54,6 +54,10 @@ function World(stageIndex) {
           code = T_FAKE;
           var ch2 = new Chest(px + 1, py + 3);
           ch2.buried = true; ch2.tx = x; ch2.ty = y;
+          /* what this one holds, from the stage's plan; chests are read
+             in the same order the plan was written */
+          var plan = (typeof CHEST_LOOT !== 'undefined' && CHEST_LOOT[def.id]) || [];
+          ch2.prize = plan[this.chests.length] || 'gems';
           this.chests.push(ch2);
           break;
         case 'q': case 'j':
@@ -337,7 +341,14 @@ World.prototype.drawPopup = function (g) {
   if (!pu) return;
   if (!pu.blocking && pu.t <= 0) { this.popup = null; return; }
   var fade = (pu.blocking || pu.t > 30) ? 1 : pu.t / 30;
-  var w = 168, h = 30 + pu.lines.length * 11;
+  /* wide enough for the longest line it actually carries - a fixed panel
+     let the longer prizes spill out either side of it */
+  var w = Text.width(pu.title, 1);
+  for (var mI = 0; mI < pu.lines.length; mI++) {
+    w = Math.max(w, Text.width(pu.lines[mI], 1));
+  }
+  w = Math.min(VIEW_W - 16, Math.max(168, w + 20));
+  var h = 30 + pu.lines.length * 11;
   var x = Math.round(VIEW_W / 2 - w / 2), y = 30;
   g.save();
   g.globalAlpha = fade;
@@ -349,9 +360,6 @@ World.prototype.drawPopup = function (g) {
   Text.center(g, pu.title, VIEW_W / 2, y + 7, pu.color, 1);
   for (var i = 0; i < pu.lines.length; i++) {
     Text.center(g, pu.lines[i], VIEW_W / 2, y + 21 + i * 11, '#e6dcf7', 1);
-  }
-  if (pu.blocking) {
-    Text.center(g, 'PRESS TO CARRY ON', VIEW_W / 2, y + h + 6, '#8d80ad', 1);
   }
   g.restore();
   if (!pu.blocking) pu.t--;

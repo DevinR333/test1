@@ -99,26 +99,16 @@ var Save = (function () {
       desc: '2 damage, fair reach. Special: cross slash.' },
     { id: 'collar1', kind: 'collar', tier: 1, name: 'Studded Collar', cost: 80,
       desc: '+1 heart.' },
-    { id: 'spring', kind: 'relic', name: 'Gale Collar', cost: 130,
-      desc: 'A third jump in mid-air.' },
     { id: 'swift', kind: 'relic', name: 'Swift Paws', cost: 90,
       desc: 'Run noticeably faster.' },
-    { id: 'cleaver', kind: 'sword', name: 'Boar Cleaver', cost: 150,
-      desc: '4 damage but stubby. Special: quake.' },
     { id: 'ember', kind: 'sword', name: 'Emberblade', cost: 190,
       desc: '3 damage, long. Breaks reinforced stone. Special: flame wave.' },
-    { id: 'whip', kind: 'sword', name: 'Whip Fang', cost: 240,
-      desc: '2 damage, enormous reach. Special: long lash.' },
     { id: 'magnet', kind: 'relic', name: 'Wet Nose', cost: 120,
       desc: 'Coins drift toward you.' },
     { id: 'collar2', kind: 'collar', tier: 2, name: 'Iron Collar', cost: 200,
       desc: '+2 hearts total.' },
-    { id: 'lucky', kind: 'relic', name: 'Lucky Tag', cost: 150,
-      desc: 'Coins are worth double.' },
     { id: 'storm', kind: 'sword', name: 'Stormfang', cost: 380,
       desc: '5 damage, long. Special: piercing thunder arc.' },
-    { id: 'guard', kind: 'relic', name: 'Thick Coat', cost: 260,
-      desc: 'Longer mercy time after a hit.' },
     /* Wardrobe. Most turn up in chests; these are the ones you can
        simply buy. Selecting one you already own wears it. */
     { id: 'bandana', kind: 'outfit', name: 'Bandana', cost: 40,
@@ -131,6 +121,59 @@ var Save = (function () {
       desc: 'Who is a good king? You are.' }
   ];
 
+  /* Gear no amount of coin will buy. It is only ever in a chest, and the
+     shop lists it greyed out so you know it is out there. */
+  var CHEST_ONLY = [
+    { id: 'cleaver', kind: 'sword', name: 'Boar Cleaver',
+      desc: '4 damage but stubby. Special: quake.' },
+    { id: 'whip', kind: 'sword', name: 'Whip Fang',
+      desc: '2 damage, enormous reach. Special: long lash.' },
+    { id: 'spring', kind: 'relic', name: 'Gale Collar',
+      desc: 'A third jump in mid-air.' },
+    { id: 'guard', kind: 'relic', name: 'Thick Coat',
+      desc: 'Longer mercy time after a hit.' },
+    { id: 'lucky', kind: 'relic', name: 'Lucky Tag',
+      desc: 'Coins are worth double.' }
+  ];
+  var CHEST_ONLY_BY_ID = {};
+  for (var ci = 0; ci < CHEST_ONLY.length; ci++) {
+    CHEST_ONLY[ci].cost = -1;                /* never purchasable */
+    CHEST_ONLY_BY_ID[CHEST_ONLY[ci].id] = CHEST_ONLY[ci];
+  }
+
+  /* Hand over whatever a chest was carrying. Returns a description of
+     what actually landed, or null when the prize was already yours. */
+  function grant(spec) {
+    var d = get();
+    var bits = String(spec).split(':');
+    var kind = bits[0], id = bits[1];
+    if (kind === 'blade') {
+      if (d.blades[id]) return null;
+      d.blades[id] = true;
+      d.blade = id;                          /* swing it straight away */
+      flush();
+      var bl = Art.BLADE_BY_ID[id];
+      return { title: 'A BLADE', color: '#eef4fa', lines: [
+        (bl ? bl.name.toUpperCase() : id.toUpperCase()),
+        (bl ? (bl.dmg + ' DAMAGE   SPECIAL: ' +
+               Art.SPECIALS[bl.special].name.toUpperCase()) : ''),
+        'EQUIPPED. SWAP BLADES AT THE POST.'
+      ] };
+    }
+    if (kind === 'relic') {
+      if (d.relics[id]) return null;
+      d.relics[id] = true;
+      flush();
+      var rl = CHEST_ONLY_BY_ID[id];
+      return { title: 'AN UPGRADE', color: '#b9a0ff', lines: [
+        (rl ? rl.name.toUpperCase() : id.toUpperCase()),
+        (rl ? rl.desc.toUpperCase() : ''),
+        'IT IS YOURS FOR GOOD'
+      ] };
+    }
+    return null;
+  }
+
   function owned(item) {
     var d = get();
     if (item.kind === 'sword') return !!d.blades[item.id];
@@ -142,12 +185,14 @@ var Save = (function () {
   function available(item) {
     var d = get();
     if (owned(item)) return false;
+    if (item.cost < 0) return false;          /* chest-only: no price */
     if (item.kind === 'sword') return true;
     if (item.kind === 'collar') return d.collar === item.tier - 1;
     return true;   /* relics and outfits have no order */
   }
   function buy(item) {
     var d = get();
+    if (item.cost < 0) return false;
     if (owned(item) || !available(item) || d.coins < item.cost) return false;
     d.coins -= item.cost;
     if (item.kind === 'sword') { d.blades[item.id] = true; d.blade = item.id; }
@@ -159,6 +204,10 @@ var Save = (function () {
   }
 
   function has(relicId) { return !!get().relics[relicId]; }
+  function isChestOnly(id) { return !!CHEST_ONLY_BY_ID[id]; }
+  /* the shop shows everything, chest-only gear included, so you know it
+     is out there rather than wondering whether the list is the game */
+  function catalogue() { return SHOP.concat(CHEST_ONLY); }
 
   /* ---- blades ---- */
   function ownsBlade(id) { return !!get().blades[id]; }
@@ -200,8 +249,10 @@ var Save = (function () {
     for (var k in d.heartPieces) if (d.heartPieces[k]) n++;
     return n;
   }
+  function hasHeartPiece(levelId) { return !!get().heartPieces[levelId]; }
   function addHeartPiece(levelId) {
     var d = get();
+    if (d.heartPieces[levelId]) return 0;    /* one per stage, ever */
     d.heartPieces[levelId] = true;
     flush();
     return heartPieceCount();
@@ -243,11 +294,14 @@ var Save = (function () {
   return {
     load: load, get: get, flush: flush, wipe: wipe,
     snapshot: snapshot, restore: restore,
-    SHOP: SHOP, owned: owned, available: available, buy: buy,
+    SHOP: SHOP, CHEST_ONLY: CHEST_ONLY, catalogue: catalogue,
+    isChestOnly: isChestOnly, grant: grant,
+    owned: owned, available: available, buy: buy,
     has: has, addCoins: addCoins, clearStage: clearStage,
     ownsBlade: ownsBlade, equipBlade: equipBlade, blade: blade, bladeId: bladeId,
     bladeDamage: bladeDamage, bladeReach: bladeReach, bestDamage: bestDamage,
     addGems: addGems, gemScore: gemScore, addHeartPiece: addHeartPiece,
+    hasHeartPiece: hasHeartPiece,
     ownsOutfit: ownsOutfit, unlockOutfit: unlockOutfit, wear: wear, worn: worn,
     lockedOutfit: lockedOutfit,
     heartPieceCount: heartPieceCount, maxHearts: maxHearts,

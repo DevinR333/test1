@@ -116,11 +116,24 @@ function Chest(x, y) {
   this.hit = 0;            /* frames of recoil after a swing lands */
   this.nudge = 0;          /* lid rattle while you stand against it */
   this.dead = false;
-  /* Loot is fixed per chest, derived from where it sits, so a stage
-     always rewards the same thing. Some hold nothing but gems. */
-  var h = (Math.floor(x) * 73856093 ^ Math.floor(y) * 19349663) >>> 0;
-  this.loot = ['gems', 'coins', 'gems', 'outfit'][h % 4];
+  /* What it holds is set from the stage's plan when the level loads.
+     'gems' is only ever the fallback for a prize already yours. */
+  this.prize = 'gems';
 }
+
+/* Spill a handful of gems, the consolation prize. */
+Chest.prototype.spillGems = function (w) {
+  var cx = this.x + this.w / 2, cy = this.y + 2;
+  var grades = ['crown', 'jewel', 'jewel', 'shard'];
+  for (var gi = 0; gi < grades.length; gi++) {
+    var gem = new Pickup(cx - 4 + (gi - 1.5) * 9, cy - 6, 'gem');
+    gem.grade = grades[gi];
+    gem.loose = true;
+    gem.vx = (gi - 1.5) * 0.7; gem.vy = Util.rand(-3.0, -2.0);
+    w.pickups.push(gem);
+  }
+};
+
 Chest.prototype.pop = function (w) {
   if (this.open) return;
   this.open = true;
@@ -128,39 +141,62 @@ Chest.prototype.pop = function (w) {
   w.shake(4);
   w.chestsGot++;
   var cx = this.x + this.w / 2, cy = this.y + 2;
-
-  if (this.loot === 'gems') {
-    /* a hoard of gems rather than coin */
-    var grades = ['crown', 'jewel', 'jewel', 'shard'];
-    for (var gi = 0; gi < grades.length; gi++) {
-      var gem = new Pickup(cx - 4 + (gi - 1.5) * 9, cy - 6, 'gem');
-      gem.grade = grades[gi];
-      gem.loose = true;
-      gem.vx = (gi - 1.5) * 0.7; gem.vy = Util.rand(-3.0, -2.0);
-      w.pickups.push(gem);
-    }
-  } else {
-    for (var i = 0; i < 16; i++) w.dropCoin(cx, cy);
-  }
   for (var j = 0; j < 14; j++) {
     w.parts.push(new Particle(cx, cy, Util.rand(-2, 2), Util.rand(-3.2, -0.6),
       Util.randInt(20, 40), Util.pick(['#e8c45c', '#fff3bc', '#c08a42']), 2));
   }
-  var prize = (this.loot === 'outfit') ? Save.lockedOutfit() : null;
-  if (prize) {
-    Save.unlockOutfit(prize);
-    w.showPopup('CHEST OPENED', [
-      Art.OUTFITS[prize].name.toUpperCase(),
-      'AN OUTFIT - WEAR IT IN THE WARDROBE'
-    ], '#a8ffd0');
-  } else if (this.loot === 'gems') {
-    w.showPopup('CHEST OPENED', [
-      'A HOARD OF GEMS',
-      'CROWN 10  JEWEL 5  SHARD 1'
-    ], '#ffc8f4');
-  } else {
-    w.showPopup('CHEST OPENED', ['16 COINS', 'SPEND THEM AT THE TRADING POST'], '#e8c45c');
+
+  var spec = this.prize || 'gems';
+  var got = null;
+
+  if (spec === 'vessel') {
+    /* A quarter of a heart. Four of them, four stages apart, make one. */
+    var total = Save.addHeartPiece(w.def.id);
+    if (total > 0) {
+      var part = total % 4;
+      w.pickups.push(new Pickup(cx - 3, cy - 10, 'vessel'));
+      got = { title: 'A VESSEL PIECE', color: '#ff8a92', lines: [
+        part === 0 ? 'THAT IS FOUR - A WHOLE NEW HEART'
+                   : 'PIECE ' + part + ' OF 4',
+        part === 0 ? 'YOUR MAXIMUM HEALTH IS UP BY ONE'
+                   : 'FOUR MAKE A HEART. THEY ARE STAGES APART.'
+      ] };
+      Sfx.fanfare();
+    }
+  } else if (spec.indexOf('blade:') === 0 || spec.indexOf('relic:') === 0) {
+    got = Save.grant(spec);
+    if (got) Sfx.fanfare();
+  } else if (spec === 'outfit') {
+    var prize = Save.lockedOutfit();
+    if (prize) {
+      Save.unlockOutfit(prize);
+      got = { title: 'AN OUTFIT', color: '#a8ffd0', lines: [
+        Art.OUTFITS[prize].name.toUpperCase(),
+        'WEAR IT AT THE TRADING POST'
+      ] };
+    }
+  } else if (spec === 'gems') {
+    this.spillGems(w);
+    got = { title: 'A HOARD OF GEMS', color: '#ffc8f4', lines: [
+      'CROWN 10   JEWEL 5   SHARD 1',
+      'GEMS COUNT TOWARD THE STAGE TALLY'
+    ] };
+  } else if (spec === 'coins') {
+    for (var i = 0; i < 16; i++) w.dropCoin(cx, cy);
+    got = { title: 'A PURSE', color: '#e8c45c', lines: [
+      '16 COINS', 'SPEND THEM AT THE TRADING POST'
+    ] };
   }
+
+  /* Whatever was planned is already yours - so it pays out instead. */
+  if (!got) {
+    this.spillGems(w);
+    got = { title: 'A HOARD OF GEMS', color: '#ffc8f4', lines: [
+      'CROWN 10   JEWEL 5   SHARD 1',
+      'THE PRIZE HERE WAS ALREADY YOURS'
+    ] };
+  }
+  w.showPopup(got.title, got.lines, got.color);
 };
 Chest.prototype.update = function (w) {
   this.t++;
