@@ -1,5 +1,128 @@
 plugins { id 'com.android.application' }
 
+/*
+ * The game's code is translated from a ROM and the world outside its screen is
+ * read from a disassembly, and neither exists until something makes it. Doing
+ * that here means opening the project and pressing Run is the whole procedure,
+ * and - because it translates the very ROM that is about to be packaged - the
+ * code and the cartridge it runs against cannot disagree.
+ */
+def repoRoot = rootProject.projectDir.parentFile
+def assetsDir = file('src/main/assets')
+
+def findRom = {
+    def roms = assetsDir.listFiles()?.findAll {
+        it.name.toLowerCase() ==~ /.*\.gbc?$/
+    }?.sort { it.name }
+    return roms ? roms[0] : null
+}
+
+def findPython = {
+    for (name in ['python3', 'python', 'py']) {
+        try {
+            def out = new ByteArrayOutputStream()
+            def r = exec {
+                commandLine name, '-c', 'import sys; print(sys.version_info[0])'
+                standardOutput = out
+                errorOutput = new ByteArrayOutputStream()
+                ignoreExitValue = true
+            }
+            if (r.exitValue == 0 && out.toString().trim() == '3') return name
+        } catch (ignored) { }
+    }
+    return null
+}
+
+def findDisasm = {
+    for (p in ['external/oracles-disasm', '../oracles-disasm']) {
+        def d = new File(repoRoot, p)
+        if (new File(d, 'rooms').isDirectory()) return d
+    }
+    return null
+}
+
+tasks.register('generateSources') {
+    description = 'Translates the ROM in assets to C and builds the world data.'
+
+    def genDir = new File(repoRoot, 'build/src')
+    def worldFile = new File(repoRoot, 'build/world_data.c')
+    def stamp = new File(repoRoot, 'build/android-generated-from')
+
+    doLast {
+        def rom = findRom()
+        if (rom == null) {
+            throw new GradleException(
+                "No ROM found.\n\n" +
+                "Put your Oracle of Seasons cartridge in:\n    " +
+                assetsDir.absolutePath + "\n\n" +
+                "It is both packaged into the app and translated into the code " +
+                "the app runs, so the two always match.")
+        }
+
+        // Nothing to do if the last generation used this same cartridge.
+        def want = rom.length() + ":" + rom.name
+        if (worldFile.exists() && new File(genDir, 'dispatch.c').exists()
+            && stamp.exists() && stamp.text.trim() == want) {
+            println "sources already generated from ${rom.name}"
+            return
+        }
+
+        def python = findPython()
+        if (python == null) {
+            throw new GradleException(
+                "Python 3 is needed once, to translate the ROM, and was not " +
+                "found on PATH.\n" +
+                "Install it from python.org, or use the Python that comes with " +
+                "MSYS2, then build again.")
+        }
+
+        def disasm = findDisasm()
+        if (disasm == null) {
+            throw new GradleException(
+                "No disassembly checkout found, so there is no world data.\n" +
+                "Looked for a rooms/ directory in:\n" +
+                "    " + new File(repoRoot, 'external/oracles-disasm') + "\n" +
+                "    " + new File(repoRoot, '../oracles-disasm'))
+        }
+
+        genDir.mkdirs()
+        println "translating ${rom.name} (${rom.length() / 1024} KiB)"
+
+        def args = [python, 'tools/gbrecomp.py', rom.absolutePath, '-o', 'build/src']
+        def sym = new File(disasm, rom.name.replaceFirst(/\.gbc?$/, '.sym'))
+        if (sym.exists()) args += ['--symbols', sym.absolutePath]
+        exec { workingDir repoRoot; commandLine args }
+
+        println "building the world data from ${disasm.name}"
+        exec {
+            workingDir repoRoot
+            commandLine python, 'tools/worldmap.py', disasm.absolutePath,
+                        '-o', 'build/world_data.c'
+        }
+        exec {
+            workingDir repoRoot
+            commandLine python, 'tools/gen_interp.py', 'runtime/interp_gen.c'
+        }
+        copy {
+            from new File(repoRoot, 'runtime/gb.h')
+            into genDir
+        }
+        stamp.text = want
+        println "done - ${genDir.listFiles().findAll { it.name.endsWith('.c') }.size()} files"
+    }
+}
+
+// Before anything native is configured, so CMake finds what it expects.
+// Matched by name rather than referenced directly: these tasks are created by
+// the Android plugin later on, and naming one now would be asking for a task
+// that does not exist yet.
+tasks.matching {
+    it.name == 'preBuild' || it.name ==~ /^(configureCMake|buildCMake|externalNativeBuild).*/
+}.configureEach {
+    dependsOn 'generateSources'
+}
+
+
 android {
     namespace 'com.oracle.port'
     compileSdk 34
