@@ -54,17 +54,17 @@ class GameOverScreen(private val g: Game) {
         // stats strip
         val statsY = y + h * 0.60f
         val third = w / 3f
-        stat(c, x + third * 0.5f, statsY, g.lastCoins.toString(), "COINS EARNED", Theme.ACCENT)
-        stat(c, x + third * 1.5f, statsY, ((g.world.heightWu / Tuning.VIEW_H).toInt()).toString(), "SCREENS", Theme.TEXT)
-        stat(c, x + third * 2.5f, statsY, Palettes.label(g.lastBiome).uppercase(), "REACHED", Palettes.get(g.lastBiome).platAccent)
+        stat(c, x + third * 0.5f, statsY, g.lastCoins.toString(), "COINS EARNED", Theme.ACCENT, third)
+        stat(c, x + third * 1.5f, statsY, ((g.world.heightWu / Tuning.VIEW_H).toInt()).toString(), "SCREENS", Theme.TEXT, third)
+        stat(c, x + third * 2.5f, statsY, Palettes.label(g.lastBiome).uppercase(), "REACHED", Palettes.get(g.lastBiome).platAccent, third)
 
         ui.text(
-            c, "${'$'}{g.lastRunCoins} picked up  +  ${'$'}{g.lastBonusCoins} for the height  \u2192  banked",
-            x + w * 0.5f, statsY + 72f, 25f, Theme.TEXT_DIM, ui.body, false
+            c, "${g.lastRunCoins} picked up  +  ${g.lastBonusCoins} for the height  \u2192  banked",
+            x + w * 0.5f, statsY + 72f, 25f, Theme.TEXT_DIM, ui.body, false, w - 72f
         )
         ui.text(
-            c, "${'$'}{g.save.coins} coins in the bank",
-            x + w * 0.5f, statsY + 106f, 27f, ColorX.withAlpha(Theme.ACCENT, 0.9f), ui.body, false
+            c, "${g.save.coins} coins in the bank",
+            x + w * 0.5f, statsY + 106f, 27f, ColorX.withAlpha(Theme.ACCENT, 0.9f), ui.body, false, w - 72f
         )
 
         // buttons
@@ -87,11 +87,12 @@ class GameOverScreen(private val g: Game) {
         g.drawPosedBuddy(c, x + w - 96f, y + 18f, 0.85f, g.equippedOutfit, ui.time * 0.7f)
     }
 
-    private fun stat(c: Canvas, cx: Float, cy: Float, value: String, label: String, color: Int) {
+    /** One of the three end-of-run figures. [colW] is its share of the panel, so a long band
+     *  name like "CLOUDLINE III" shrinks instead of running into its neighbours. */
+    private fun stat(c: Canvas, cx: Float, cy: Float, value: String, label: String, color: Int, colW: Float) {
         val ui = g.ui
-        var size = 46f
-        while (ui.measure(value, size, ui.title) > 240f && size > 22f) size -= 2f
-        ui.text(c, value, cx, cy, size, color, ui.title, false)
-        ui.text(c, label, cx, cy + 34f, 24f, Theme.TEXT_DIM, ui.body, false)
+        val box = colW - 16f
+        ui.text(c, value, cx, cy, 46f, color, ui.title, false, box)
+        ui.text(c, label, cx, cy + 34f, 24f, Theme.TEXT_DIM, ui.body, false, box)
     }
 }

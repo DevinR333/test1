@@ -17,6 +17,11 @@ class MenuScreen(private val g: Game) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rect = RectF()
 
+    private companion object {
+        /** Natural height of PLAY + the two pairs + SETTINGS, including the gaps between them. */
+        const val BUTTON_STACK_H = 478f
+    }
+
     private object Id {
         const val PLAY = 2001
         const val WARDROBE = 2002
@@ -38,18 +43,33 @@ class MenuScreen(private val g: Game) {
         drawCoinChip(c)
         drawNotice(c)
 
+        // The button stack is anchored to the BOTTOM of the safe area and everything else is
+        // placed above it, rather than all of it hanging off fractions of a fixed 1600-unit
+        // height. That is what makes the screen work on any shape of display: a tall gesture
+        // bar, a notch, or a squarer 4:3 panel changes where the bottom is, and the layout
+        // follows it instead of running past it. [BUTTON_STACK_H] is the stack's natural
+        // height; when there genuinely is not room for it, everything scales by one factor so
+        // it stays in proportion instead of being cropped.
+        val bottom = h - ui.safeBottom - 24f
         if (wide) {
             val leftCx = g.worldW * 0.30f
             val rightW = min(g.worldW * 0.40f, 620f)
             val rightX = g.worldW * 0.58f
+            val room = bottom - ui.safeTop - 120f
+            val k = (room / BUTTON_STACK_H).coerceIn(0.7f, 1f)
             drawTitle(c, leftCx, h * 0.24f + rise)
-            drawStage(c, leftCx, h * 0.84f)
-            drawButtons(c, rightX, h * 0.28f + rise, rightW)
+            drawStage(c, leftCx, bottom - 40f)
+            drawButtons(c, rightX, ui.safeTop + 120f + rise, rightW, k)
         } else {
-            drawTitle(c, g.worldW * 0.5f, h * 0.19f + rise)
-            drawStage(c, g.worldW * 0.5f, h * 0.60f)
             val bw = min(g.worldW - ui.safeLeft - ui.safeRight - 120f, 700f)
-            drawButtons(c, (g.worldW - bw) * 0.5f, h * 0.64f + rise, bw)
+            // Leave room above the buttons for the title and for Buddy on his plank.
+            val room = bottom - ui.safeTop - 520f
+            val k = (room / BUTTON_STACK_H).coerceIn(0.7f, 1f)
+            val stackH = BUTTON_STACK_H * k
+            val btnTop = bottom - stackH
+            drawTitle(c, g.worldW * 0.5f, ui.safeTop + 190f + rise)
+            drawStage(c, g.worldW * 0.5f, btnTop - 34f)
+            drawButtons(c, (g.worldW - bw) * 0.5f, btnTop + rise, bw, k)
         }
     }
 
@@ -107,41 +127,43 @@ class MenuScreen(private val g: Game) {
         g.drawMenuBuddy(c, cx, groundY - 2f, 1.15f, g.equippedOutfit)
     }
 
-    private fun drawButtons(c: Canvas, x: Float, y: Float, w: Float) {
+    /** @param k fit factor - 1 when there is room for the stack at its natural size. */
+    private fun drawButtons(c: Canvas, x: Float, y: Float, w: Float, k: Float) {
         val ui = g.ui
         var cy = y
-        if (ui.button(c, Id.PLAY, x, cy, w, 132f, "PLAY", Ui.ButtonStyle.PRIMARY)) {
+        if (ui.button(c, Id.PLAY, x, cy, w, 132f * k, "PLAY", Ui.ButtonStyle.PRIMARY)) {
             g.tap(); g.startRun()
         }
-        cy += 154f
+        cy += 154f * k
 
         val halfW = (w - 24f) * 0.5f
-        if (ui.button(c, Id.WARDROBE, x, cy, halfW, 100f, "WARDROBE", Ui.ButtonStyle.SECONDARY,
+        val rowH = 100f * k
+        if (ui.button(c, Id.WARDROBE, x, cy, halfW, rowH, "WARDROBE", Ui.ButtonStyle.SECONDARY,
                 sublabel = "${g.ownedCount()} fits \u00b7 ${g.save.trailCount()} trails")) {
             g.tap(); g.goto(Game.Screen.WARDROBE)
         }
         val machineReady = g.save.coins >= Tuning.GACHA_COST
-        if (ui.button(c, Id.GACHA, x + halfW + 24f, cy, halfW, 100f, "MACHINE", Ui.ButtonStyle.SECONDARY,
+        if (ui.button(c, Id.GACHA, x + halfW + 24f, cy, halfW, rowH, "MACHINE", Ui.ButtonStyle.SECONDARY,
                 sublabel = if (machineReady) "ready to pull!" else "${Tuning.GACHA_COST} coins a go")) {
             g.tap(); g.goto(Game.Screen.GACHA)
         }
         if (machineReady) {
             val pulse = 0.4f + 0.35f * sin(ui.time * 3.2f)
-            ui.shimmer(c, x + halfW + 24f, cy, halfW, 100f, 34f, pulse)
+            ui.shimmer(c, x + halfW + 24f, cy, halfW, rowH, 34f, pulse)
         }
-        cy += 118f
+        cy += 118f * k
 
-        if (ui.button(c, Id.SCENES, x, cy, halfW, 100f, "WORLDS", Ui.ButtonStyle.SECONDARY,
+        if (ui.button(c, Id.SCENES, x, cy, halfW, rowH, "WORLDS", Ui.ButtonStyle.SECONDARY,
                 sublabel = "${g.ownedSceneCount()}/${Scenes.ALL.size} unlocked")) {
             g.tap(); g.goto(Game.Screen.SCENES)
         }
-        if (ui.button(c, Id.SCORES, x + halfW + 24f, cy, halfW, 100f, "SCORES", Ui.ButtonStyle.SECONDARY,
+        if (ui.button(c, Id.SCORES, x + halfW + 24f, cy, halfW, rowH, "SCORES", Ui.ButtonStyle.SECONDARY,
                 sublabel = if (g.save.bestScore > 0) "best ${g.save.bestScore}" else "no runs yet")) {
             g.tap(); g.goto(Game.Screen.SCORES)
         }
-        cy += 118f
+        cy += 118f * k
 
-        if (ui.button(c, Id.SETTINGS, x, cy, w, 88f, "SETTINGS")) {
+        if (ui.button(c, Id.SETTINGS, x, cy, w, 88f * k, "SETTINGS")) {
             g.tap(); g.goto(Game.Screen.SETTINGS)
         }
     }
@@ -150,11 +172,16 @@ class MenuScreen(private val g: Game) {
         if (g.noticeT <= 0f) return
         val ui = g.ui
         val a = (g.noticeT / 0.7f).coerceAtMost(1f)
-        val w = ui.measure(g.notice, 40f, ui.title) + 80f
+        val room = g.worldW - ui.safeLeft - ui.safeRight - 40f
+        val w = (ui.measure(g.notice, ui.fitSize(g.notice, 40f, ui.title, room - 80f), ui.title) + 80f)
+            .coerceAtMost(room)
         val x = (g.worldW - w) * 0.5f
         val y = ui.safeTop + 110f
         ui.pill(c, x, y, w, 68f, ColorX.withAlpha(Theme.GOOD, 0.3f * a))
-        ui.text(c, g.notice, g.worldW * 0.5f, y + 46f, 40f, ColorX.withAlpha(Theme.TEXT, a), ui.title, false)
+        ui.text(
+            c, g.notice, g.worldW * 0.5f, y + 46f, 40f, ColorX.withAlpha(Theme.TEXT, a), ui.title, false,
+            room - 40f
+        )
     }
 
     private fun drawPlayerChip(c: Canvas) {
@@ -169,7 +196,7 @@ class MenuScreen(private val g: Game) {
         c.drawCircle(x + 34f, y + 32f, 18f, p)
         p.color = 0xFF10151F.toInt()
         c.drawCircle(x + 34f, y + 34f, 9f, p)
-        ui.text(c, name.uppercase(), x + 62f, y + 44f, 36f, Theme.TEXT, ui.bodyLeft, false)
+        ui.text(c, name.uppercase(), x + 62f, y + 44f, 36f, Theme.TEXT, ui.bodyLeft, false, 200f)
         if (g.save.bestScore > 0) {
             ui.text(
                 c, "BEST ${g.save.bestScore}", x + 8f, y + 96f, 30f,

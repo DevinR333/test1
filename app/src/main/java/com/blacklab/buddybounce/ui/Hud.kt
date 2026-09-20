@@ -143,46 +143,66 @@ class Hud(private val g: Game) {
     fun drawPause(c: Canvas) {
         val ui = g.ui
         ui.scrim(c, g.worldW, Theme.SCREEN_H, 0.66f)
-        val w = (g.worldW * 0.8f).coerceAtMost(700f)
-        val h = 720f
+
+        // The panel is sized from what is IN it, then shrunk to fit the room it has. The old
+        // version hard-coded 720 units of height for 840 units of content, so the bottom two
+        // buttons hung outside the panel; and it never looked at the safe insets at all, so a
+        // squarer screen or a tall gesture bar pushed the last one off. Deriving the height and
+        // scaling everything by one factor means it fits any display without cropping and
+        // without going squat.
+        val headerH = 300f
+        val btnH = floatArrayOf(100f, 92f, 92f, 92f)
+        val gap = 16f
+        val padBottom = 40f
+        var natural = headerH + padBottom
+        for (b in btnH) natural += b + gap
+
+        val availH = Theme.SCREEN_H - ui.safeTop - ui.safeBottom - 60f
+        val k = (availH / natural).coerceAtMost(1f)
+        val h = natural * k
+        val w = (g.worldW - ui.safeLeft - ui.safeRight - 80f).coerceIn(360f, 700f)
         val x = (g.worldW - w) * 0.5f
-        val y = (Theme.SCREEN_H - h) * 0.5f
+        val y = ui.safeTop + (availH - h) * 0.5f + 30f
+
         ui.panel(c, x, y, w, h)
-        ui.text(c, "PAUSED", x + w * 0.5f, y + 96f, 68f, Theme.TEXT, ui.title)
+        ui.text(c, "PAUSED", x + w * 0.5f, y + 96f * k, 68f * k, Theme.TEXT, ui.title, true, w - 60f)
 
         // Banked total first - that is the number that actually belongs to the player.
         val purse = g.save.coins
         val pillW = w - 96f
-        ui.pill(c, x + 48f, y + 126f, pillW, 84f, 0xFF121828.toInt())
-        coinIcon(c, x + 92f, y + 168f, 24f)
-        ui.text(c, purse.toString(), x + 126f, y + 182f, 48f, Theme.ACCENT, ui.bodyLeft, false)
-        ui.text(c, "COINS IN THE BANK", x + w - 72f, y + 178f, 26f, Theme.TEXT_DIM, ui.bodyRight, false)
+        ui.pill(c, x + 48f, y + 126f * k, pillW, 84f * k, 0xFF121828.toInt())
+        coinIcon(c, x + 92f, y + 168f * k, 24f * k)
+        ui.text(c, purse.toString(), x + 126f, y + 182f * k, 48f * k, Theme.ACCENT, ui.bodyLeft, false, pillW * 0.4f)
+        ui.text(
+            c, "COINS IN THE BANK", x + w - 72f, y + 178f * k, 26f * k, Theme.TEXT_DIM, ui.bodyRight, false,
+            pillW * 0.55f
+        )
 
         ui.text(
             c, "This run: ${g.world.score} pts, ${g.world.runCoins} coins picked up",
-            x + w * 0.5f, y + 244f, 28f, Theme.TEXT_DIM, ui.body, false
+            x + w * 0.5f, y + 244f * k, 28f * k, Theme.TEXT_DIM, ui.body, false, w - 80f
         )
         ui.text(
             c, "run coins are banked when the run ends",
-            x + w * 0.5f, y + 280f, 24f, ColorX.withAlpha(Theme.TEXT_DIM, 0.75f), ui.body, false
+            x + w * 0.5f, y + 280f * k, 24f * k, ColorX.withAlpha(Theme.TEXT_DIM, 0.75f), ui.body, false, w - 80f
         )
 
         val bw = w - 96f
         val bx = x + 48f
-        var by = y + 316f
-        if (ui.button(c, Id.RESUME, bx, by, bw, 100f, "RESUME", Ui.ButtonStyle.PRIMARY)) {
+        var by = y + headerH * k
+        if (ui.button(c, Id.RESUME, bx, by, bw, btnH[0] * k, "RESUME", Ui.ButtonStyle.PRIMARY)) {
             g.tap(); g.goto(Game.Screen.PLAY)
         }
-        by += 116f
-        if (ui.button(c, Id.RESTART, bx, by, bw, 92f, "RESTART")) {
+        by += (btnH[0] + gap) * k
+        if (ui.button(c, Id.RESTART, bx, by, bw, btnH[1] * k, "RESTART")) {
             g.tap(); g.startRun()
         }
-        by += 108f
-        if (ui.button(c, Id.SETTINGS, bx, by, bw, 92f, "SETTINGS")) {
+        by += (btnH[1] + gap) * k
+        if (ui.button(c, Id.SETTINGS, bx, by, bw, btnH[2] * k, "SETTINGS")) {
             g.tap(); g.goto(Game.Screen.SETTINGS)
         }
-        by += 108f
-        if (ui.button(c, Id.QUIT, bx, by, bw, 92f, "QUIT TO MENU", Ui.ButtonStyle.GHOST)) {
+        by += (btnH[2] + gap) * k
+        if (ui.button(c, Id.QUIT, bx, by, bw, btnH[3] * k, "QUIT TO MENU", Ui.ButtonStyle.GHOST)) {
             g.tap(); g.goto(Game.Screen.MENU)
         }
     }

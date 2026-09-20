@@ -37,7 +37,8 @@ class ScenesScreen(private val g: Game) {
         ui.text(c, "WORLDS", g.worldW * 0.5f, ui.safeTop + 96f, 62f, Theme.TEXT, ui.title)
         ui.text(
             c, "${g.ownedSceneCount()} of ${Scenes.ALL.size} unlocked  •  swap any time",
-            g.worldW * 0.5f, ui.safeTop + 140f, 30f, Theme.TEXT_DIM, ui.body, false
+            g.worldW * 0.5f, ui.safeTop + 140f, 30f, Theme.TEXT_DIM, ui.body, false,
+            g.worldW - ui.safeLeft - ui.safeRight - 80f
         )
 
         val cols = if (wide) 3 else 1
@@ -122,20 +123,27 @@ class ScenesScreen(private val g: Game) {
         val textAlign = if (wide) ui.title else ui.bodyLeft
         val nameY = if (wide) py + previewH + 52f else y + 72f
 
+        // In the narrow layout the text column starts beside the preview, so its room is
+        // whatever is left of the card - the band list in particular is long enough to run off
+        // the edge on a phone if nothing holds it back.
+        val textBox = if (wide) w - 32f else x + w - textX - 20f
+
         if (wide) {
-            ui.text(c, scene.name.uppercase(), textX, nameY, 34f, if (owned) Theme.TEXT else Theme.TEXT_DIM, ui.title, false)
+            ui.text(c, scene.name.uppercase(), textX, nameY, 34f,
+                if (owned) Theme.TEXT else Theme.TEXT_DIM, ui.title, false, textBox)
         } else {
-            ui.text(c, scene.name.uppercase(), textX, nameY, 40f, if (owned) Theme.TEXT else Theme.TEXT_DIM, ui.bodyLeft, false)
+            ui.text(c, scene.name.uppercase(), textX, nameY, 40f,
+                if (owned) Theme.TEXT else Theme.TEXT_DIM, ui.bodyLeft, false, textBox)
         }
 
         if (!wide) {
             ui.text(
                 c, if (owned) scene.blurb else "Locked - a rare find in the prize machine",
-                textX, nameY + 40f, 26f, Theme.TEXT_DIM, ui.bodyLeft, false
+                textX, nameY + 40f, 26f, Theme.TEXT_DIM, ui.bodyLeft, false, textBox
             )
             ui.text(
                 c, bandList(index), textX, nameY + 74f, 24f,
-                ColorX.withAlpha(scene.cardTint, 0.9f), ui.bodyLeft, false
+                ColorX.withAlpha(scene.cardTint, 0.9f), ui.bodyLeft, false, textBox
             )
         }
 

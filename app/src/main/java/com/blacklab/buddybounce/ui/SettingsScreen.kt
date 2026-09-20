@@ -127,8 +127,9 @@ class SettingsScreen(private val g: Game) {
 
         ui.text(
             c, "Buddy Bounce  •  " + g.ownedCount() + "/" + com.blacklab.buddybounce.data.Outfits.collectableCount +
-                " outfits  •  " + save.totalRuns + " runs",
-            x + w * 0.5f, y + 20f, 26f, Theme.TEXT_DIM, ui.body, false
+                " outfits  •  " + g.save.trailCount() + "/" + com.blacklab.buddybounce.data.Trails.count +
+                " trails  •  " + save.totalRuns + " runs",
+            x + w * 0.5f, y + 20f, 26f, Theme.TEXT_DIM, ui.body, false, w - 40f
         )
         return y + 40f
     }

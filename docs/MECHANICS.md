@@ -94,6 +94,14 @@ grass rather than killing you; the floor is culled as soon as the camera leaves 
   swiped maps to distance travelled, roughly 1:1 for any swipe he could physically follow, and
   when the finger stops he stops — inside 160–300 ms, without overshooting.
 
+  Sensitivity is anchored to the screen's SHORT edge (`DRAG_SPAN`: crossing it moves him 3384
+  world units). The obvious formulation - world units per UI unit of finger travel - looks
+  orientation-independent and is not, because the UI scale comes from screen *height*, which
+  nearly halves when the phone is turned on its side; the same thumb movement bought about 1.8x
+  more ground in landscape, which felt like a different game. A phone's short edge is the same
+  number of pixels whichever way up it is, so measuring against it gives identical sensitivity
+  in both orientations and normalises across resolutions for free.
+
   The one guard rail is a lead cap: the target may never get further ahead of him than
   `DRAG_LEAD_SECONDS` (0.30 s) of travel at his top speed. That is expressed as *time*, not
   distance, on purpose — a fixed distance that felt right in portrait threw away most of a swipe
@@ -140,8 +148,8 @@ space). Behaviour is identical across skins so the read stays learnable:
 | `HOVER` | Moves vertically ±55 wu at 0.6 Hz. | 9 screens |
 | `CRUMBLE` | Bounces you once, then crumbles away over 0.35 s. | 4 screens |
 | `FRAGILE` | Gives **no** bounce; shatters and drops you. | 6 screens |
-| `SPRING` | Solid + a spring: 2.0× bounce. | 1 screen |
-| `TRAMPOLINE` | Solid + a trampoline: 2.6× bounce, with a stretch animation. | 3 screens |
+| `SPRING` | Solid + a spring: 1.55× bounce. | 1 screen |
+| `TRAMPOLINE` | Solid + a trampoline: 1.95× bounce, with a stretch animation. | 3 screens |
 
 **The fragile rule.** `FRAGILE` is the only platform that gives no bounce at all, so a row
 whose *only* platform is fragile is not a challenge — it is a forced death, with nothing left
@@ -172,13 +180,22 @@ one free hit.
 
 | Power-up | Effect | Height gained | Rarity/platform |
 |---|---|---|---|
-| Spring | impulse ×2.0 | 3380 wu ≈ 1.3 screens | 9 % |
-| Trampoline | impulse ×2.6 | 5710 wu ≈ 2.2 screens | 3 % |
-| Propeller cap | 3040 wu/s for 3.2 s | ≈ 9700 wu ≈ 3.8 screens | 1.6 % |
-| Jetpack | 4240 wu/s for 4.0 s | ≈ 17 000 wu ≈ 6.6 screens | 0.8 % |
-| Rocket bone | 5760 wu/s for 4.6 s | ≈ 26 500 wu ≈ 10 screens | 0.18 % |
-| Bubble shield | absorbs one hazard hit, 12 s | — | 1.1 % |
-| Coin magnet | pulls coins within 830 wu, 7 s | — | 1.3 % |
+| Spring | impulse ×1.55 | 2030 wu ≈ 0.8 screens | 4 % |
+| Trampoline | impulse ×1.95 | 3210 wu ≈ 1.3 screens | 0.8 % |
+| Propeller cap | 2300 wu/s for 2.4 s | ≈ 5500 wu ≈ 2.2 screens | 0.30 % |
+| Jetpack | 3100 wu/s for 2.8 s | ≈ 8700 wu ≈ 3.4 screens | 0.08 % |
+| Rocket bone | 4200 wu/s for 3.2 s | ≈ 13 400 wu ≈ 5.3 screens | 0.02 % |
+| Bubble shield | absorbs one hazard hit, 12 s | — | 0.22 % |
+| Coin magnet | pulls coins within 830 wu, 7 s | — | 0.28 % |
+
+Both columns came down hard after playtesting. The first pass had **one platform in six**
+carrying something, and a plain spring clearing 1.3 screens while a rocket took ten — so a run
+was mostly being fired upward by the scenery rather than climbed, and finding a rocket stopped
+being an event because it stopped the game and played a cutscene at you. Now roughly one
+platform in twenty has a spring, under one in a hundred has anything else, and a boost is a
+*lift*: it skips some climbing and buys height, but you are still flying it and you can see
+where you will come down. The bot's runs got 60–100 % longer in wall-clock time as a result,
+at about the same heights — which is the whole point.
 
 Flight rules: platforms are ignored (`vy` is driven, not integrated), hazards are destroyed on
 contact, and the exit is a smooth hand-back to gravity rather than an instant drop.
@@ -303,12 +320,22 @@ collectable; every one you own can be swapped freely in the wardrobe, any time, 
 
 ### Trails
 
-40 of them, on the second tab of the wardrobe. A trail is the ribbon of particles Buddy leaves
-behind him, built from 14 draw *styles* (ember, bubble, petal, star, ribbon, smoke, flake, bolt,
-paw print, note, heart, pixel, orb, teardrop) crossed with colour pairs, so each reads
-differently in motion rather than being the same puff in a new tint. Every particle is born at
-the trail's *hot* colour and fades to its *cool* one, which is what makes one pair read as fire
-and another as surf out of the very same shapes.
+40 of them, on the second tab of the wardrobe, and **every one has its own shape**.
+
+The first pass built them from 14 shared draw styles crossed with colour pairs, and it showed:
+"Flame" and "Ember" were the same mote in different oranges, and the three leafy ones were one
+oval recoloured three times. A trail you can only tell apart by its tint is not a trail, it is a
+palette swap. So each entry now names a style used by nothing else, with its own function in
+`render/TrailArt.kt` - the flame is a licking tongue with a hot core, the ember is a cracked
+chunk of char glowing through the splits, the leaf has a midrib and side veins, the clover has
+three lobes and a stem, the bubble bursts into fragments rather than fading.
+
+On top of the shape sits one of seven **motion profiles** - rise, fall, drift, hang, streak,
+flutter, burst - which decides how a particle behaves once it exists. That is the difference
+between snow and sparks made of the same number of pixels, and it means two trails that sit near
+each other in the palette still read differently the moment anything moves. Each particle also
+carries three colours: born *hot*, fading to *cool*, with an *accent* for cores, bands and
+spatter.
 
 Two rules keep them from becoming clutter, which was the explicit brief:
 
@@ -381,12 +408,12 @@ eight runs in six aspect ratios, which is how the numbers above were tuned. Curr
 
 | Playfield | avg screens | best run | coins/run |
 |---|---|---|---|
-| portrait 3:4 (1080 wu) | 21.6 | 5 062 pts | 14.1 |
-| portrait 9:16 (1440 wu) | 21.9 | 5 876 pts | 12.5 |
-| portrait 20:9 (1707 wu) | 24.4 | 7 810 pts | 14.6 |
-| landscape 4:3 (3413 wu) | 18.2 | 5 884 pts | 10.8 |
-| landscape 16:9 (4551 wu) | 20.4 | 5 753 pts | 10.5 |
-| landscape 21:9 (5973 wu) | 20.7 | 6 536 pts | 10.6 |
+| portrait 3:4 (1080 wu) | 19.3 | 4 291 pts | 12.8 |
+| portrait 9:16 (1440 wu) | 19.8 | 4 143 pts | 12.6 |
+| portrait 20:9 (1707 wu) | 23.1 | 4 400 pts | 16.3 |
+| landscape 4:3 (3413 wu) | 26.3 | 5 767 pts | 15.6 |
+| landscape 16:9 (4551 wu) | 27.1 | 9 159 pts | 15.4 |
+| landscape 21:9 (5973 wu) | 30.4 | 7 823 pts | 18.1 |
 
 Every configuration is climbable, every run ends in a death rather than a stall, and the coin
 rate puts a prize pull four to seven runs apart. The bot ignores coins entirely, so a player

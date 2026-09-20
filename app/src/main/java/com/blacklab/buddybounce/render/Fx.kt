@@ -41,6 +41,8 @@ class Fx {
         var drag = 2.4f
         /** The colour a cosmetic trail particle fades TO as it dies. */
         var color2 = 0xFFFFFFFF.toInt()
+        /** The trail's third colour - cores, bands, spatter. */
+        var color3 = 0xFFFFFFFF.toInt()
         /** Which [com.blacklab.buddybounce.data.Trails.Style] to draw, for [Kind.COSMETIC]. */
         var style = 0
 
@@ -48,7 +50,7 @@ class Fx {
             x = 0f; y = 0f; vx = 0f; vy = 0f; life = 0f; maxLife = 1f
             size = 10f; color = 0xFFFFFFFF.toInt(); kind = Kind.DUST
             rot = 0f; spin = 0f; gravity = -1400f; drag = 2.4f
-            color2 = 0xFFFFFFFF.toInt(); style = 0
+            color2 = 0xFFFFFFFF.toInt(); color3 = 0xFFFFFFFF.toInt(); style = 0
         }
     }
 
@@ -174,11 +176,18 @@ class Fx {
     /**
      * One particle of an equipped cosmetic trail.
      *
-     * Short on purpose. The user asked for trails that fade out quickly "as to not make a lot of
-     * stuff on screen", so the lifetimes here top out around a third of a second - long enough
-     * to read as a ribbon behind a moving dog, short enough that it never hides a platform.
+     * The SHAPE comes from the trail's style and is drawn by [TrailArt]; what is decided here is
+     * how the thing behaves once it exists, from the trail's motion profile. That separation is
+     * what stops forty trails feeling like one trail - snow that flutters down and sparks that
+     * rise are different effects even before you look at them.
+     *
+     * Everything is short on purpose. The brief was trails that fade out quickly "as to not make
+     * a lot of stuff on screen", so nothing here lives past about 0.45 s.
      */
-    fun cosmetic(x: Float, y: Float, style: Int, hot: Int, cool: Int, vx: Float, vy: Float) {
+    fun cosmetic(
+        x: Float, y: Float, style: Int, motion: Int,
+        hot: Int, cool: Int, accent: Int, vx: Float, vy: Float
+    ) {
         val p = parts.obtain()
         p.kind = Kind.COSMETIC
         p.style = style
@@ -186,87 +195,61 @@ class Fx {
         p.y = y + rnd(-11f, 11f)
         p.color = hot
         p.color2 = cool
+        p.color3 = accent
 
-        // Each style gets its own drift so they do not all behave like the same puff. The
-        // velocity handed in is Buddy's own, lightly inherited so the ribbon lags behind him.
-        val inheritX = vx * 0.13f
-        val inheritY = vy * 0.10f
-        when (style) {
-            Trails.Style.EMBER -> {
-                p.vx = inheritX + rnd(-70f, 70f); p.vy = inheritY + rnd(90f, 250f)
-                p.gravity = 90f; p.drag = 1.5f
-                p.size = rnd(13f, 23f); p.maxLife = rnd(0.24f, 0.38f)
+        // A little of Buddy's own velocity, so the ribbon lags behind him instead of hanging
+        // in a column. How much depends on the profile.
+        val ix = vx * 0.13f
+        val iy = vy * 0.10f
+
+        when (motion) {
+            Trails.Motion.RISE -> {
+                p.vx = ix + rnd(-70f, 70f); p.vy = iy + rnd(110f, 260f)
+                p.gravity = 120f; p.drag = 1.5f
+                p.size = rnd(30f, 46f); p.maxLife = rnd(0.26f, 0.40f)
+                p.rot = rnd(0f, 6.283f); p.spin = rnd(-2f, 2f)
             }
-            Trails.Style.BUBBLE -> {
-                p.vx = inheritX + rnd(-60f, 60f); p.vy = inheritY + rnd(70f, 200f)
-                p.gravity = 40f; p.drag = 1.9f
-                p.size = rnd(16f, 30f); p.maxLife = rnd(0.26f, 0.42f)
+            Trails.Motion.FALL -> {
+                p.vx = ix + rnd(-90f, 90f); p.vy = iy + rnd(-40f, 60f)
+                p.gravity = -1500f; p.drag = 0.7f
+                p.size = rnd(28f, 42f); p.maxLife = rnd(0.28f, 0.42f)
+                p.rot = rnd(0f, 6.283f); p.spin = rnd(-5f, 5f)
             }
-            Trails.Style.PETAL -> {
-                p.vx = inheritX + rnd(-130f, 130f); p.vy = inheritY + rnd(-110f, 40f)
-                p.gravity = -330f; p.drag = 1.1f
-                p.size = rnd(18f, 30f); p.maxLife = rnd(0.30f, 0.45f)
-                p.rot = rnd(0f, 6.283f); p.spin = rnd(-7f, 7f)
+            Trails.Motion.DRIFT -> {
+                p.vx = ix + rnd(-60f, 60f); p.vy = iy + rnd(-40f, 70f)
+                p.gravity = -80f; p.drag = 2.4f
+                p.size = rnd(30f, 44f); p.maxLife = rnd(0.28f, 0.42f)
+                p.rot = rnd(0f, 6.283f); p.spin = rnd(-1.6f, 1.6f)
             }
-            Trails.Style.STAR -> {
-                p.vx = inheritX + rnd(-90f, 90f); p.vy = inheritY + rnd(-40f, 90f)
-                p.gravity = -60f; p.drag = 2.6f
-                p.size = rnd(16f, 28f); p.maxLife = rnd(0.22f, 0.36f)
-                p.rot = rnd(0f, 6.283f); p.spin = rnd(-3f, 3f)
+            Trails.Motion.HANG -> {
+                // Stays exactly where it was dropped. Reads as a mark left behind rather than
+                // as something thrown, which is what a paw print or a circuit trace needs.
+                p.vx = 0f; p.vy = 0f
+                p.gravity = 0f; p.drag = 0f
+                p.size = rnd(34f, 46f); p.maxLife = rnd(0.30f, 0.45f)
+                p.rot = rnd(0f, 6.283f); p.spin = 0f
             }
-            Trails.Style.RIBBON -> {
-                p.vx = inheritX * 1.6f; p.vy = inheritY * 1.6f + rnd(-40f, 40f)
-                p.gravity = 0f; p.drag = 3.0f
-                p.size = rnd(20f, 32f); p.maxLife = rnd(0.24f, 0.36f)
+            Trails.Motion.STREAK -> {
+                p.vx = ix * 1.7f; p.vy = iy * 1.7f + rnd(-40f, 40f)
+                p.gravity = 0f; p.drag = 3.2f
+                p.size = rnd(34f, 50f); p.maxLife = rnd(0.22f, 0.34f)
                 // lie along the direction of travel
                 p.rot = kotlin.math.atan2(-vy, vx)
                 p.spin = 0f
             }
-            Trails.Style.SMOKE -> {
-                p.vx = inheritX + rnd(-50f, 50f); p.vy = inheritY + rnd(20f, 110f)
-                p.gravity = 30f; p.drag = 2.2f
-                p.size = rnd(18f, 30f); p.maxLife = rnd(0.30f, 0.45f)
+            Trails.Motion.FLUTTER -> {
+                p.vx = ix + rnd(-140f, 140f); p.vy = iy + rnd(-110f, 30f)
+                p.gravity = -420f; p.drag = 1.2f
+                p.size = rnd(30f, 44f); p.maxLife = rnd(0.32f, 0.45f)
+                p.rot = rnd(0f, 6.283f); p.spin = rnd(-8f, 8f)
             }
-            Trails.Style.FLAKE -> {
-                p.vx = inheritX + rnd(-100f, 100f); p.vy = inheritY + rnd(-90f, 20f)
-                p.gravity = -260f; p.drag = 1.4f
-                p.size = rnd(16f, 26f); p.maxLife = rnd(0.30f, 0.45f)
-                p.rot = rnd(0f, 6.283f); p.spin = rnd(-4f, 4f)
-            }
-            Trails.Style.BOLT -> {
-                p.vx = inheritX + rnd(-120f, 120f); p.vy = inheritY + rnd(-60f, 60f)
-                p.gravity = 0f; p.drag = 4.2f
-                p.size = rnd(18f, 30f); p.maxLife = rnd(0.16f, 0.28f)
-                p.rot = rnd(0f, 6.283f); p.spin = 0f
-            }
-            Trails.Style.PAW -> {
-                // Paw prints stay where they were set down - no drift at all.
-                p.vx = 0f; p.vy = 0f
-                p.gravity = 0f; p.drag = 0f
-                p.size = rnd(24f, 32f); p.maxLife = rnd(0.32f, 0.45f)
-                p.rot = rnd(-0.5f, 0.5f); p.spin = 0f
-            }
-            Trails.Style.NOTE, Trails.Style.HEART -> {
-                p.vx = inheritX + rnd(-60f, 60f); p.vy = inheritY + rnd(70f, 190f)
-                p.gravity = 60f; p.drag = 1.7f
-                p.size = rnd(20f, 30f); p.maxLife = rnd(0.30f, 0.45f)
-                p.rot = rnd(0f, 6.283f); p.spin = rnd(-2f, 2f)
-            }
-            Trails.Style.PIXEL -> {
-                p.vx = inheritX + rnd(-80f, 80f); p.vy = inheritY + rnd(-50f, 80f)
-                p.gravity = 0f; p.drag = 3.6f
-                p.size = rnd(18f, 30f); p.maxLife = rnd(0.18f, 0.30f)
-            }
-            Trails.Style.ORB -> {
-                p.vx = inheritX + rnd(-50f, 50f); p.vy = inheritY + rnd(-30f, 60f)
-                p.gravity = -40f; p.drag = 2.4f
-                p.size = rnd(17f, 27f); p.maxLife = rnd(0.24f, 0.38f)
-            }
-            else -> {   // DROP
-                p.vx = inheritX + rnd(-90f, 90f); p.vy = inheritY + rnd(-60f, 60f)
-                p.gravity = -900f; p.drag = 0.9f
-                p.size = rnd(16f, 26f); p.maxLife = rnd(0.26f, 0.40f)
-                p.rot = rnd(-0.4f, 0.4f); p.spin = rnd(-2f, 2f)
+            else -> {   // BURST
+                val ang = rnd(0f, 6.283f)
+                val sp = rnd(220f, 460f)
+                p.vx = ix + cos(ang) * sp; p.vy = iy + sin(ang) * sp
+                p.gravity = -200f; p.drag = 5.5f
+                p.size = rnd(28f, 40f); p.maxLife = rnd(0.20f, 0.32f)
+                p.rot = ang; p.spin = rnd(-3f, 3f)
             }
         }
         p.life = p.maxLife
@@ -343,10 +326,10 @@ class Fx {
                     paint.style = Paint.Style.FILL
                 }
                 Kind.COSMETIC -> {
-                    // Born hot, dies cool: the blend is what makes one colour pair read as fire
-                    // and another as surf, using the very same shapes.
+                    // Born hot, dies cool. The shape is the trail's own; this blend is what
+                    // gives it the sense of cooling, settling or dimming as it goes.
                     val col = ColorX.lerp(p.color2, p.color, t)
-                    trailArt?.draw(c, p.style, p.x, sy, p.size, p.rot, col, t)
+                    trailArt?.draw(c, p.style, p.x, sy, p.size, p.rot, col, p.color3, t)
                 }
                 Kind.FEATHER -> {
                     paint.color = ColorX.withAlpha(p.color, t)

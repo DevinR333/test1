@@ -78,7 +78,8 @@ object Outfits {
         Outfit("crown", "Good Boy Crown", Rarity.LEGENDARY, "Officially the best. It's in writing."),
         Outfit("hero", "Hero Outfit", Rarity.LEGENDARY, "Purple tunic, pointed cap, one very small sword."),
         Outfit("robot", "Robo-Buddy", Rarity.LEGENDARY, "Beep. Boop. Good. Boy."),
-        Outfit("unicorn", "Unicorn Onesie", Rarity.LEGENDARY, "Majestic. Slightly chewed.")
+        Outfit("unicorn", "Unicorn Onesie", Rarity.LEGENDARY, "Majestic. Slightly chewed."),
+        Outfit("anti", "Anti-Buddy", Rarity.LEGENDARY, "Same dog. Opposite dog.")
     )
 
     private val index: Map<String, Outfit> = ALL.associateBy { it.id }

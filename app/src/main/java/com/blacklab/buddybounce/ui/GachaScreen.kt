@@ -188,7 +188,7 @@ class GachaScreen(private val g: Game) {
             }
             if (wide || btnY > Theme.SCREEN_H * 0.6f) {
                 ui.text(
-                    c, "power-ups • outfits • and very rarely, a new world",
+                    c, "power-ups • trails • outfits • and very rarely, a new world",
                     btnX + pullW * 0.5f, btnY + 148f, 26f, Theme.TEXT_DIM, ui.body, false
                 )
             }
@@ -464,10 +464,10 @@ class GachaScreen(private val g: Game) {
 
         ui.text(
             c, prizeBanner(), g.worldW * 0.5f, y + 96f, 52f,
-            if (duplicate && prizeKind != Kind.SCENE) Theme.TEXT_DIM else Theme.ACCENT, ui.title
+            if (duplicate && prizeKind != Kind.SCENE) Theme.TEXT_DIM else Theme.ACCENT, ui.title, true, w - 48f
         )
         ui.pill(c, g.worldW * 0.5f - 110f, y + 122f, 220f, 52f, ColorX.withAlpha(tint, 0.25f))
-        ui.text(c, prizeRarityLabel(), g.worldW * 0.5f, y + 158f, 28f, tint, ui.title, false)
+        ui.text(c, prizeRarityLabel(), g.worldW * 0.5f, y + 158f, 28f, tint, ui.title, false, 210f)
 
         when (prizeKind) {
             Kind.OUTFIT -> g.drawPosedBuddy(
@@ -478,17 +478,15 @@ class GachaScreen(private val g: Game) {
             else -> drawScenePreview(c, g.worldW * 0.5f, y + h * 0.46f, w * 0.52f, h * 0.30f)
         }
 
-        ui.text(c, prizeName().uppercase(), g.worldW * 0.5f, y + h - 168f, 48f, Theme.TEXT, ui.title)
+        ui.text(c, prizeName().uppercase(), g.worldW * 0.5f, y + h - 168f, 48f, Theme.TEXT, ui.title, true, w - 60f)
         val blurb = if (duplicate && prizeKind != Kind.SCENE) {
             "+${Tuning.DUPLICATE_REFUND} coins back"
         } else {
             prizeBlurb()
         }
-        var blurbSize = 30f
-        while (ui.measure(blurb, blurbSize, ui.body) > w - 60f && blurbSize > 18f) blurbSize -= 1f
         ui.text(
-            c, blurb, g.worldW * 0.5f, y + h - 124f, blurbSize,
-            if (duplicate && prizeKind != Kind.SCENE) Theme.ACCENT else Theme.TEXT_DIM, ui.body, false
+            c, blurb, g.worldW * 0.5f, y + h - 124f, 30f,
+            if (duplicate && prizeKind != Kind.SCENE) Theme.ACCENT else Theme.TEXT_DIM, ui.body, false, w - 60f
         )
 
         val bw = (w - 120f) * 0.5f

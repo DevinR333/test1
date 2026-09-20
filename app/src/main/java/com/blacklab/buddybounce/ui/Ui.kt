@@ -59,6 +59,14 @@ class Ui(private val art: Art) {
     var scrollDrag = 0f
         private set
 
+    /**
+     * Width of the screen in UI units. [text] uses it as a backstop so a string can never run
+     * off the edge of the display, whatever the device's aspect ratio - the caller passing an
+     * explicit maxWidth is still the better fix inside a panel, but nothing should ever fall
+     * off the screen just because nobody remembered to.
+     */
+    var screenW = 0f
+
     /** Insets in world units so nothing lands under a notch or the gesture bar. */
     var safeTop = 0f
     var safeBottom = 0f
@@ -184,14 +192,43 @@ class Ui(private val art: Art) {
         c.drawRect(0f, 0f, w, h, p)
     }
 
-    fun text(c: Canvas, s: String, x: Float, y: Float, size: Float, color: Int, paint: Paint = body, shadow: Boolean = true) {
-        paint.textSize = size
+    /**
+     * Draws a string, shrinking it to fit if it would otherwise overrun.
+     *
+     * [maxWidth] is the box the string has to live in - a panel's inner width, usually. When it
+     * is left at 0 the screen (minus the safe insets and a gutter) is used instead, which is a
+     * backstop, not a substitute for passing the real width.
+     */
+    fun text(
+        c: Canvas, s: String, x: Float, y: Float, size: Float, color: Int,
+        paint: Paint = body, shadow: Boolean = true, maxWidth: Float = 0f
+    ) {
+        paint.textSize = fitSize(s, size, paint, maxWidth)
         if (shadow) {
+            val sz = paint.textSize
             paint.color = ColorX.withAlpha(0xFF000000.toInt(), 0.35f)
-            c.drawText(s, x + size * 0.045f, y + size * 0.055f, paint)
+            c.drawText(s, x + sz * 0.045f, y + sz * 0.055f, paint)
         }
         paint.color = color
         c.drawText(s, x, y, paint)
+    }
+
+    /**
+     * The largest size at or below [size] that fits [s] into [limit]. Never goes below 55 % of
+     * the requested size: past that it is better to let a pathological string clip than to draw
+     * something nobody can read.
+     */
+    fun fitSize(s: String, size: Float, paint: Paint = body, limit: Float = 0f): Float {
+        val box = when {
+            limit > 0f -> limit
+            screenW > 0f -> screenW - safeLeft - safeRight - 32f
+            else -> 0f
+        }
+        if (box <= 0f || s.isEmpty()) return size
+        val floor = size * 0.55f
+        var sz = size
+        while (sz > floor && measure(s, sz, paint) > box) sz -= 1f
+        return sz
     }
 
     fun measure(s: String, size: Float, paint: Paint = body): Float {
@@ -246,11 +283,15 @@ class Ui(private val art: Art) {
 
         val cx = x + w * 0.5f
         val baseline = y + h * 0.5f + h * 0.17f + squish - (if (sublabel != null) h * 0.1f else 0f)
+        // Labels are fitted to the button, not the screen: a long sublabel like
+        // "12 fits - 7 trails" has to stay inside its own pill, not just on the display.
+        val inner = w - h * 0.42f
         text(c, label, cx, baseline, h * (if (sublabel != null) 0.34f else 0.40f),
-            ColorX.withAlpha(labelColor, a), title, style != ButtonStyle.PRIMARY)
+            ColorX.withAlpha(labelColor, a), title, style != ButtonStyle.PRIMARY, inner)
         if (sublabel != null) {
             text(c, sublabel, cx, baseline + h * 0.28f, h * 0.22f,
-                ColorX.withAlpha(if (style == ButtonStyle.PRIMARY) 0xFF5A4110.toInt() else Theme.TEXT_DIM, a), body, false)
+                ColorX.withAlpha(if (style == ButtonStyle.PRIMARY) 0xFF5A4110.toInt() else Theme.TEXT_DIM, a),
+                body, false, inner)
         }
         return clicked
     }

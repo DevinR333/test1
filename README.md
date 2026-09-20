@@ -12,7 +12,8 @@ is **Buddy**, a black lab, and the higher he gets the better your score.
 * Scarce coins, mostly earned as a height bonus at the end of a run. 100 of them buys a pull on
   the **prize machine**, which hands out consumable **power-ups** (74%), **trails** (15%),
   **outfits** (10%) and, at 1%, a **whole new world** to climb.
-* **41 outfits**, **40 trails** and **5 worlds**, all swappable freely, any time, for free.
+* **42 outfits**, **40 trails** and **5 worlds**, all swappable freely, any time, for free —
+  with one-tap **randomize** buttons in the wardrobe.
 * Hazards are **themed to the world you're in** — bees over the lawn, pufferfish and angler fish
   underwater, flame imps and molten rock in Emberfall.
 * Testing: enter **`u7d%4>`** as your name to unlock everything — every outfit, trail and world,
@@ -83,8 +84,9 @@ java -version          # check what you're on
 | Coins | Rare pickups plus a height bonus at the end. Banked when the run ends |
 
 Touch steering is a **positional drag**, not a speed control: your finger drags a target and
-Buddy chases it, so the distance you swipe is the distance he covers — about 2.3× your finger
-travel — and he stops where you stop instead of coasting. Aiming a landing mid-fall is a short
+Buddy chases it, so the distance you swipe is the distance he covers, and he stops where you
+stop instead of coasting. Sensitivity is measured against the screen's short edge, so it is
+identical in portrait and landscape and on any resolution. Aiming a landing mid-fall is a short
 slide, not a swipe across the whole screen and back. It works anywhere on the screen, and
 **nothing is drawn for it** — no track, no knob, nothing covering the action.
 
@@ -102,7 +104,9 @@ Platforms come in seven flavours (static, sliding, hovering, crumbling, fragile,
 trampoline), re-skinned across each world's five altitude bands, which then loop with a drift.
 A fragile platform gives no bounce at all, so the generator never makes one a row's only
 platform — it is always a trap set beside a real route. The boost ladder runs spring →
-trampoline → propeller cap → jetpack → rocket bone, plus a bubble shield and a coin magnet.
+trampoline → propeller cap → jetpack → rocket bone, plus a bubble shield and a coin magnet —
+all of them deliberately scarce (about one platform in twenty has a spring, under one in a
+hundred has anything else) and sized as a lift rather than a launch.
 Hazards come in four roles — a drifter and a patroller you can stomp from above, and two static
 ones you have to route around — and each world dresses them in its own creatures: bees and crows
 over the lawn, pufferfish and angler fish in the Deep Blue, drones and glitch birds in Neon

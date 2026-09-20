@@ -23,6 +23,9 @@ class WardrobeScreen(private val g: Game) {
         const val EQUIP = 3002
         const val CARD = 3100   // + index
         const val TABS = 3003
+        const val RAND_OUTFIT = 3004
+        const val RAND_TRAIL = 3005
+        const val RAND_ALL = 3006
     }
 
     /** Two collections share this screen; the tab strip at the top switches between them. */
@@ -52,8 +55,10 @@ class WardrobeScreen(private val g: Game) {
             if (idx > 0) selected = idx
         }
         if (trailSelected == 0 && g.save.equippedTrail != Trails.NONE_ID) {
+            // +1 because card 0 of the trail grid is the "no trail" entry, so the catalogue
+            // index and the card index are off by one.
             val idx = Trails.ALL.indexOfFirst { it.id == g.save.equippedTrail }
-            if (idx >= 0) trailSelected = idx
+            if (idx >= 0) trailSelected = idx + 1
         }
 
         handleDrag()
@@ -78,19 +83,27 @@ class WardrobeScreen(private val g: Game) {
             scrollY = 0f
         }
 
-        val top = ui.safeTop + 236f
-        val avail = Theme.SCREEN_H - top - ui.safeBottom - 24f
+        val randY = ui.safeTop + 230f
+        drawRandomizers(c, randY)
+
+        val top = randY + 92f
+        // Whatever is left after the header, tabs and dice - which is what the preview and the
+        // grid have to share. Nothing here is a fixed number, so a squarer screen or a tall
+        // gesture bar shrinks the preview rather than pushing the grid off the bottom.
+        val avail = (Theme.SCREEN_H - top - ui.safeBottom - 24f).coerceAtLeast(240f)
+        val bodyW = g.worldW - ui.safeLeft - ui.safeRight - 72f
         if (wide) {
             val previewW = min(g.worldW * 0.38f, 560f)
             drawPreview(c, ui.safeLeft + 40f, top + rise, previewW, avail)
             val gridX = ui.safeLeft + previewW + 80f
             drawGrid(c, gridX, top, g.worldW - gridX - ui.safeRight - 40f, avail, 4)
         } else {
-            val previewH = 400f
-            drawPreview(c, ui.safeLeft + 36f, top + rise, g.worldW - ui.safeLeft - ui.safeRight - 72f, previewH)
+            // The preview takes a share, never so much that the grid stops being usable.
+            val previewH = (avail * 0.44f).coerceIn(260f, 430f).coerceAtMost(avail - 190f)
+            drawPreview(c, ui.safeLeft + 36f, top + rise, bodyW, previewH)
             val gridTop = top + previewH + 22f
-            drawGrid(c, ui.safeLeft + 36f, gridTop, g.worldW - ui.safeLeft - ui.safeRight - 72f,
-                Theme.SCREEN_H - gridTop - ui.safeBottom - 24f, 3)
+            drawGrid(c, ui.safeLeft + 36f, gridTop, bodyW,
+                (Theme.SCREEN_H - gridTop - ui.safeBottom - 24f).coerceAtLeast(150f), 3)
         }
     }
 
@@ -422,5 +435,50 @@ class WardrobeScreen(private val g: Game) {
             c.drawLine(x + w - 21f, y + 25f, x + w - 13f, y + 15f, p)
             p.style = Paint.Style.FILL
         }
+    }
+
+    /**
+     * Three dice. They only ever roll what the player owns (see Game.randomize*), and land on
+     * something different from what is on now when there is anything else to land on.
+     */
+    private fun drawRandomizers(c: Canvas, y: Float) {
+        val ui = g.ui
+        val left = ui.safeLeft + 36f
+        val w = g.worldW - ui.safeLeft - ui.safeRight - 72f
+        val gap = 12f
+        val bw = (w - gap * 2f) / 3f
+        val h = 76f
+
+        if (ui.button(c, Id.RAND_OUTFIT, left, y, bw, h, "OUTFIT", Ui.ButtonStyle.SECONDARY,
+                sublabel = "randomize")) {
+            g.tap()
+            if (g.randomizeOutfit()) {
+                tab = Tab.OUTFITS
+                syncSelectionToEquipped()
+            }
+        }
+        if (ui.button(c, Id.RAND_TRAIL, left + bw + gap, y, bw, h, "TRAIL", Ui.ButtonStyle.SECONDARY,
+                sublabel = "randomize")) {
+            g.tap()
+            if (g.randomizeTrail()) {
+                tab = Tab.TRAILS
+                syncSelectionToEquipped()
+            }
+        }
+        if (ui.button(c, Id.RAND_ALL, left + (bw + gap) * 2f, y, bw, h, "ALL", Ui.ButtonStyle.PRIMARY,
+                sublabel = "randomize")) {
+            g.tap()
+            if (g.randomizeAll()) syncSelectionToEquipped()
+        }
+    }
+
+    /** Moves the preview and the grid highlight onto whatever is now equipped. */
+    private fun syncSelectionToEquipped() {
+        val oi = Outfits.ALL.indexOfFirst { it.id == g.equippedOutfit }
+        if (oi >= 0) selected = oi
+        val trailId = g.save.equippedTrail
+        trailSelected = if (trailId == Trails.NONE_ID) 0
+        else Trails.ALL.indexOfFirst { it.id == trailId }.let { if (it >= 0) it + 1 else 0 }
+        scrollY = 0f
     }
 }

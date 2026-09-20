@@ -151,6 +151,9 @@ object OutfitArt {
             "hero" -> { heroCap(c); collar(c, 0xFF3FA95E.toInt()) }
             "robot" -> robotHead(c)
             "unicorn" -> unicornHorn(c)
+            // Anti-Buddy is not a garment - the recolour happens in BuddyArt via Coats - so all
+            // he needs here is a collar dark enough to show against a white coat.
+            "anti" -> collar(c, 0xFF2A2F3D.toInt())
         }
     }
 
@@ -249,25 +252,29 @@ object OutfitArt {
         c.translate(36f, -96f)
         c.rotate(21f)
 
-        r.set(-40f, -11f, 40f, 11f)
-        c.drawRoundRect(r, 8f, 8f, ink)
+        // 13 units of webbing, not 22. At the old thickness, with an 8-unit corner radius on an
+        // 80-wide band, the two ends met in the middle and the whole thing read as a pill stuck
+        // to his neck rather than a strap going round it. A flat strap with barely-rounded ends
+        // reads as leather at any size.
+        r.set(-42f, -6.5f, 42f, 6.5f)
+        c.drawRoundRect(r, 3f, 3f, ink)
         p.color = color
-        c.drawRoundRect(r, 8f, 8f, p)
-
-        // lower half in shadow, a stitched highlight along the top edge
-        p.color = ColorX.shade(color, 0.7f)
-        r.set(-40f, 2f, 40f, 11f)
-        c.drawRoundRect(r, 7f, 7f, p)
-        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.22f)
-        r.set(-33f, -8f, 33f, -4f)
-        c.drawRoundRect(r, 2f, 2f, p)
-
-        // buckle
-        p.color = 0xFFD8DEE9.toInt()
-        r.set(-7f, -13f, 9f, 13f)
         c.drawRoundRect(r, 3f, 3f, p)
+
+        // lower third in shadow, a fine stitch line along the top edge
+        p.color = ColorX.shade(color, 0.68f)
+        r.set(-42f, 2f, 42f, 6.5f)
+        c.drawRoundRect(r, 2.5f, 2.5f, p)
+        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.2f)
+        r.set(-35f, -4.5f, 35f, -2.8f)
+        c.drawRect(r, p)
+
+        // buckle: only a little proud of the webbing
+        p.color = 0xFFD8DEE9.toInt()
+        r.set(-5f, -8.5f, 6f, 8.5f)
+        c.drawRoundRect(r, 2f, 2f, p)
         p.color = 0xFF9AA4B4.toInt()
-        r.set(-3f, -9f, 2f, 9f)
+        r.set(-2f, -6f, 1.5f, 6f)
         c.drawRect(r, p)
         c.restore()
 
@@ -433,19 +440,59 @@ object OutfitArt {
         c.drawCircle(HX + 2f, TOP - 22f, 9f, p)
     }
 
+    /**
+     * The cone of shame, in profile.
+     *
+     * The first version started at the middle of his skull and flared forward, which left the
+     * whole back of his head outside it - a cone does the opposite. The narrow end belongs
+     * BEHIND the head, buckled round the neck, and it flares forward past the end of his nose.
+     * So: a neck ring back at x=20, a mouth out at x=134 wide enough to clear the muzzle, and
+     * the funnel between them drawn translucent so his face still reads through it.
+     */
     private fun vetCone(c: Canvas) {
+        val neckX = 20f
+        val neckCy = -108f
+        val neckH = 26f            // half-height of the ring at the neck
+        val mouthX = 134f
+        val mouthCy = -119f
+        val mouthH = 58f           // half-height of the opening
+
+        // funnel wall
         path.reset()
-        path.moveTo(HX + 4f, HY - 6f)
-        path.lineTo(HX + 74f, TOP - 26f)
-        path.lineTo(HX + 88f, HY + 44f)
-        path.lineTo(HX + 12f, HY + 30f)
+        path.moveTo(neckX, neckCy - neckH)
+        path.lineTo(mouthX, mouthCy - mouthH)
+        path.lineTo(mouthX, mouthCy + mouthH)
+        path.lineTo(neckX, neckCy + neckH)
         path.close()
         c.drawPath(path, ink)
-        p.color = ColorX.withAlpha(0xFFE8F4FF.toInt(), 0.55f)
+        p.color = ColorX.withAlpha(0xFFE8F4FF.toInt(), 0.42f)
         c.drawPath(path, p)
-        ink.strokeWidth = 3f
-        ink.color = ColorX.withAlpha(0xFF9FB4C8.toInt(), 0.9f)
-        c.drawLine(HX + 40f, TOP - 8f, HX + 48f, HY + 38f, ink)
+
+        // the opening, seen almost edge-on: a narrow ellipse gives the cone its depth
+        p.color = ColorX.withAlpha(0xFFF4FAFF.toInt(), 0.3f)
+        r.set(mouthX - 15f, mouthCy - mouthH, mouthX + 15f, mouthCy + mouthH)
+        c.drawOval(r, p)
+        c.drawOval(r, ink)
+
+        // ribs running down the cone, and the seam where it is taped shut
+        ink.strokeWidth = 2.6f
+        ink.color = ColorX.withAlpha(0xFF9FB4C8.toInt(), 0.85f)
+        for (i in 0 until 3) {
+            val t = 0.25f + i * 0.25f
+            val yTop = (neckCy - neckH) + ((mouthCy - mouthH) - (neckCy - neckH)) * 0f
+            val yBot = (neckCy + neckH) + ((mouthCy + mouthH) - (neckCy + neckH)) * 0f
+            val x = neckX + (mouthX - neckX) * t
+            c.drawLine(
+                x, yTop + ((mouthCy - mouthH) - yTop) * t,
+                x, yBot + ((mouthCy + mouthH) - yBot) * t, ink
+            )
+        }
+
+        // the collar ring holding it on
+        p.color = 0xFFC8D6E4.toInt()
+        r.set(neckX - 7f, neckCy - neckH - 3f, neckX + 7f, neckCy + neckH + 3f)
+        c.drawOval(r, p)
+        c.drawOval(r, ink)
         prep()
     }
 

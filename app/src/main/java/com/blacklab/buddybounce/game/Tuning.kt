@@ -51,8 +51,22 @@ object Tuning {
     // Now the finger drags a target position and Buddy servos to it, so distance swiped maps
     // directly to distance travelled and releasing leaves him where you put him.
 
-    /** World units Buddy moves per world unit of finger travel. >1 so a thumb-flick crosses. */
-    const val DRAG_GAIN = 2.35f
+    /**
+     * How far Buddy travels, in world units, when the finger crosses the SHORT edge of the
+     * screen.
+     *
+     * The short edge is the anchor on purpose. The obvious formulation - world units per UI
+     * unit of finger travel - looks orientation-independent and is not: the UI scale is derived
+     * from screen *height*, which nearly halves when a phone is turned on its side, so the same
+     * thumb movement bought about 1.8x more ground in landscape. It felt like a different game.
+     * A phone's short edge is the same number of pixels whichever way up it is, so measuring
+     * against it gives identical sensitivity in both orientations, and normalises across
+     * resolutions for free (1080p and 1440p phones behave the same).
+     *
+     * The value is the portrait feel from before this was fixed, kept exactly: on a 9:16 phone
+     * that was 1440 wu of playfield x 2.35 of gain.
+     */
+    const val DRAG_SPAN = 3384f
     /** How hard he chases the drag target, in 1/s. High = he tracks the finger almost exactly. */
     const val DRAG_STIFFNESS = 11.0f
     /**
@@ -107,18 +121,42 @@ object Tuning {
     const val HOVER_HZ = 0.6f
 
     // ---- boosts ----------------------------------------------------------------------------
-    const val SPRING_MULT = 2.0f
-    const val TRAMPOLINE_MULT = 2.6f
-    const val PROPELLER_V = 3040f
-    const val PROPELLER_TIME = 3.2f
-    const val JETPACK_V = 4240f
-    const val JETPACK_TIME = 4.0f
-    const val ROCKET_V = 5760f
-    const val ROCKET_TIME = 4.6f
+    // ---- how often a platform carries something ----------------------------------------------
+    // These are per eligible platform, and they are deliberately tiny. The first pass had one
+    // platform in six carrying a boost or a power-up, which meant a run was mostly being fired
+    // upward by the scenery rather than climbing - and finding a rocket stopped being an event.
+    // Springs stay the most common thing, because a spring is furniture in this genre; anything
+    // that takes control away from the player is now genuinely rare.
+    const val SPRING_CHANCE = 0.040f          // was 0.09
+    const val TRAMPOLINE_CHANCE = 0.008f      // was 0.03
+    /** Screens climbed before a trampoline can appear at all. */
+    const val TRAMPOLINE_FROM = 3f
+
+    // Flight and utility pick-ups, cumulative thresholds against one roll. Total ~0.9 %, so a
+    // typical run sees two or three of anything and a rocket about one run in fifteen.
+    const val ROCKET_CHANCE = 0.0002f         // was 0.0018
+    const val JETPACK_CHANCE = 0.0010f        // was 0.0098
+    const val PROPELLER_CHANCE = 0.0040f      // was 0.0258
+    const val SHIELD_CHANCE = 0.0062f         // was 0.0368
+    const val MAGNET_CHANCE = 0.0090f         // was 0.0498
+
+    // How far each boost actually throws him. The first pass was far too generous: a plain
+    // spring cleared 1.3 screens and a rocket took ten, which meant hitting one stopped the game
+    // and played a cutscene at you. These are sized so a boost is a LIFT - it skips some
+    // climbing and buys height, but you are still the one flying it, and you can see where you
+    // are going to come down. (A normal bounce apexes at 845 wu, a third of a screen.)
+    const val SPRING_MULT = 1.55f         // apex 2030 wu, 0.79 screens (was 2.0 / 1.32 screens)
+    const val TRAMPOLINE_MULT = 1.95f     // apex 3213 wu, 1.26 screens (was 2.6 / 2.23 screens)
+    const val PROPELLER_V = 2300f         // 2.2 screens of rise (was 3.8)
+    const val PROPELLER_TIME = 2.4f
+    const val JETPACK_V = 3100f           // 3.4 screens (was 6.6)
+    const val JETPACK_TIME = 2.8f
+    const val ROCKET_V = 4200f            // 5.3 screens (was 10.4)
+    const val ROCKET_TIME = 3.2f
     const val SHIELD_TIME = 12f
     const val MAGNET_TIME = 7f
     const val MAGNET_RANGE = 830f
-    const val ENEMY_STOMP_V = 2640f
+    const val ENEMY_STOMP_V = 2200f       // a stomp is a nudge, not a launch
     const val FLIGHT_EXIT_V = 400f        // velocity handed back to gravity when flight ends
 
     // ---- economy ---------------------------------------------------------------------------

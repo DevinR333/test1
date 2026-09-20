@@ -741,16 +741,18 @@ class World(worldWidth: Float, private val events: Events) {
         if (!safeKind || s <= 1f) return
 
         val r = rand(0f, 1f)
-        if (r < 0.03f && s > 3f) { p.boost = Boost.TRAMPOLINE; return }
-        if (r < 0.12f) { p.boost = Boost.SPRING; return }
+        if (r < Tuning.TRAMPOLINE_CHANCE && s > Tuning.TRAMPOLINE_FROM) {
+            p.boost = Boost.TRAMPOLINE; return
+        }
+        if (r < Tuning.TRAMPOLINE_CHANCE + Tuning.SPRING_CHANCE) { p.boost = Boost.SPRING; return }
 
         val r2 = rand(0f, 1f)
         val kind = when {
-            r2 < 0.0018f && s > 8f -> PickupKind.ROCKET
-            r2 < 0.0098f && s > 5f -> PickupKind.JETPACK
-            r2 < 0.0258f && s > 2.5f -> PickupKind.PROPELLER
-            r2 < 0.0368f && s > 6f -> PickupKind.SHIELD
-            r2 < 0.0498f && s > 3f -> PickupKind.MAGNET
+            r2 < Tuning.ROCKET_CHANCE && s > 8f -> PickupKind.ROCKET
+            r2 < Tuning.JETPACK_CHANCE && s > 5f -> PickupKind.JETPACK
+            r2 < Tuning.PROPELLER_CHANCE && s > 2.5f -> PickupKind.PROPELLER
+            r2 < Tuning.SHIELD_CHANCE && s > 6f -> PickupKind.SHIELD
+            r2 < Tuning.MAGNET_CHANCE && s > 3f -> PickupKind.MAGNET
             else -> -1
         }
         if (kind >= 0) {

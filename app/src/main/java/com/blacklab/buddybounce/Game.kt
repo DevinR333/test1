@@ -112,6 +112,9 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
     /** UI units per world unit. */
     val zoom: Float get() = Theme.SCREEN_H / Tuning.VIEW_H
 
+    /** World units of drag per UI unit of finger travel. Recomputed on every surface change. */
+    private var dragWorldPerUi = 0f
+
     // ---- pre-run ----
     var preRunPhase = PreRun.PICK
         private set
@@ -169,11 +172,20 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         scale = newScale
         worldW = wPx / newScale
         playW = worldW / zoom
+        // World units of travel per UI unit of finger movement. Anchored to the short edge of
+        // the display so a swipe means the same thing in portrait and landscape - see
+        // Tuning.DRAG_SPAN. (UI units x scale = pixels, hence the scale here.)
+        dragWorldPerUi = if (wPx > 0 && hPx > 0) {
+            newScale / minOf(wPx, hPx).toFloat() * Tuning.DRAG_SPAN
+        } else {
+            0f
+        }
 
         if (scaleChanged) {
             art.dispose()
             art = Art(scale)
             ui = Ui(art).also {
+                it.screenW = worldW
                 it.safeTop = uiInsets[0]; it.safeBottom = uiInsets[1]
                 it.safeLeft = uiInsets[2]; it.safeRight = uiInsets[3]
             }
@@ -181,6 +193,9 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
             gameArt = GameRenderer(art)
             backdrop = Backdrop(art)
         }
+        // Set unconditionally: the width can change without the scale doing so, and this is the
+        // backstop that stops any string running off the edge.
+        ui.screenW = worldW
 
         world.resize(playW)
         if (!started) {
@@ -347,9 +362,10 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
 
     private fun updatePlay(dt: Float) {
         val steer = controls.steer()
-        // Finger travel arrives in UI units; /zoom puts it in world units, and the gain is what
-        // makes a short thumb-slide cover real ground instead of needing the whole screen.
-        val dragDx = controls.consumeDragDx() / zoom * Tuning.DRAG_GAIN
+        // Finger travel arrives in UI units; this converts it to world units at a rate anchored
+        // to the screen's short edge, so the same swipe goes the same distance whatever the
+        // orientation or the resolution.
+        val dragDx = controls.consumeDragDx() * dragWorldPerUi
         world.update(dt, steer, controls.lastInputDigital, dragDx, controls.dragging)
         fx.update(dt)
         emitFlightTrail(dt)
@@ -415,7 +431,10 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         while (cosmeticAccum > 58f && budget > 0) {
             cosmeticAccum -= 58f
             budget--
-            fx.cosmetic(b.x, b.y + 24f, trail.style, trail.hot, trail.cool, b.vx, b.vy)
+            fx.cosmetic(
+                b.x, b.y + 24f, trail.style, trail.motion,
+                trail.hot, trail.cool, trail.accent, b.vx, b.vy
+            )
         }
         if (budget == 0) cosmeticAccum = 0f
     }
@@ -618,8 +637,8 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
             val px = cx - w * 0.5f + w * k
             val py = cy + sin(k * 3.4f - phase * 1.8f) * h * 0.42f
             val col = ColorX.lerp(trail.cool, trail.hot, life)
-            ta.draw(c, trail.style, px, py, h * 0.42f * (0.55f + 0.45f * life),
-                k * 5.1f + phase, col, life)
+            ta.draw(c, trail.style, px, py, h * 0.9f * (0.6f + 0.4f * life),
+                k * 5.1f + phase, col, trail.accent, life)
         }
     }
 
@@ -825,6 +844,40 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
     fun ownedCount() = save.ownedOutfits().count { it != Outfits.DEFAULT_ID }
 
     fun ownedSceneCount() = save.ownedScenes().size
+
+    // ---- randomise --------------------------------------------------------------------------
+    //
+    // Only ever picks from what the player actually owns, and never lands on what they are
+    // already wearing when there is an alternative - "randomise" that gives you the same thing
+    // back does not feel random, it feels broken.
+
+    private val shuffleRng = java.util.Random()
+
+    /** @return true if anything actually changed. */
+    fun randomizeOutfit(): Boolean {
+        val owned = Outfits.ALL.filter { save.owns(it.id) }
+        val pool = owned.filter { it.id != save.equippedOutfit }.ifEmpty { owned }
+        if (pool.isEmpty()) return false
+        save.equippedOutfit = pool[shuffleRng.nextInt(pool.size)].id
+        return true
+    }
+
+    fun randomizeTrail(): Boolean {
+        // "No trail" stays in the draw - it is a legitimate look, not an absence of one.
+        val owned = ArrayList<String>()
+        owned.add(Trails.NONE_ID)
+        for (t in Trails.ALL) if (save.ownsTrail(t.id)) owned.add(t.id)
+        val pool = owned.filter { it != save.equippedTrail }.ifEmpty { owned }
+        if (pool.isEmpty()) return false
+        save.equippedTrail = pool[shuffleRng.nextInt(pool.size)]
+        return true
+    }
+
+    fun randomizeAll(): Boolean {
+        val a = randomizeOutfit()
+        val b = randomizeTrail()
+        return a || b
+    }
 
     companion object {
         const val COUNTDOWN_SECONDS = 3.9f

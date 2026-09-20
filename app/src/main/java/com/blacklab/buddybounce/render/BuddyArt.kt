@@ -66,6 +66,49 @@ object BuddyGeom {
     const val TONGUE = 0xFFE87284.toInt()
 }
 
+/**
+ * The colours of the dog himself, as opposed to what he is wearing.
+ *
+ * Almost every costume sits on top of Buddy, so the fur underneath is a constant - but a couple
+ * ("Anti-Buddy") recolour the animal instead. Pulling the seven coat colours out into a swappable
+ * set means those work without a second copy of the rig: [BuddyArt] reads whichever coat is
+ * current, so every shadow, tuft, sheen and rim light recolours with it for free.
+ */
+class Coat(
+    val ink: Int,
+    val dark: Int,
+    val base: Int,
+    val light: Int,
+    val sheen: Int,
+    val muzzle: Int,
+    val nose: Int
+)
+
+object Coats {
+    /** Buddy as he actually is. */
+    val BLACK = Coat(
+        BuddyGeom.INK, BuddyGeom.FUR_DARK, BuddyGeom.FUR_BASE, BuddyGeom.FUR_LIGHT,
+        BuddyGeom.FUR_SHEEN, BuddyGeom.MUZZLE_COLOR, BuddyGeom.NOSE_COLOR
+    )
+
+    /**
+     * Anti-Buddy: the same dog, inverted. Not flat white - a white coat in shade is a warm grey
+     * with cool highlights, and the outline has to stay dark or he disappears against the sky.
+     */
+    val WHITE = Coat(
+        ink = 0xFF6E6A63.toInt(),
+        dark = 0xFFCFC8BC.toInt(),
+        base = 0xFFEDE7DC.toInt(),
+        light = 0xFFFAF7F1.toInt(),
+        sheen = 0xFFFFFFFF.toInt(),
+        muzzle = 0xFFE2DACD.toInt(),
+        nose = 0xFFC08A8A.toInt()
+    )
+
+    /** Which coat an outfit implies. Everything not listed leaves him black. */
+    fun forOutfit(id: String): Coat = if (id == "anti") WHITE else BLACK
+}
+
 /** One frame of Buddy: everything the renderer needs in order to pose him. */
 class Pose {
     var squash = 0f        // +1 stretched (rising), -1 squashed (landing)
@@ -103,26 +146,48 @@ class BuddyArt(private val art: Art) {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
-        color = BuddyGeom.INK
+        color = BuddyGeom.INK      // replaced every frame by useCoat
     }
     private val path = Path()
     private val path2 = Path()
     private val rect = RectF()
 
-    private val bodyShader: Shader = LinearGradient(
+    /**
+     * The coat being drawn this frame. Set once at the top of [draw] from the outfit, then read
+     * by every shape below - the render thread is the only caller, so a field is safe and saves
+     * threading a parameter through forty private functions.
+     */
+    private var coat: Coat = Coats.BLACK
+
+    // Gradients are built once per coat and kept, since there are only ever a couple.
+    private var shaderCoat: Coat? = null
+    private var bodyShader: Shader = bodyGradient(Coats.BLACK)
+    private var headShader: Shader = headGradient(Coats.BLACK)
+
+    private fun bodyGradient(k: Coat): Shader = LinearGradient(
         0f, BuddyGeom.BACK_Y, 0f, BuddyGeom.BELLY_Y + 10f,
-        intArrayOf(BuddyGeom.FUR_LIGHT, BuddyGeom.FUR_BASE, BuddyGeom.FUR_DARK),
+        intArrayOf(k.light, k.base, k.dark),
         floatArrayOf(0f, 0.42f, 1f),
         Shader.TileMode.CLAMP
     )
 
-    private val headShader: Shader = LinearGradient(
+    private fun headGradient(k: Coat): Shader = LinearGradient(
         0f, BuddyGeom.HEAD_CY - BuddyGeom.HEAD_R * 1.2f,
         0f, BuddyGeom.HEAD_CY + BuddyGeom.HEAD_R,
-        intArrayOf(BuddyGeom.FUR_LIGHT, BuddyGeom.FUR_BASE, BuddyGeom.FUR_DARK),
+        intArrayOf(k.light, k.base, k.dark),
         floatArrayOf(0f, 0.5f, 1f),
         Shader.TileMode.CLAMP
     )
+
+    private fun useCoat(k: Coat) {
+        coat = k
+        if (shaderCoat !== k) {
+            bodyShader = bodyGradient(k)
+            headShader = headGradient(k)
+            shaderCoat = k
+        }
+        ink.color = k.ink
+    }
 
     /**
      * @param cx      screen x of Buddy's centre line
@@ -131,6 +196,7 @@ class BuddyArt(private val art: Art) {
      * @param rim     rim-light colour, taken from the current biome
      */
     fun draw(c: Canvas, cx: Float, pawY: Float, scale: Float, pose: Pose, outfit: String, rim: Int) {
+        useCoat(Coats.forOutfit(outfit))
         c.save()
         c.translate(cx, pawY)
         if (scale != 1f) c.scale(scale, scale)
@@ -217,15 +283,15 @@ class BuddyArt(private val art: Art) {
         p.color = ColorX.withAlpha(0xFF000000.toInt(), 0.35f)
         rect.set(cx - w * 0.9f, belly - 22f, cx + w * 0.8f, belly + 16f)
         c.drawOval(rect, p)
-        p.color = ColorX.withAlpha(BuddyGeom.FUR_SHEEN, 0.30f)
+        p.color = ColorX.withAlpha(coat.sheen, 0.30f)
         rect.set(cx - w * 0.55f, back + 10f, cx + w * 0.62f, back + 44f)
         c.drawOval(rect, p)
 
         // Shoulder and haunch masses - two soft ovals read as muscle under a short coat.
-        p.color = ColorX.withAlpha(BuddyGeom.FUR_LIGHT, 0.32f)
+        p.color = ColorX.withAlpha(coat.light, 0.32f)
         rect.set(cx + w * 0.18f, back + 18f, cx + w * 0.92f, belly - 2f)
         c.drawOval(rect, p)
-        p.color = ColorX.withAlpha(BuddyGeom.FUR_LIGHT, 0.22f)
+        p.color = ColorX.withAlpha(coat.light, 0.22f)
         rect.set(cx - w * 0.98f, back + 20f, cx - w * 0.3f, belly - 6f)
         c.drawOval(rect, p)
 
@@ -235,17 +301,26 @@ class BuddyArt(private val art: Art) {
         c.drawOval(rect, p)
 
         // Rim light down the topline.
-        ink.color = ColorX.withAlpha(rim, 0.5f)
-        ink.strokeWidth = 4.5f
+        //
+        // This used to take the scene's rim colour neat, at half alpha and 4.5 wide, which on a
+        // warm-lit world painted a solid tan stripe along his spine - it read as a marking, not
+        // as light. Mixing most of the way to white and thinning it right down gives the sheen
+        // the highlight was meant to be, and it stays inside the silhouette rather than riding
+        // on top of it.
+        c.save()
+        c.clipPath(body)
+        ink.color = ColorX.withAlpha(ColorX.lerp(rim, 0xFFFFFFFF.toInt(), 0.65f), 0.22f)
+        ink.strokeWidth = 2.6f
         path2.reset()
-        path2.moveTo(cx + w * 0.84f, back + 8f)
-        path2.cubicTo(cx + w * 0.3f, back - 3f, cx - w * 0.45f, back - 1f, cx - w * 0.9f, back + 18f)
+        path2.moveTo(cx + w * 0.78f, back + 9f)
+        path2.cubicTo(cx + w * 0.3f, back - 1f, cx - w * 0.45f, back + 1f, cx - w * 0.86f, back + 19f)
         c.drawPath(path2, ink)
-        ink.color = BuddyGeom.INK
+        c.restore()
+        ink.color = coat.ink
         ink.strokeWidth = 6f
 
         // Coat tufts at the rump and behind the front leg break the silhouette.
-        p.color = BuddyGeom.FUR_DARK
+        p.color = coat.dark
         path2.reset()
         path2.moveTo(cx - w * 1.02f, belly - 18f)
         path2.quadTo(cx - w * 1.2f, belly + 2f, cx - w * 0.86f, belly + 4f)
@@ -255,19 +330,19 @@ class BuddyArt(private val art: Art) {
 
         // Short dense coat: a scatter of fine tufts catching the light along the back, the
         // chest and the haunch. Cheap, and it stops the body reading as one flat shape.
-        p.color = ColorX.withAlpha(BuddyGeom.FUR_SHEEN, 0.30f)
+        p.color = ColorX.withAlpha(coat.sheen, 0.30f)
         for (i in 0 until 7) {
             val t = i / 6f
             val fx = cx - w * 0.82f + w * 1.62f * t
             val fy = back + 8f + sin(t * 3.1f) * 5f
             tuft(c, fx, fy, 13f, -18f + t * 26f)
         }
-        p.color = ColorX.withAlpha(BuddyGeom.FUR_LIGHT, 0.34f)
+        p.color = ColorX.withAlpha(coat.light, 0.34f)
         for (i in 0 until 4) {
             val t = i / 3f
             tuft(c, cx + w * (0.62f + t * 0.3f), belly - 24f + t * 20f, 11f, 120f + t * 20f)
         }
-        p.color = ColorX.withAlpha(BuddyGeom.FUR_DARK, 0.55f)
+        p.color = ColorX.withAlpha(coat.dark, 0.55f)
         for (i in 0 until 4) {
             val t = i / 3f
             tuft(c, cx - w * (0.5f + t * 0.42f), belly - 4f + t * 6f, 12f, 150f - t * 18f)
@@ -293,17 +368,17 @@ class BuddyArt(private val art: Art) {
         val reach = clamp01(-pose.squash * 0.6f + 0.4f)
         val legLen = 52f * (0.62f + 0.45f * reach) + stretch * -6f
         val swing = (stretch * -16f + tuck * 10f)
-        val color = if (back) BuddyGeom.FUR_DARK else BuddyGeom.FUR_BASE
+        val color = if (back) coat.dark else coat.base
         val depth = if (back) 0.55f else 1f
 
         p.reset(); p.isAntiAlias = true
         ink.strokeWidth = if (back) 4.5f else 6f
-        ink.color = if (back) ColorX.withAlpha(BuddyGeom.INK, 0.65f) else BuddyGeom.INK
+        ink.color = if (back) ColorX.withAlpha(coat.ink, 0.65f) else coat.ink
 
         drawLeg(c, BuddyGeom.FRONT_LEG_X + (if (back) -13f else 0f), legLen, swing * 0.7f, color, depth, front = true)
         drawLeg(c, BuddyGeom.BACK_LEG_X + (if (back) -13f else 0f), legLen * 0.96f, -swing, color, depth, front = false)
 
-        ink.color = BuddyGeom.INK
+        ink.color = coat.ink
         ink.strokeWidth = 6f
     }
 
@@ -322,19 +397,19 @@ class BuddyArt(private val art: Art) {
         c.drawPath(path2, p)
 
         // paw
-        p.color = ColorX.withAlpha(if (front) BuddyGeom.FUR_LIGHT else BuddyGeom.FUR_BASE, depth)
+        p.color = ColorX.withAlpha(if (front) coat.light else coat.base, depth)
         rect.set(footX - 15f, bottom - 13f, footX + 16f, bottom + 4f)
         c.drawRoundRect(rect, 9f, 9f, p)
         if (front) {
-            p.color = ColorX.withAlpha(BuddyGeom.FUR_SHEEN, 0.35f * depth)
+            p.color = ColorX.withAlpha(coat.sheen, 0.35f * depth)
             rect.set(footX - 11f, bottom - 10f, footX + 6f, bottom - 3f)
             c.drawRoundRect(rect, 4f, 4f, p)
             // toe splits
             ink.strokeWidth = 2.6f
-            ink.color = ColorX.withAlpha(BuddyGeom.INK, 0.55f)
+            ink.color = ColorX.withAlpha(coat.ink, 0.55f)
             c.drawLine(footX - 4f, bottom - 6f, footX - 4f, bottom + 2f, ink)
             c.drawLine(footX + 5f, bottom - 6f, footX + 5f, bottom + 2f, ink)
-            ink.color = BuddyGeom.INK
+            ink.color = coat.ink
             ink.strokeWidth = 6f
         }
     }
@@ -355,9 +430,9 @@ class BuddyArt(private val art: Art) {
         ink.strokeWidth = 5.5f
         c.drawPath(path2, ink)
         p.reset(); p.isAntiAlias = true
-        p.color = BuddyGeom.FUR_DARK
+        p.color = coat.dark
         c.drawPath(path2, p)
-        p.color = ColorX.withAlpha(BuddyGeom.FUR_LIGHT, 0.5f)
+        p.color = ColorX.withAlpha(coat.light, 0.5f)
         path2.reset()
         path2.moveTo(2f, -10f)
         path2.cubicTo(-24f, -22f, -46f, -28f, -66f, -40f)
@@ -386,7 +461,7 @@ class BuddyArt(private val art: Art) {
         path2.close()
         c.drawPath(path2, ink)
         p.reset(); p.isAntiAlias = true
-        p.color = BuddyGeom.FUR_BASE
+        p.color = coat.base
         c.drawPath(path2, p)
 
         // Skull + square muzzle as one silhouette: blocky head, clear stop, straight bridge.
@@ -406,16 +481,16 @@ class BuddyArt(private val art: Art) {
         p.shader = null
 
         // Cheek mass and the lighter muzzle.
-        p.color = ColorX.withAlpha(BuddyGeom.MUZZLE_COLOR, 0.9f)
+        p.color = ColorX.withAlpha(coat.muzzle, 0.9f)
         rect.set(hx + 26f, BuddyGeom.MUZZLE_Y - 12f, BuddyGeom.NOSE_X + 4f, BuddyGeom.MUZZLE_Y + 16f)
         c.drawRoundRect(rect, 13f, 13f, p)
-        p.color = ColorX.withAlpha(BuddyGeom.FUR_SHEEN, 0.26f)
+        p.color = ColorX.withAlpha(coat.sheen, 0.26f)
         rect.set(hx - 16f, hy - r * 1.15f, hx + 24f, hy - 8f)
         c.drawOval(rect, p)
 
         // Lip line and the corner of the mouth.
         ink.strokeWidth = 3.4f
-        ink.color = ColorX.withAlpha(BuddyGeom.INK, 0.85f)
+        ink.color = ColorX.withAlpha(coat.ink, 0.85f)
         path2.reset()
         path2.moveTo(BuddyGeom.NOSE_X - 6f, BuddyGeom.MUZZLE_Y + 13f)
         path2.quadTo(hx + 34f, BuddyGeom.MUZZLE_Y + 19f, hx + 20f, BuddyGeom.MUZZLE_Y + 14f)
@@ -438,7 +513,7 @@ class BuddyArt(private val art: Art) {
         }
 
         // Nose: big, square, glossy.
-        p.color = BuddyGeom.NOSE_COLOR
+        p.color = coat.nose
         rect.set(BuddyGeom.NOSE_X - 10f, BuddyGeom.NOSE_Y - 9f, BuddyGeom.NOSE_X + 9f, BuddyGeom.NOSE_Y + 8f)
         c.drawRoundRect(rect, 8f, 7f, p)
         p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.30f)
@@ -448,27 +523,39 @@ class BuddyArt(private val art: Art) {
         rect.set(BuddyGeom.NOSE_X - 3f, BuddyGeom.NOSE_Y + 1f, BuddyGeom.NOSE_X + 5f, BuddyGeom.NOSE_Y + 5f)
         c.drawOval(rect, p)
 
-        // Whiskers and a nose-bridge highlight: the details that sell a muzzle up close.
-        ink.strokeWidth = 2.2f
-        ink.color = ColorX.withAlpha(BuddyGeom.FUR_SHEEN, 0.5f)
+        // Whiskers.
+        //
+        // They used to be three long strokes that all set off from the same spot and swept
+        // forward past the end of his nose, which converged into what looked like a spike
+        // growing off his face. Real ones sprout from the whisker pad - the fleshy patch just
+        // behind the nose - and are SHORT, so these start from three separate roots there and
+        // fan apart instead of together. Faint on purpose: at gameplay size they are a texture,
+        // not a feature.
+        ink.strokeWidth = 1.8f
+        ink.color = ColorX.withAlpha(coat.sheen, 0.38f)
+        val padX = BuddyGeom.NOSE_X - 24f
+        val padY = BuddyGeom.MUZZLE_Y + 2f
         for (i in 0 until 3) {
-            val wy = BuddyGeom.MUZZLE_Y - 2f + i * 6f
+            val rootX = padX - i * 5f
+            val rootY = padY + i * 5f
+            val len = 23f - i * 3f
+            val droop = 4f + i * 5f          // lower whiskers hang further
             path2.reset()
-            path2.moveTo(hx + 34f, wy)
-            path2.quadTo(hx + 60f, wy - 8f - i * 4f, hx + 82f, wy - 12f - i * 7f)
+            path2.moveTo(rootX, rootY)
+            path2.quadTo(rootX + len * 0.6f, rootY + droop * 0.4f, rootX + len, rootY + droop)
             c.drawPath(path2, ink)
         }
         ink.strokeWidth = 3.2f
-        ink.color = ColorX.withAlpha(BuddyGeom.FUR_SHEEN, 0.42f)
+        ink.color = ColorX.withAlpha(coat.sheen, 0.42f)
         path2.reset()
         path2.moveTo(hx + 30f, BuddyGeom.MUZZLE_Y - 13f)
         path2.quadTo(hx + 52f, BuddyGeom.MUZZLE_Y - 18f, BuddyGeom.NOSE_X - 8f, BuddyGeom.MUZZLE_Y - 14f)
         c.drawPath(path2, ink)
-        ink.color = BuddyGeom.INK
+        ink.color = coat.ink
         ink.strokeWidth = 6f
 
         // cheek fluff where the jaw meets the neck
-        p.color = ColorX.withAlpha(BuddyGeom.FUR_DARK, 0.75f)
+        p.color = ColorX.withAlpha(coat.dark, 0.75f)
         for (i in 0 until 3) {
             tuft(c, hx - 18f + i * 8f, hy + 20f + i * 4f, 14f, 160f + i * 10f)
         }
@@ -476,13 +563,13 @@ class BuddyArt(private val art: Art) {
         drawEye(c, pose)
 
         // Brow ridge - labs have a soft, kind expression, and one stroke carries it.
-        ink.color = ColorX.withAlpha(BuddyGeom.FUR_SHEEN, 0.55f)
+        ink.color = ColorX.withAlpha(coat.sheen, 0.55f)
         ink.strokeWidth = 4f
         path2.reset()
         path2.moveTo(BuddyGeom.EYE_X - 13f, BuddyGeom.EYE_Y - 12f)
         path2.quadTo(BuddyGeom.EYE_X - 2f, BuddyGeom.EYE_Y - 17f, BuddyGeom.EYE_X + 11f, BuddyGeom.EYE_Y - 12f)
         c.drawPath(path2, ink)
-        ink.color = BuddyGeom.INK
+        ink.color = coat.ink
         ink.strokeWidth = 6f
     }
 
@@ -496,7 +583,7 @@ class BuddyArt(private val art: Art) {
             ink.strokeWidth = 4f
             c.drawLine(ex - 7f, ey - 7f, ex + 7f, ey + 7f, ink)
             c.drawLine(ex + 7f, ey - 7f, ex - 7f, ey + 7f, ink)
-            ink.color = BuddyGeom.INK
+            ink.color = coat.ink
             ink.strokeWidth = 6f
             return
         }
@@ -516,7 +603,7 @@ class BuddyArt(private val art: Art) {
         c.drawCircle(ex + 4f, ey + 3.4f, 1.5f, p)
 
         if (pose.blink > 0.02f) {
-            p.color = BuddyGeom.FUR_BASE
+            p.color = coat.base
             rect.set(ex - 12f, ey - 13f, ex + 12f, ey - 13f + 26f * pose.blink)
             c.drawRect(rect, p)
             ink.strokeWidth = 3f
@@ -541,10 +628,10 @@ class BuddyArt(private val art: Art) {
         ink.strokeWidth = 5.5f
         c.drawPath(path2, ink)
         p.reset(); p.isAntiAlias = true
-        p.color = BuddyGeom.FUR_DARK
+        p.color = coat.dark
         c.drawPath(path2, p)
 
-        p.color = ColorX.withAlpha(BuddyGeom.FUR_SHEEN, 0.22f)
+        p.color = ColorX.withAlpha(coat.sheen, 0.22f)
         path2.reset()
         path2.moveTo(2f, 12f)
         path2.cubicTo(16f, 10f, 24f, 20f, 22f, 36f)
@@ -554,13 +641,13 @@ class BuddyArt(private val art: Art) {
 
         // a crease down the fold of the ear, and a wisp at the tip
         ink.strokeWidth = 2.6f
-        ink.color = ColorX.withAlpha(BuddyGeom.INK, 0.5f)
+        ink.color = ColorX.withAlpha(coat.ink, 0.5f)
         path2.reset()
         path2.moveTo(6f, 14f)
         path2.quadTo(16f, 34f, 10f, 54f)
         c.drawPath(path2, ink)
-        ink.color = BuddyGeom.INK
-        p.color = ColorX.withAlpha(BuddyGeom.FUR_DARK, 0.9f)
+        ink.color = coat.ink
+        p.color = ColorX.withAlpha(coat.dark, 0.9f)
         tuft(c, 0f, 58f, 12f, 100f)
         ink.strokeWidth = 6f
         c.restore()
