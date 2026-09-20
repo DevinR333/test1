@@ -113,6 +113,8 @@ function Chest(x, y) {
   this.w = 14; this.h = 13;
   this.open = false;
   this.t = 0;
+  this.hit = 0;            /* frames of recoil after a swing lands */
+  this.nudge = 0;          /* lid rattle while you stand against it */
   this.dead = false;
   /* Loot is fixed per chest, derived from where it sits, so a stage
      always rewards the same thing. Some hold nothing but gems. */
@@ -162,12 +164,20 @@ Chest.prototype.pop = function (w) {
 };
 Chest.prototype.update = function (w) {
   this.t++;
-  if (!this.open && w.uncovered(this) && Util.aabb(this, w.player)) this.pop(w);
+  if (this.hit > 0) this.hit--;
+  /* A chest only ever gives way to the blade - walking into it does
+     nothing but rattle the lid. */
+  if (!this.open && w.uncovered(this) && Util.aabb(this, w.player)) this.nudge = 12;
+  if (this.nudge > 0) this.nudge--;
 };
 Chest.prototype.draw = function (g, cam) {
   var img = this.open ? Art.CHEST_OPEN : Art.CHEST;
   var bob = this.open ? 0 : Math.round(Math.sin(this.t * 0.06) * 0.5);
-  g.drawImage(img, Math.round(this.x - cam.x), Math.round(this.y - cam.y + bob));
+  /* the lid jumps when you lean on it, so "hit me" reads without words */
+  var jx = 0;
+  if (this.nudge > 0) jx = Math.round(Math.sin(this.nudge * 1.1) * 1.2);
+  if (this.hit > 0) { jx = Math.round(Math.sin(this.hit * 1.9) * 2); bob -= 1; }
+  g.drawImage(img, Math.round(this.x - cam.x) + jx, Math.round(this.y - cam.y + bob));
   if (!this.open) {
     g.save();
     g.globalAlpha = 0.18 + 0.12 * Math.sin(this.t * 0.08);
@@ -628,6 +638,9 @@ function Player(x, y) {
   this.charges = 0;        /* special uses left, from orbs */
   this.maxCharges = 4;
   this.special = false;    /* is this swing a special? */
+  this.crossHit = false;   /* iron: the arc lands a second time */
+  this.crossAgain = false;
+  this.lashHit = false;    /* whip: the arc reaches far further */
 }
 Player.prototype.damage = function () { return Save.bladeDamage(); };
 Player.prototype.reach = function () { return Save.bladeReach(); };
@@ -710,14 +723,12 @@ Player.prototype.update = function (w) {
     this.lift--;
   } else {
     this.lift = 0;
-  this.charges = 0;        /* special uses left, from orbs */
-  this.maxCharges = 4;
-  this.special = false;    /* is this swing a special? */
   }
 
   if (Input.pressed('attack') && this.attack <= 0) {
     this.attack = ATTACK_FRAMES;
     this.attackHit = [];
+    this.crossHit = false; this.lashHit = false; this.crossAgain = false;
     /* with the gauge charged, every swing is the blade's special until
        it runs dry */
     this.special = this.charges > 0;
@@ -748,6 +759,8 @@ Player.prototype.update = function (w) {
 Player.prototype.hitbox = function () {
   if (this.attack > 14 || this.attack < 5) return null;
   var r = this.reach() * (this.special ? 1.6 : 1);
+  /* the whip's special snaps right out across the room */
+  if (this.lashHit) r = this.reach() * 2.8;
   return {
     x: this.facing > 0 ? this.x + this.w - 3 : this.x - r + 3,
     y: this.y - 2 - (this.special ? 6 : 0),

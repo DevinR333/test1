@@ -22,7 +22,9 @@ var Save = (function () {
       worn: 'none',
       sound: true,
       touchMode: 'auto',  /* 'auto' fades when idle, 'always' stays put */
-      seenIntro: false
+      zoom: 0,            /* 0 = fit the screen, 1-4 = fixed pixel size */
+      seenIntro: false,
+      seenOrbTip: false
     };
   }
 
@@ -71,6 +73,25 @@ var Save = (function () {
     try { writeRaw(JSON.stringify(data)); } catch (e) { /* nothing we can do */ }
   }
   function get() { return data || load(); }
+
+  /* Everything a single run can add to. A stage takes a copy on the way
+     in; going down puts it all back, so dying costs you the trip. */
+  var RUN_FIELDS = ['coins', 'gemScore', 'heartPieces', 'outfits', 'gems',
+                    'chests', 'blades', 'relics', 'collar', 'worn', 'blade'];
+  function snapshot() {
+    var d = get(), o = {};
+    for (var i = 0; i < RUN_FIELDS.length; i++) {
+      var k = RUN_FIELDS[i];
+      o[k] = (d[k] && typeof d[k] === 'object') ? JSON.parse(JSON.stringify(d[k])) : d[k];
+    }
+    return o;
+  }
+  function restore(snap) {
+    if (!snap) return;
+    var d = get();
+    for (var k in snap) d[k] = snap[k];
+    flush();
+  }
   function wipe() { data = fresh(); flush(); return data; }
 
   var SHOP = [
@@ -221,6 +242,7 @@ var Save = (function () {
 
   return {
     load: load, get: get, flush: flush, wipe: wipe,
+    snapshot: snapshot, restore: restore,
     SHOP: SHOP, owned: owned, available: available, buy: buy,
     has: has, addCoins: addCoins, clearStage: clearStage,
     ownsBlade: ownsBlade, equipBlade: equipBlade, blade: blade, bladeId: bladeId,

@@ -223,6 +223,7 @@ var Input = (function () {
   /* ---------------- gamepad ---------------- */
   var padPrev = {};
   var padName = '';
+  var padDir = { x: 0, y: 0 };      /* last stick direction, for menu steps */
   function pollPad() {
     if (!navigator.getGamepads) return;
     var pads = navigator.getGamepads();
@@ -231,8 +232,36 @@ var Input = (function () {
     if (!gp) { if (mode === 'controller') { mode = 'keyboard'; padName = ''; } return; }
     padName = gp.id || 'Controller';
     var active = false;
+    /* Scale out of the dead zone AND fall back to zero when the stick
+       recentres - without the else the last value stuck and the hero
+       walked off on his own. */
     var ax = gp.axes && gp.axes.length ? gp.axes[0] : 0;
-    if (Math.abs(ax) > 0.25) { stickX = ax; active = true; }
+    var DZ = 0.28;
+    if (Math.abs(ax) > DZ) {
+      var sign = ax < 0 ? -1 : 1;
+      stickX = sign * Math.min(1, (Math.abs(ax) - DZ) / (1 - DZ));
+      active = true;
+    } else if (stickId === null) {
+      stickX = 0;                       /* touch stick, if held, still wins */
+    }
+    /* Menus are stepped with the stick as well as the d-pad: many pads
+       report no d-pad at all, which left menus unusable. */
+    var ay = gp.axes && gp.axes.length > 1 ? gp.axes[1] : 0;
+    var stepX = Math.abs(ax) > 0.55 ? (ax < 0 ? -1 : 1) : 0;
+    var stepY = Math.abs(ay) > 0.55 ? (ay < 0 ? -1 : 1) : 0;
+    if (stepX !== padDir.x) {
+      if (stepX === -1) { set('left', true); set('left', false); fresh.left = true; }
+      if (stepX === 1) { set('right', true); set('right', false); fresh.right = true; }
+      padDir.x = stepX;
+      if (stepX) active = true;
+    }
+    if (stepY !== padDir.y) {
+      if (stepY === -1) { set('up', true); set('up', false); fresh.up = true; }
+      if (stepY === 1) { set('down', true); set('down', false); fresh.down = true; }
+      padDir.y = stepY;
+      if (stepY) active = true;
+    }
+
     var B = gp.buttons || [];
     function btn(i) { return B[i] && B[i].pressed; }
     var map = { 14: 'left', 15: 'right', 12: 'up', 13: 'down',

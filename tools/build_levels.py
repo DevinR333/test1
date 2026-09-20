@@ -391,7 +391,16 @@ def build(sid, world, name, theme, hint, rcols, seed, spec, flyers):
         if len(buried) < 2:
             st.unseal(cells)
             return False
-        buried.sort(key=lambda cell: -dmap[cell])
+        # prefer cells sitting on something solid, so loot rests on the
+        # chamber floor instead of floating in the middle of the rock
+        def grounded(cell):
+            r, c = cell
+            below = st.get(r + 1, c)
+            return below in (SOLID, 'B') or below == 'F'
+        standing = [cell for cell in buried if grounded(cell)]
+        if len(standing) >= 2:
+            buried = standing
+        buried.sort(key=lambda cell: (-cell[0], -dmap[cell]))
         pick = buried[:max(2, len(buried) // 2)]
         rng.shuffle(pick)
         (cr, cc) = pick[0]

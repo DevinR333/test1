@@ -87,4 +87,15 @@ html, body {
   box-shadow:0 4px 18px rgba(0,0,0,.55);
 }
 .mbtn:active { background:#6b58a8; transform:translateY(2px); }
+/* which one a controller or keyboard has highlighted */
+.mbtn.sel { border-color:#ffd75e; background:rgba(92,72,150,.96); box-shadow:0 0 0 2px rgba(255,215,94,.35), 0 4px 18px rgba(0,0,0,.55); }
 @media (max-width:520px) { .mbtn { min-width:132px; padding:14px 12px; font-size:13px; } }
+
+/* Dismiss button for a loot popup. Same treatment as the result-screen
+   buttons, for the same reason: the canvas can be covered by the pad. */
+#popupbtn {
+  position:fixed; left:0; right:0;
+  bottom:calc(16px + env(safe-area-inset-bottom));
+  display:flex; justify-content:center; z-index:22; pointer-events:none;
+}
+#popupbtn.hidden { display:none; }

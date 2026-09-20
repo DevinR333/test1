@@ -314,14 +314,22 @@ World.prototype.onGround = function (e) {
 /* ---------------- spawning helpers ---------------- */
 /* A short panel explaining what just dropped, so a chest is not just
    something flinging off the screen. */
-World.prototype.showPopup = function (title, lines, color) {
-  this.popup = { title: title, lines: lines || [], color: color || '#e8c45c', t: 200 };
+World.prototype.showPopup = function (title, lines, color, blocking) {
+  this.popup = {
+    title: title, lines: lines || [], color: color || '#e8c45c',
+    t: 200, blocking: blocking !== false
+  };
+};
+World.prototype.dismissPopup = function () { this.popup = null; };
+World.prototype.popupBlocking = function () {
+  return !!(this.popup && this.popup.blocking);
 };
 
 World.prototype.drawPopup = function (g) {
   var pu = this.popup;
-  if (!pu || pu.t <= 0) return;
-  var fade = pu.t > 30 ? 1 : pu.t / 30;
+  if (!pu) return;
+  if (!pu.blocking && pu.t <= 0) { this.popup = null; return; }
+  var fade = (pu.blocking || pu.t > 30) ? 1 : pu.t / 30;
   var w = 168, h = 30 + pu.lines.length * 11;
   var x = Math.round(VIEW_W / 2 - w / 2), y = 30;
   g.save();
@@ -335,8 +343,11 @@ World.prototype.drawPopup = function (g) {
   for (var i = 0; i < pu.lines.length; i++) {
     Text.center(g, pu.lines[i], VIEW_W / 2, y + 21 + i * 11, '#e6dcf7', 1);
   }
+  if (pu.blocking) {
+    Text.center(g, 'PRESS TO CARRY ON', VIEW_W / 2, y + h + 6, '#8d80ad', 1);
+  }
   g.restore();
-  pu.t--;
+  if (!pu.blocking) pu.t--;
 };
 
 World.prototype.puff = function (x, y, color, n) {
@@ -406,7 +417,9 @@ World.prototype.fireSpecial = function (p) {
     this.shots.push(sh);
   } else if (kind === 'lash') {
     p.lashHit = true;
-    this.puff(cx + f * 16, cy + 4, '#e8fff0', 12);
+    for (var li = 0; li < 5; li++) {
+      this.puff(cx + f * (10 + li * 9), cy + 4 + (li % 2 ? 2 : -2), '#e8fff0', 4);
+    }
   } else {                                   /* thunder */
     sh = new Shot(cx, cy, f * 4.2, 0, 'bolt', true);
     sh.dmg = dmg + 2; sh.pierce = true; sh.life = 70;
@@ -458,6 +471,7 @@ World.prototype.update = function () {
   this.t++;
   var p = this.player, i, e;
 
+  if (this.popupBlocking()) return;      /* loot popup holds the action */
   if (this.hitStop > 0) { this.hitStop--; return; }
   if (this.bannerTimer > 0) this.bannerTimer--;
 
@@ -543,6 +557,13 @@ World.prototype.update = function () {
     /* --- the swing --- */
     var hb = p.hitbox();
     if (hb) {
+      /* the cross slash cuts back across on the return, so everything
+         already struck is fair game once more */
+      if (p.crossHit && !p.crossAgain && p.attack <= 8) {
+        p.attackHit = [];
+        p.crossAgain = true;
+        this.puff(p.x + p.w / 2 + p.facing * 12, p.y + 8, '#eef4fa', 6);
+      }
       for (i = 0; i < this.enemies.length; i++) {
         e = this.enemies[i];
         if (e.dead || p.attackHit.indexOf(e) >= 0) continue;
@@ -560,8 +581,17 @@ World.prototype.update = function () {
         this.boss.hurt(p.damage(), p.facing, this);
         this.hitStop = 3; this.shake(4);
       }
+      /* the blade is the only key: a buried chest stays shut until its
+         pocket is open and you actually swing at it */
       for (i = 0; i < this.chests.length; i++) {
-        if (!this.chests[i].open && Util.aabb(hb, this.chests[i])) this.chests[i].pop(this);
+        var chH = this.chests[i];
+        if (chH.open || p.attackHit.indexOf(chH) >= 0) continue;
+        if (this.uncovered(chH) && Util.aabb(hb, chH)) {
+          p.attackHit.push(chH);
+          chH.hit = 10;
+          this.hitStop = 2; this.shake(3);
+          chH.pop(this);
+        }
       }
       /* crates in the swing arc */
       var tx0 = Math.floor(hb.x / TILE), tx1 = Math.floor((hb.x + hb.w) / TILE);
@@ -662,10 +692,18 @@ World.prototype.update = function () {
         p.charges = p.maxCharges;
         Sfx.buy();
         var sp = Art.SPECIALS[Save.blade().special];
-        this.showPopup('SPELL ORB', [
-          sp.name.toUpperCase() + '  x' + p.maxCharges,
-          sp.desc.toUpperCase()
-        ], '#b9a0ff');
+        var d0 = Save.get();
+        if (!d0.seenOrbTip) {
+          d0.seenOrbTip = true; Save.flush();
+          this.showPopup('SPELL ORB', [
+            sp.name.toUpperCase() + '  x' + p.maxCharges,
+            sp.desc.toUpperCase()
+          ], '#b9a0ff', true);
+        } else {
+          /* after the first one it just tops you up, no interruption */
+          this.showPopup('SPECIAL READY', [sp.name.toUpperCase()], '#b9a0ff', false);
+          this.popup.t = 90;
+        }
         this.puff(pk.x + 3, pk.y + 3, '#b9a0ff', 16);
       } else if (pk.kind === 'vessel') {
         this.vesselGot++;

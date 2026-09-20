@@ -86,6 +86,8 @@ var Art = (function () {
   /* ---------------------------------------------------------------
      THE HERO - a black lab who carries his blade in his jaws.
   --------------------------------------------------------------- */
+  /* A bright eye with a catchlight and a lolling tongue - this is a happy
+     dog, not a snarling one. No bared tooth anywhere. */
   var TORSO = [
     '..................',
     '.kk........kkkkk..',
@@ -93,7 +95,7 @@ var Art = (function () {
     '.kbk....kbdddbbbbk',
     '.kbkkkkkkbdddbebbk',
     '.kbbbbbbbbdddbbbnk',
-    '.kbbbbbbbbbddbbwnk',
+    '.kbbbbbbbbbddbktnk',
     '.kbbbbbbbbbbbrttkk',
     '.kbbbbbbbbbbbrRrk.',
     '.kbbbbbbbbbbbbk...',
@@ -106,8 +108,22 @@ var Art = (function () {
     '.kbk.....kbdddbbk.',
     '.kbkkkkkkbbdddbebk',
     '.kbbbbbbbbbdddbbnk',
-    '.kbbbbbbbbbbddbwnk',
+    '.kbbbbbbbbbbddktnk',
     '.kbbbbbbbbbbbrttkk',
+    '.kbbbbbbbbbbbrRrk.',
+    '.kbbbbbbbbbbbbk...',
+    '..kbbbbbbbbbk.....'
+  ];
+  /* Ears down, eye shut, mouth turned over - shown when you go down. */
+  var TORSO_SAD = [
+    '..................',
+    '.kk........kkkkk..',
+    '.kbk.....kbbbbbbk.',
+    '.kbk....kbdddbbbbk',
+    '.kbkkkkkkbdddbnbbk',
+    '.kbbbbbbbbdddbwbnk',
+    '.kbbbbbbbbbdddnbnk',
+    '.kbbbbbbbbbbbrbbkk',
     '.kbbbbbbbbbbbrRrk.',
     '.kbbbbbbbbbbbbk...',
     '..kbbbbbbbbbk.....'
@@ -157,10 +173,11 @@ var Art = (function () {
       jump: frame(TORSO, 'jump'),
       fall: frame(TORSO, 'fall'),
       swing: frame(TORSO_SWING, 'stand'),
-      swingAir: frame(TORSO_SWING, 'fall')
+      swingAir: frame(TORSO_SWING, 'fall'),
+      sad: frame(TORSO_SAD, 'sit')
     };
     var out = { right: f, left: {}, flash: {} };
-    out.left.idle = F(f.idle); out.left.sit = F(f.sit);
+    out.left.idle = F(f.idle); out.left.sit = F(f.sit); out.left.sad = F(f.sad);
     out.left.jump = F(f.jump); out.left.fall = F(f.fall);
     out.left.swing = F(f.swing); out.left.swingAir = F(f.swingAir);
     out.left.run = f.run.map(F);
@@ -334,7 +351,9 @@ var Art = (function () {
     ], { o: edge, l: lite, k: core });
     return c;
   }
-  var GEMS = {
+  /* one tinted gem per world, for the map and the results tally.
+     Named apart from the graded GEMS below, which the pickups use. */
+  var THEME_GEMS = {
     meadow: gemSprite('#2fa36b', '#9dffd0', '#0d3d28'),
     cavern: gemSprite('#3f8fd6', '#a8e0ff', '#102d4d'),
     keep:   gemSprite('#b03fd6', '#efb0ff', '#3a0d4d')
@@ -608,7 +627,7 @@ var Art = (function () {
     GRUB: GRUB, BATLING: [BATLING, BATLING2], THORN: THORN, THORN_L: F(THORN),
     THORNBALL: THORNBALL,
     COIN: COIN, BONE_GOLD: BONE_GOLD, BONE_GREY: BONE_GREY,
-    GEMS: GEMS, GEM_VALUE: GEM_VALUE, HEART_PIECE: HEART_PIECE,
+    GEMS: GEMS, THEME_GEMS: THEME_GEMS, GEM_VALUE: GEM_VALUE, HEART_PIECE: HEART_PIECE,
     OUTFITS: OUTFITS, ORB: ORB,
     CHEST: CHEST, CHEST_OPEN: CHEST_OPEN,
     HEART_FULL: HEART_FULL, HEART_EMPTY: HEART_EMPTY, MEAT: MEAT,

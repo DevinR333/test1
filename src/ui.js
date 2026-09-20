@@ -18,12 +18,13 @@ var UI = (function () {
     Text.center(g, label, r.x + r.w / 2, r.y + Math.round((r.h - 7) / 2), '#ffffff', 1);
   }
 
+  /* A plank sign staked in the grass - dark enough to carry pale text. */
   function panel(g, x, y, w, h, fill) {
-    g.fillStyle = fill || 'rgba(14,10,22,.88)';
+    g.fillStyle = fill || 'rgba(28,22,15,.96)';
     g.fillRect(x, y, w, h);
-    g.fillStyle = '#6b5a8a'; g.fillRect(x, y, w, 1); g.fillRect(x, y + h - 1, w, 1);
+    g.fillStyle = '#c08a42'; g.fillRect(x, y, w, 1); g.fillRect(x, y + h - 1, w, 1);
     g.fillRect(x, y, 1, h); g.fillRect(x + w - 1, y, 1, h);
-    g.fillStyle = '#39304f';
+    g.fillStyle = '#6b4a22';
     g.fillRect(x + 1, y + 1, w - 2, 1); g.fillRect(x + 1, y + h - 2, w - 2, 1);
   }
   function dim(g, a) {
@@ -38,24 +39,120 @@ var UI = (function () {
     g.fillRect(x + off + 4, y + 3, 1, 1);
   }
 
-  /* Decorative starfield shared by the menu screens. */
-  var stars = [];
-  for (var i = 0; i < 46; i++) {
-    stars.push({ x: Math.random() * VIEW_W, y: Math.random() * VIEW_H,
-                 s: Math.random() < 0.25 ? 2 : 1, p: Math.random() * 6.28 });
+  /* ---------------------------------------------------------------
+     THE FIELD
+     Every menu sits in the same meadow the dog walks through: open sky,
+     clouds on the drift, hills falling away, grass underfoot. Laid out
+     in fractions of the view so it fills 4:3 and 21:9 alike.
+  --------------------------------------------------------------- */
+  var SKIES = {
+    day:  ['#2f7fc8', '#6db4e4', '#bfe4f4'],
+    dusk: ['#2b3f6e', '#8a6aa0', '#e7a377']
+  };
+  var GRASS = {
+    day:  { far: '#6b9e52', mid: '#4f8a3e', near: '#3d7331',
+            lip: '#8fd455', dark: '#2c5624', hill: '#7fb06a', haze: '#a8cf9a' },
+    dusk: { far: '#4d6b48', mid: '#3a5738', near: '#2d442c',
+            lip: '#6d9a58', dark: '#1e2f1f', hill: '#5c7a5c', haze: '#8b9a8c' }
+  };
+  /* fields are fractions of the view, so nothing is pinned to 400x224 */
+  var clouds = [];
+  for (var ci = 0; ci < 8; ci++) {
+    clouds.push({ x: Math.random(), y: 0.07 + Math.random() * 0.30,
+                  s: 0.55 + Math.random() * 1.0, v: 0.00022 + Math.random() * 0.00035 });
   }
-  function backdrop(g, t, tint) {
-    var grad = g.createLinearGradient(0, 0, 0, VIEW_H);
-    grad.addColorStop(0, tint ? tint[0] : '#140f22');
-    grad.addColorStop(1, tint ? tint[1] : '#2a1836');
-    g.fillStyle = grad; g.fillRect(0, 0, VIEW_W, VIEW_H);
-    for (var i = 0; i < stars.length; i++) {
-      var s = stars[i];
-      g.globalAlpha = 0.25 + 0.45 * Math.abs(Math.sin(t * 0.02 + s.p));
-      g.fillStyle = '#ffe9c0';
-      g.fillRect(s.x, s.y, s.s, s.s);
+  var blooms = [];
+  for (var bi = 0; bi < 54; bi++) {
+    blooms.push({ x: Math.random(), y: Math.random(), k: Math.floor(Math.random() * 4),
+                  p: Math.random() * 6.28 });
+  }
+  var BLOOM_COL = ['#ffe27a', '#ffb7d8', '#fdfbef', '#d4f07f'];
+
+  function cloud(g, x, y, s) {
+    /* four overlapping slabs read as a soft cumulus at this size */
+    var w = Math.round(22 * s), h = Math.round(5 * s);
+    g.fillStyle = 'rgba(255,255,255,.92)';
+    g.fillRect(x, y + h, w, h);
+    g.fillRect(x + Math.round(w * 0.18), y, Math.round(w * 0.5), h + 1);
+    g.fillRect(x + Math.round(w * 0.58), y + Math.round(h * 0.5), Math.round(w * 0.34), h);
+    g.fillStyle = 'rgba(196,224,244,.85)';
+    g.fillRect(x, y + h * 2, w, Math.max(1, Math.round(h * 0.5)));
+  }
+  /* A soft ridge line: same shape every frame, just sampled per column. */
+  function ridge(g, baseY, amp, freq, phase, col) {
+    for (var x = 0; x < VIEW_W; x++) {
+      var h = Math.round(amp * Math.sin(x * freq + phase) + amp * 0.5 * Math.sin(x * freq * 2.3 + phase * 1.7));
+      g.fillStyle = col;
+      g.fillRect(x, baseY - h, 1, VIEW_H - (baseY - h));
     }
-    g.globalAlpha = 1;
+  }
+  function backdrop(g, t, mood) {
+    var key = (mood === 'dusk') ? 'dusk' : 'day';
+    var sky = SKIES[key], gr = GRASS[key];
+    var horizon = Math.round(VIEW_H * 0.58);
+
+    var grad = g.createLinearGradient(0, 0, 0, horizon);
+    grad.addColorStop(0, sky[0]);
+    grad.addColorStop(0.6, sky[1]);
+    grad.addColorStop(1, sky[2]);
+    g.fillStyle = grad;
+    /* paint past the horizon: the ridges below are drawn crest-first and
+       must never leave a bare strip of canvas behind them */
+    g.fillRect(0, 0, VIEW_W, VIEW_H);
+
+    /* sun: three soft discs, not a stack of squares */
+    var sx = Math.round(VIEW_W * 0.80), sy = Math.round(VIEW_H * 0.16);
+    function disc(r, col) {
+      g.fillStyle = col;
+      g.beginPath(); g.arc(sx, sy, r, 0, 6.2832); g.fill();
+    }
+    disc(15, key === 'dusk' ? 'rgba(255,180,120,.16)' : 'rgba(255,246,200,.16)');
+    disc(10, key === 'dusk' ? 'rgba(255,196,146,.24)' : 'rgba(255,250,222,.26)');
+    disc(6, key === 'dusk' ? '#ffd9a8' : '#fffbe6');
+
+    for (var i = 0; i < clouds.length; i++) {
+      var c = clouds[i];
+      var cx = Math.round(((c.x + t * c.v) % 1.25 - 0.14) * VIEW_W);
+      cloud(g, cx, Math.round(c.y * VIEW_H), c.s);
+    }
+
+    /* two ridges behind the field, then the field itself */
+    /* each ridge overlaps the one behind it, so the crests read as depth
+       rather than as stacked flat bands */
+    var amp = Math.max(5, VIEW_H * 0.035);
+    ridge(g, horizon + Math.round(amp * 0.9), amp, 0.017, 0.8, gr.haze);
+    ridge(g, horizon + Math.round(amp * 1.7), amp * 1.2, 0.011, 2.4, gr.hill);
+    ridge(g, horizon + Math.round(amp * 2.6), amp * 0.8, 0.023, 5.1, gr.far);
+
+    var top = horizon + Math.round(amp * 3.2);
+    g.fillStyle = gr.mid;
+    g.fillRect(0, top, VIEW_W, VIEW_H - top);
+    /* the near field rolls in on a gentle, uneven line rather than a rule */
+    var nearY = top + Math.round((VIEW_H - top) * 0.42);
+    g.fillStyle = gr.near;
+    for (var x3 = 0; x3 < VIEW_W; x3++) {
+      var ny = nearY + Math.round(2.5 * Math.sin(x3 * 0.035) + 1.5 * Math.sin(x3 * 0.09 + 1.3));
+      g.fillRect(x3, ny, 1, VIEW_H - ny);
+    }
+    /* light catching the crest of the far field */
+    g.fillStyle = gr.lip;
+    for (var x2 = 0; x2 < VIEW_W; x2 += 3) g.fillRect(x2, top, 2, 1);
+
+    /* grass blades and flowers, still but for a slow sway */
+    var fieldH = VIEW_H - top;
+    for (var b = 0; b < blooms.length; b++) {
+      var f = blooms[b];
+      var bx = Math.round(f.x * VIEW_W);
+      var by = top + Math.round(f.y * fieldH);
+      var sway = Math.round(Math.sin(t * 0.03 + f.p) * 1.2);
+      g.fillStyle = gr.dark;
+      g.fillRect(bx, by, 1, 3);
+      g.fillRect(bx + sway, by - 2, 1, 2);
+      if (f.k < 3 && by > top + 3) {
+        g.fillStyle = BLOOM_COL[f.k];
+        g.fillRect(bx + sway, by - 3, 1, 1);
+      }
+    }
   }
 
   /* ------------------------------------------------ TITLE */
@@ -68,20 +165,18 @@ var UI = (function () {
     },
     draw: function (g, G) {
       backdrop(g, G.t);
-      /* rolling hills */
-      g.fillStyle = '#1b1328';
-      for (var x = 0; x < VIEW_W; x++) {
-        var h = Math.floor(16 + 7 * Math.sin(x * 0.02) + 4 * Math.sin(x * 0.06 + 2));
-        g.fillRect(x, VIEW_H - h, 1, h);
-      }
       var cx = VIEW_W / 2;
-      Text.centerShadow(g, 'BUDDY', cx, 34, '#ffffff', 3);
-      Text.centerShadow(g, 'BLADE', cx, 62, '#ffd75e', 3);
-      Text.centerShadow(g, 'A GOOD BOY WITH A VERY SHARP STICK', cx, 90, '#b8a8d8', 1);
+      /* the title block hangs off the top, the dog stands in the grass,
+         the hints sit on the bottom edge - all keyed off the view */
+      var ty = Math.round(VIEW_H * 0.11);
+      Text.centerShadow(g, 'BUDDY', cx, ty, '#ffffff', 3);
+      Text.centerShadow(g, 'BLADE', cx, ty + 28, '#ffd75e', 3);
+      Text.centerShadow(g, 'A GOOD BOY WITH A VERY SHARP STICK',
+        cx, ty + 56, '#f3f8ff', 1);
 
       /* hero idles on the title, blade out */
       var bob = Math.round(Math.sin(G.t * 0.06) * 2);
-      var px = Math.round(cx - 18), py = 124 + bob;
+      var px = Math.round(cx - 18), py = Math.round(VIEW_H * 0.70) + bob;
       g.save();
       g.imageSmoothingEnabled = false;
       g.drawImage(Art.dog.right.idle, px, py, 36, 28);
@@ -92,19 +187,26 @@ var UI = (function () {
         Text.centerShadow(g, hint('PRESS ENTER', 'PRESS A', 'TAP TO START'),
           cx, VIEW_H - 32, '#ffffff', 1);
       }
-      Text.draw(g, 'BUILD ' + (window.BUILD_ID || 'DEV'), 6, VIEW_H - 10, '#4e4663', 1);
+      Text.shadow(g, 'BUILD ' + (window.BUILD_ID || 'DEV'), 6, VIEW_H - 10, '#dfe8d4', 1);
       Text.centerShadow(g, hint('ARROWS MOVE   Z JUMP   X SWING',
                                 'STICK MOVE   A JUMP   X SWING',
                                 'STICK MOVE   JUMP   SWING'),
-        cx, VIEW_H - 16, '#8d80ad', 1);
+        cx, VIEW_H - 16, '#eaf4ff', 1);
     }
   };
 
   /* ------------------------------------------------ WORLD MAP */
+  /* Three world bands, spread down whatever height we were given, so a
+     4:3 screen gets taller lanes instead of a hole in the middle. */
+  function bandTop() { return Math.round(VIEW_H * 0.16) + 10; }
+  function bandGap() {
+    var room = (VIEW_H - 48) - bandTop();       /* keep clear of the sign */
+    return Util.clamp(Math.round(room / 3), 34, 64);
+  }
   function nodePos(i) {
     var w = Math.floor(i / 4), s = i % 4;
     var step = Math.floor((VIEW_W - 104) / 3);
-    return { x: 52 + s * step, y: 62 + w * 44 };
+    return { x: 52 + s * step, y: bandTop() + w * bandGap() };
   }
   function nodeRect(i) {
     var p = nodePos(i);
@@ -112,6 +214,14 @@ var UI = (function () {
   }
   function mapShopRect() {
     return { x: VIEW_W - 86, y: VIEW_H - 22, w: 78, h: 16 };
+  }
+  function mapOptRect() {
+    return { x: VIEW_W - 170, y: VIEW_H - 22, w: 78, h: 16 };
+  }
+  function openOptions(G) {
+    G.optionsFrom = 'map';
+    G.pauseSel = 0;
+    G.go('pause');
   }
 
   var map = {
@@ -122,6 +232,7 @@ var UI = (function () {
       var tap = Input.takeTap();
       if (tap) {
         if (inRect(tap, mapShopRect())) { Sfx.confirm(); G.go('shop'); return; }
+        if (inRect(tap, mapOptRect())) { Sfx.confirm(); openOptions(G); return; }
         for (var ti = 0; ti < LEVELS.length && ti < d.unlocked; ti++) {
           if (inRect(tap, nodeRect(ti))) {
             /* one tap plays it - a second tap to confirm just read as
@@ -148,26 +259,39 @@ var UI = (function () {
         Sfx.confirm(); G.startStage(G.sel);
       }
       if (Input.pressed('attack')) { Sfx.confirm(); G.go('shop'); }
-      if (Input.pressed('pause')) { Sfx.select(); G.go('title'); }
+      if (Input.pressed('pause')) { Sfx.confirm(); openOptions(G); }
     },
     draw: function (g, G) {
-      backdrop(g, G.t, ['#121b2a', '#26183a']);
+      backdrop(g, G.t);
       var d = Save.get();
-      Text.centerShadow(g, 'THE LONG WALK', VIEW_W / 2, 14, '#ffffff', 2);
+      Text.centerShadow(g, 'THE LONG WALK', VIEW_W / 2, Math.round(VIEW_H * 0.06),
+        '#ffffff', 2);
 
       /* world bands */
       for (var w = 0; w < 3; w++) {
-        var y = 62 + w * 44;
-        g.fillStyle = 'rgba(255,255,255,.05)';
-        g.fillRect(16, y - 14, VIEW_W - 32, 34);
-        Text.draw(g, WORLDS[w].name, 20, y - 12, '#7f72a0', 1);
+        var y = bandTop() + w * bandGap();
+        /* a worn dirt trail cut across the field, one per world */
+        var by = y - 15, bh = 36;
+        g.fillStyle = 'rgba(58,42,26,.90)';
+        g.fillRect(16, by, VIEW_W - 32, bh);
+        g.fillStyle = 'rgba(96,72,44,.95)';
+        g.fillRect(16, by, VIEW_W - 32, 2);
+        g.fillStyle = 'rgba(28,20,12,.95)';
+        g.fillRect(16, by + bh - 2, VIEW_W - 32, 2);
+        /* grit in the path */
+        for (var q = 0; q < 26; q++) {
+          var qx = 20 + ((q * 61 + w * 17) % (VIEW_W - 44));
+          g.fillStyle = (q % 3) ? 'rgba(122,96,62,.55)' : 'rgba(30,22,14,.55)';
+          g.fillRect(qx, by + 5 + ((q * 7 + w * 3) % (bh - 10)), 2, 1);
+        }
+        Text.shadow(g, WORLDS[w].name, 20, by + 3, '#f0d9a8', 1);
       }
       /* connecting track */
       for (var i = 0; i < LEVELS.length - 1; i++) {
         if (Math.floor(i / 4) !== Math.floor((i + 1) / 4)) continue;
         var a = nodePos(i), b = nodePos(i + 1);
         for (var x = a.x + 12; x < b.x; x += 5) {
-          g.fillStyle = (i + 1 < d.unlocked) ? '#6b5a8a' : '#342b47';
+          g.fillStyle = (i + 1 < d.unlocked) ? '#f0e2b0' : 'rgba(30,40,24,.45)';
           g.fillRect(x, a.y + 5, 2, 2);
         }
       }
@@ -179,10 +303,10 @@ var UI = (function () {
         var isBoss = !!L.boss;
         /* locked stays a dim placeholder; playable is bright and solid;
            finished is green */
-        var fill = !open ? '#1d1a28'
-                 : (done ? '#3f7a52' : (isBoss ? '#93304a' : '#5a4e91'));
-        var edge = !open ? '#2e2940'
-                 : (done ? '#7fe0a0' : (isBoss ? '#ff6b7f' : '#b9a8ff'));
+        var fill = !open ? 'rgba(24,32,20,.72)'
+                 : (done ? '#2f7a4a' : (isBoss ? '#93304a' : '#4a3f7d'));
+        var edge = !open ? 'rgba(180,200,170,.35)'
+                 : (done ? '#9dffc4' : (isBoss ? '#ff6b7f' : '#cbbcff'));
         g.fillStyle = fill;
         g.fillRect(p.x, p.y, 24, 14);
         if (open) {
@@ -193,7 +317,7 @@ var UI = (function () {
         g.fillRect(p.x, p.y, 24, 1); g.fillRect(p.x, p.y + 13, 24, 1);
         g.fillRect(p.x, p.y, 1, 14); g.fillRect(p.x + 23, p.y, 1, 14);
         Text.draw(g, open ? L.id : '??', p.x + 5, p.y + 4,
-          open ? '#ffffff' : '#443e5c', 1);
+          open ? '#ffffff' : 'rgba(225,235,215,.45)', 1);
         /* a playable stage you have not finished gets a nudge */
         if (open && !done) {
           g.fillStyle = 'rgba(185,168,255,' + (0.30 + 0.25 * Math.sin(G.t * 0.1 + i)) + ')';
@@ -202,7 +326,7 @@ var UI = (function () {
         }
         if (!isBoss && open) {
           var got = d.gems[L.id] || 0;
-          var gimg = Art.GEMS[L.theme] || Art.GEMS.meadow;
+          var gimg = Art.THEME_GEMS[L.theme] || Art.THEME_GEMS.meadow;
           for (var gI = 0; gI < 3; gI++) {
             if (gI < got) g.drawImage(gimg, p.x + 26 + gI * 8, p.y + 4);
             else { g.fillStyle = '#3a3350'; g.fillRect(p.x + 27 + gI * 8, p.y + 5, 5, 5); }
@@ -218,7 +342,7 @@ var UI = (function () {
       panel(g, 8, VIEW_H - 44, VIEW_W - 16, 36);
       Text.draw(g, L2.id + ' ' + L2.name, 16, VIEW_H - 38, '#ffd75e', 1);
       Text.draw(g, 'COINS ' + d.coins + '   GEMS ' + Save.gemsFound() + '/' + Save.gemsTotal() +
-        '   CHESTS ' + Save.chestsFound(), 16, VIEW_H - 27, '#b8a8d8', 1);
+        '   CHESTS ' + Save.chestsFound(), 16, VIEW_H - 27, '#e2d6c0', 1);
       /* the selected stage glows so a tap-to-confirm is obvious */
       var selR = nodeRect(G.sel);
       g.fillStyle = 'rgba(255,215,94,' + (0.25 + 0.15 * Math.sin(G.t * 0.12)) + ')';
@@ -228,8 +352,9 @@ var UI = (function () {
       g.fillRect(selR.x + selR.w - 1, selR.y, 1, selR.h);
 
       tapBtn(g, mapShopRect(), 'SHOP', false);
+      tapBtn(g, mapOptRect(), 'OPTIONS', false);
       Text.draw(g, hint('ENTER PLAY', 'A PLAY', 'TAP A STAGE TO PLAY'),
-        16, VIEW_H - 16, '#7f72a0', 1);
+        16, VIEW_H - 16, '#b9ab92', 1);
     }
   };
 
@@ -366,7 +491,7 @@ var UI = (function () {
     },
 
     drawBlades: function (g, G) {
-      backdrop(g, G.t, ['#1c1a2c', '#2e2a3f']);
+      backdrop(g, G.t);
       Text.centerShadow(g, 'BLADES', VIEW_W / 2, 10, '#ffffff', 2);
       tabStrip(g, G);
 
@@ -461,7 +586,7 @@ var UI = (function () {
     draw: function (g, G) {
       if (G.shopTab === 1) return shop.drawBlades(g, G);
       if (G.shopTab === 2) return shop.drawWardrobe(g, G);
-      backdrop(g, G.t, ['#201428', '#3a1f2f']);
+      backdrop(g, G.t);
       Text.centerShadow(g, 'THE TRADING POST', VIEW_W / 2, 10, '#ffffff', 2);
       tabStrip(g, G);
       g.drawImage(Art.COIN, 10, 10);
@@ -527,7 +652,7 @@ var UI = (function () {
     },
 
     drawWardrobe: function (g, G) {
-      backdrop(g, G.t, ['#16202e', '#24303f']);
+      backdrop(g, G.t);
       Text.centerShadow(g, 'WARDROBE', VIEW_W / 2, 10, '#ffffff', 2);
       tabStrip(g, G);
 
@@ -578,24 +703,33 @@ var UI = (function () {
     }
   };
 
-  /* ------------------------------------------------ PAUSE */
-  function pauseItems() {
-    var items = [
-      { k: 'resume', label: 'RESUME' },
-      { k: 'restart', label: 'RESTART STAGE' },
-      { k: 'sound', label: 'SOUND',
-        value: function () { return Sfx.isEnabled() ? 'ON' : 'OFF'; } }
-    ];
+  /* ------------------------------------------------ PAUSE / OPTIONS */
+  /* The same screen serves as the in-game pause and as the options page
+     off the map; only the top and bottom entries differ. */
+  function fromPlay(G) { return G.optionsFrom !== 'map'; }
+
+  function pauseItems(G) {
+    var items = [];
+    if (fromPlay(G)) {
+      items.push({ k: 'resume', label: 'RESUME' });
+      items.push({ k: 'restart', label: 'RESTART STAGE' });
+    }
+    items.push({ k: 'sound', label: 'SOUND',
+      value: function () { return Sfx.isEnabled() ? 'ON' : 'OFF'; } });
+    items.push({ k: 'zoom', label: 'ZOOM',
+      value: function () { return Game.zoomLabel(Save.get().zoom || 0); } });
     /* only worth offering once the screen has actually been touched */
     if (Input.mode() === 'touch') {
       items.push({ k: 'touch', label: 'TOUCH PAD',
         value: function () { return Input.touchMode() === 'always' ? 'ALWAYS ON' : 'AUTO HIDE'; } });
     }
-    items.push({ k: 'quit', label: 'QUIT TO MAP' });
+    items.push(fromPlay(G) ? { k: 'quit', label: 'QUIT TO MAP' }
+                           : { k: 'back', label: 'BACK TO MAP' });
     return items;
   }
 
-  function set_value(G, it) {
+  /* dir is -1, 0 or +1; 0 means "cycle forward" (a tap or a press) */
+  function set_value(G, it, dir) {
     if (it.k === 'sound') {
       var d = Save.get();
       d.sound = !Sfx.isEnabled();
@@ -607,20 +741,29 @@ var UI = (function () {
       d2.touchMode = (Input.touchMode() === 'always') ? 'auto' : 'always';
       Input.setTouchMode(d2.touchMode);
       Save.flush();
+    } else if (it.k === 'zoom') {
+      var d3 = Save.get();
+      var list = Game.ZOOMS;
+      var at = list.indexOf(d3.zoom || 0);
+      if (at < 0) at = 0;
+      at = (at + (dir < 0 ? list.length - 1 : 1)) % list.length;
+      d3.zoom = list[at];
+      Save.flush();
+      Game.applyZoom();
     }
     Sfx.select();
   }
   function activate(G, it) {
     if (it.k === 'resume') { Sfx.select(); G.state = 'play'; }
     else if (it.k === 'restart') { Sfx.confirm(); G.startStage(G.world.index); }
-    else if (it.k === 'quit') { Sfx.select(); G.go('map'); }
-    else if (it.value) set_value(G, it);
+    else if (it.k === 'quit' || it.k === 'back') { Sfx.select(); G.go('map'); }
+    else if (it.value) set_value(G, it, 0);
     else Sfx.select();
   }
 
   var pause = {
     update: function (G) {
-      var items = pauseItems();
+      var items = pauseItems(G);
       if (G.pauseSel >= items.length) G.pauseSel = 0;
 
       var w0 = 214, h0 = 48 + items.length * 18;
@@ -647,34 +790,26 @@ var UI = (function () {
 
       var it = items[G.pauseSel];
       var nudge = Input.pressed('left') ? -1 : (Input.pressed('right') ? 1 : 0);
-      if (nudge && it.value) {
-        if (it.k === 'sound') {
-          var d = Save.get();
-          d.sound = !Sfx.isEnabled();
-          Sfx.setEnabled(d.sound);
-          Save.flush();
-          if (d.sound && G.world) Sfx.playSong(G.world.def.boss ? 'boss' : G.world.theme);
-        } else if (it.k === 'touch') {
-          var d2 = Save.get();
-          d2.touchMode = (Input.touchMode() === 'always') ? 'auto' : 'always';
-          Input.setTouchMode(d2.touchMode);
-          Save.flush();
-        }
-        Sfx.select();
-      }
+      if (nudge && it.value) set_value(G, it, nudge);
 
       if (Input.pressed('confirm') || Input.pressed('jump')) activate(G, it);
-      if (Input.pressed('pause')) { Sfx.select(); G.state = 'play'; }
-      if (Input.pressed('restart')) { Sfx.confirm(); G.startStage(G.world.index); }
+      if (Input.pressed('pause')) {
+        Sfx.select();
+        if (fromPlay(G) && G.world) G.state = 'play'; else G.go('map');
+      }
+      if (Input.pressed('restart') && fromPlay(G) && G.world) {
+        Sfx.confirm(); G.startStage(G.world.index);
+      }
     },
     draw: function (g, G) {
-      G.world.draw(g);
-      dim(g, 0.72);
-      var items = pauseItems();
+      if (fromPlay(G) && G.world) { G.world.draw(g); dim(g, 0.72); }
+      else { backdrop(g, G.t); }
+      var items = pauseItems(G);
       var w = 214, h = 48 + items.length * 18;
       var x = Math.round(VIEW_W / 2 - w / 2), y = Math.round(VIEW_H / 2 - h / 2);
       panel(g, x, y, w, h);
-      Text.centerShadow(g, 'PAUSED', VIEW_W / 2, y + 10, '#ffffff', 2);
+      Text.centerShadow(g, fromPlay(G) ? 'PAUSED' : 'OPTIONS',
+        VIEW_W / 2, y + 10, '#ffffff', 2);
 
       for (var i = 0; i < items.length; i++) {
         var iy = y + 32 + i * 18;
@@ -719,26 +854,39 @@ var UI = (function () {
       }
     },
     draw: function (g, G) {
-      backdrop(g, G.t, ['#16241c', '#243a26']);
-      Text.centerShadow(g, 'STAGE CLEAR', VIEW_W / 2, 32, '#ffd75e', 2);
-      panel(g, VIEW_W / 2 - 110, 64, 220, 88);
+      backdrop(g, G.t);
+      /* the sheet floats in the middle of whatever height we were given,
+         and the two buttons live below it on the page itself */
+      var ph = 84, py = Math.round((VIEW_H - 52) / 2 - ph / 2) + 4;
+      Text.centerShadow(g, 'STAGE CLEAR', VIEW_W / 2, py - 26, '#ffd75e', 2);
+
+      /* the good boy, pleased with himself, clear of the sign */
+      var bob = Math.round(Math.sin(G.t * 0.07) * 2);
+      g.drawImage(Art.dog.right.idle,
+        Math.round(VIEW_W / 2 - 158), py + ph - 30 + bob, 36, 28);
+
+      panel(g, VIEW_W / 2 - 110, py, 220, ph);
       var px0 = VIEW_W / 2 - 96, pv = VIEW_W / 2 - 34;
-      Text.draw(g, 'STAGE', px0, 76, '#8d80ad', 1);
-      Text.draw(g, LEVELS[G.lastStage].name, pv, 76, '#ffffff', 1);
-      Text.draw(g, 'COIN', px0, 94, '#8d80ad', 1);
-      g.drawImage(Art.COIN, pv - 2, 93);
-      Text.draw(g, '+' + G.resultCoins, pv + 10, 94, '#ffe27a', 1);
-      Text.draw(g, 'GEMS', px0, 112, '#8d80ad', 1);
-      var rg = Art.GEMS[LEVELS[G.lastStage].theme] || Art.GEMS.meadow;
+      Text.draw(g, 'STAGE', px0, py + 12, '#c7b79a', 1);
+      Text.draw(g, LEVELS[G.lastStage].name, pv, py + 12, '#ffffff', 1);
+      Text.draw(g, 'COIN', px0, py + 30, '#c7b79a', 1);
+      g.drawImage(Art.COIN, pv - 2, py + 29);
+      Text.draw(g, '+' + G.resultCoins, pv + 10, py + 30, '#ffe27a', 1);
+      Text.draw(g, 'GEMS', px0, py + 48, '#c7b79a', 1);
+      var rg = Art.THEME_GEMS[LEVELS[G.lastStage].theme] || Art.THEME_GEMS.meadow;
       for (var gI = 0; gI < 3; gI++) {
-        if (gI < G.resultGems) g.drawImage(rg, pv - 2 + gI * 9, 111);
-        else { g.fillStyle = '#332b44'; g.fillRect(pv - 1 + gI * 9, 112, 5, 5); }
+        if (gI < G.resultGems) g.drawImage(rg, pv - 2 + gI * 9, py + 47);
+        else { g.fillStyle = '#453a2c'; g.fillRect(pv - 1 + gI * 9, py + 48, 5, 5); }
       }
       Text.draw(g, G.resultChests + ' CHEST' + (G.resultChests === 1 ? '' : 'S'),
-        pv + 30, 112, G.resultChests ? '#e8c45c' : '#6b6458', 1);
-      Text.draw(g, 'PURSE', px0, 130, '#8d80ad', 1);
-      Text.draw(g, String(Save.get().coins), pv, 130, '#ffe27a', 1);
-      Text.draw(g, 'BUILD ' + (window.BUILD_ID || 'DEV'), 6, VIEW_H - 10, '#4e4663', 1);
+        pv + 30, py + 48, G.resultChests ? '#e8c45c' : '#8a7c66', 1);
+      Text.draw(g, 'PURSE', px0, py + 66, '#c7b79a', 1);
+      Text.draw(g, String(Save.get().coins), pv, py + 66, '#ffe27a', 1);
+      /* say plainly what PLAY AGAIN does, because it is not obvious */
+      Text.centerShadow(g, 'THIS HAUL IS SAVED', VIEW_W / 2, py + ph + 8, '#ffe9a0', 1);
+      Text.centerShadow(g, 'PLAY AGAIN TO GO BACK FOR THE REST',
+        VIEW_W / 2, py + ph + 22, '#eaf4ff', 1);
+      Text.shadow(g, 'BUILD ' + (window.BUILD_ID || 'DEV'), 6, VIEW_H - 10, '#dfe8d4', 1);
     }
   };
 
@@ -751,11 +899,27 @@ var UI = (function () {
       Input.clearTaps();
     },
     draw: function (g, G) {
-      backdrop(g, G.t, ['#1c1016', '#331823']);
-      Text.centerShadow(g, 'DOWN BOY', VIEW_W / 2, 52, '#e0424f', 3);
-      g.drawImage(Art.dog.right.sit, VIEW_W / 2 - 18, 96, 36, 28);
-      Text.center(g, 'THE COIN YOU PICKED UP IS KEPT.', VIEW_W / 2, 140, '#b8a8d8', 1);
+      backdrop(g, G.t, 'dusk');
+      var cy = Math.round((VIEW_H - 40) / 2);
+      Text.centerShadow(g, 'DOWN BOY', VIEW_W / 2, cy - 54, '#e0424f', 3);
+      /* ears down, eye shut - he is not happy about this */
+      var droop = Math.round(Math.sin(G.t * 0.035) * 1);
+      g.drawImage(Art.dog.right.sad, Math.round(VIEW_W / 2 - 18), cy - 16 + droop, 36, 28);
 
+      var lost = (G.lostCoins || 0) + (G.lostGems || 0) + (G.lostChests || 0);
+      if (lost > 0) {
+        Text.centerShadow(g, 'THE RUN IS LOST WITH HIM', VIEW_W / 2, cy + 20, '#ffd0d6', 1);
+        var bits = [];
+        if (G.lostCoins) bits.push(G.lostCoins + ' COIN');
+        if (G.lostGems) bits.push(G.lostGems + ' GEM' + (G.lostGems === 1 ? '' : 'S'));
+        if (G.lostChests) bits.push(G.lostChests + ' CHEST' + (G.lostChests === 1 ? '' : 'S'));
+        Text.centerShadow(g, 'DROPPED: ' + bits.join('   '), VIEW_W / 2, cy + 34, '#f3c9a0', 1);
+      } else {
+        Text.centerShadow(g, 'NOTHING GAINED, NOTHING LOST', VIEW_W / 2, cy + 20, '#ffd0d6', 1);
+      }
+      Text.centerShadow(g, 'WHAT YOU KEPT BEFORE THIS RUN IS SAFE',
+        VIEW_W / 2, cy + 48, '#e6e0d0', 1);
+      Text.shadow(g, 'BUILD ' + (window.BUILD_ID || 'DEV'), 6, VIEW_H - 10, '#dfe8d4', 1);
     }
   };
 
@@ -764,15 +928,16 @@ var UI = (function () {
       if (anyInput()) { Sfx.confirm(); G.go('title'); }
     },
     draw: function (g, G) {
-      backdrop(g, G.t, ['#101a2a', '#2a1f3a']);
-      Text.centerShadow(g, 'GOOD DOG', VIEW_W / 2, 30, '#ffd75e', 3);
-      Text.center(g, 'THE KEEP IS QUIET. THE GARDEN IS SAFE.', VIEW_W / 2, 70, '#d8cff0', 1);
-      Text.center(g, 'YOU HAVE EARNED THE NAP.', VIEW_W / 2, 84, '#d8cff0', 1);
+      backdrop(g, G.t);
+      var ey = Math.round(VIEW_H * 0.13);
+      Text.centerShadow(g, 'GOOD DOG', VIEW_W / 2, ey, '#ffd75e', 3);
+      Text.centerShadow(g, 'THE KEEP IS QUIET. THE GARDEN IS SAFE.', VIEW_W / 2, ey + 40, '#f3f8ff', 1);
+      Text.centerShadow(g, 'YOU HAVE EARNED THE NAP.', VIEW_W / 2, ey + 54, '#f3f8ff', 1);
       var bob = Math.round(Math.sin(G.t * 0.05) * 2);
-      g.drawImage(Art.dog.right.sit, VIEW_W / 2 - 18, 106 + bob, 36, 28);
-      Text.center(g, 'GEMS  ' + Save.gemsFound() + ' / ' + Save.gemsTotal() +
-        '     CHESTS  ' + Save.chestsFound(), VIEW_W / 2, 152, '#a8e0ff', 1);
-      Text.center(g, 'COIN IN THE PURSE  ' + Save.get().coins, VIEW_W / 2, 166, '#ffe27a', 1);
+      g.drawImage(Art.dog.right.sit, VIEW_W / 2 - 18, ey + 76 + bob, 36, 28);
+      Text.centerShadow(g, 'GEMS  ' + Save.gemsFound() + ' / ' + Save.gemsTotal() +
+        '     CHESTS  ' + Save.chestsFound(), VIEW_W / 2, ey + 122, '#bff0ff', 1);
+      Text.centerShadow(g, 'COIN IN THE PURSE  ' + Save.get().coins, VIEW_W / 2, ey + 136, '#ffe27a', 1);
       if (Math.floor(G.t / 26) % 2 === 0) {
         Text.center(g, hint('PRESS ENTER', 'PRESS A', 'TAP TO CONTINUE'),
           VIEW_W / 2, VIEW_H - 16, '#ffffff', 1);
