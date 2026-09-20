@@ -156,7 +156,7 @@ Chest.prototype.pop = function (w) {
 };
 Chest.prototype.update = function (w) {
   this.t++;
-  if (!this.open && Util.aabb(this, w.player)) this.pop(w);
+  if (!this.open && w.uncovered(this) && Util.aabb(this, w.player)) this.pop(w);
 };
 Chest.prototype.draw = function (g, cam) {
   var img = this.open ? Art.CHEST_OPEN : Art.CHEST;

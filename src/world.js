@@ -49,7 +49,20 @@ function World(stageIndex) {
         case 'V':
           this.pickups.push(new Pickup(px + 5, py + 5, 'vessel'));
           break;
-        case 'C': this.chests.push(new Chest(px + 1, py + 3)); break;
+        case 'C':
+          /* the tile itself stays wall, so nothing shows from outside */
+          code = T_FAKE;
+          var ch2 = new Chest(px + 1, py + 3);
+          ch2.buried = true; ch2.tx = x; ch2.ty = y;
+          this.chests.push(ch2);
+          break;
+        case 'q': case 'j':
+          code = T_FAKE;
+          var bg = new Pickup(px + 4, py + 4, 'gem');
+          bg.grade = (ch === 'q') ? 'crown' : 'jewel';
+          bg.buried = true; bg.tx = x; bg.ty = y;
+          this.pickups.push(bg);
+          break;
         case 'G': case 'J': case 'Q':
           var grade = ch === 'G' ? 'shard' : (ch === 'J' ? 'jewel' : 'crown');
           var gem = new Pickup(px + 4, py + 4, 'gem');
@@ -210,6 +223,13 @@ World.prototype.moveActor = function (e, loose, flyer) {
    collision snap: an actor resting exactly on a tile boundary does not
    overlap the floor tile, so the snap alone reports it as airborne and the
    grounded flag flickers frame to frame. */
+/* Buried treasure only becomes visible once the false wall covering it
+   has been pushed through. */
+World.prototype.uncovered = function (e) {
+  if (!e.buried) return true;
+  return !!this.revealed[e.tx + ',' + e.ty];
+};
+
 World.prototype.onGround = function (e) {
   var probe = e.y + e.h + 1;
   var xl = e.x + 1, xr = e.x + e.w - 2;
@@ -519,7 +539,7 @@ World.prototype.update = function () {
   for (i = this.pickups.length - 1; i >= 0; i--) {
     var pk = this.pickups[i];
     pk.update(this);
-    if (!p.dead && Util.aabb(p, pk)) {
+    if (!p.dead && this.uncovered(pk) && Util.aabb(p, pk)) {
       if (pk.kind === 'coin') {
         var val = Save.has('lucky') ? 2 : 1;
         this.coinsRun += val; Save.addCoins(val);
@@ -759,8 +779,12 @@ World.prototype.draw = function (g) {
     g.fillStyle = '#e8c45c'; g.fillRect(mx + 1, my + 2, 1, 1); g.fillRect(mx + m.w - 2, my + 2, 1, 1);
   }
 
-  for (i = 0; i < this.chests.length; i++) this.chests[i].draw(g, cam);
-  for (i = 0; i < this.pickups.length; i++) this.pickups[i].draw(g, cam);
+  for (i = 0; i < this.chests.length; i++) {
+    if (this.uncovered(this.chests[i])) this.chests[i].draw(g, cam);
+  }
+  for (i = 0; i < this.pickups.length; i++) {
+    if (this.uncovered(this.pickups[i])) this.pickups[i].draw(g, cam);
+  }
   for (i = 0; i < this.enemies.length; i++) this.enemies[i].draw(g, cam);
   if (this.boss && !this.boss.dead) this.boss.draw(g, cam);
   for (i = 0; i < this.shots.length; i++) this.shots[i].draw(g, cam);

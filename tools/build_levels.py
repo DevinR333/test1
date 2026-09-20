@@ -287,19 +287,22 @@ def build(sid, world, name, theme, hint, rcols, seed, spec, flyers):
                 r0, r1, c0, c1 = st.room_bounds(nx, ry)
                 floor = st.room_floor(nx, ry)
                 top = floor - 3
+                # The whole chamber is packed with false wall, not left
+                # hollow: from outside it is indistinguishable from solid
+                # rock, and it only opens up as you push into it.
                 if nx > rx:
                     vc0, vc1 = c0 + 3, c1 - 2
-                    st.carve(top, floor - 1, vc0, vc1)
+                    st.carve(top, floor - 1, vc0, vc1, 'F')
                     for c in range(c0 - 2, vc0):
                         for r in range(floor - 2, floor):
                             st.set(r, c, 'F')
                 else:
                     vc0, vc1 = c0 + 2, c1 - 3
-                    st.carve(top, floor - 1, vc0, vc1)
+                    st.carve(top, floor - 1, vc0, vc1, 'F')
                     for c in range(vc1 + 1, c1 + 3):
                         for r in range(floor - 2, floor):
                             st.set(r, c, 'F')
-                st.put_free(floor - 1, vc0 + 2, 'C')
+                st.set(floor - 1, vc0 + 2, 'C')
                 # the deeper vault is sealed behind reinforced stone, so it
                 # stays shut until the Emberblade is bought - a reason to
                 # come back to an early stage later
@@ -307,9 +310,9 @@ def build(sid, world, name, theme, hint, rcols, seed, spec, flyers):
                     bx = (c0 - 3) if nx > rx else (c1 + 3)
                     for r in range(floor - 2, floor):
                         st.set(r, bx, 'B')
-                    st.put_free(floor - 1, vc1 - 1, 'Q')     # crown gem
+                    st.set(floor - 1, vc1 - 1, 'q')     # buried crown gem
                 else:
-                    st.put_free(floor - 1, vc1 - 1, 'J')     # jewel
+                    st.set(floor - 1, vc1 - 1, 'j')     # buried jewel
                 st.floors.append((vc0, vc1, floor))
                 onpath.add((nx, ry))
                 vaults += 1

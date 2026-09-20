@@ -15,6 +15,7 @@ var Game = (function () {
     t: 0,
     lastStage: 0,
     resultCoins: 0,
+    autoOut: 0,
     resultGems: 0,
     resultChests: 0,
     resultT: 0,
@@ -64,6 +65,7 @@ var Game = (function () {
     /* a tap that advanced the last screen must not also press something
        on the next one */
     Input.clearTaps();
+    G.autoOut = 0;
     if (state === 'map') { Sfx.stopSong(); }
     if (state === 'title') { Sfx.stopSong(); }
   }

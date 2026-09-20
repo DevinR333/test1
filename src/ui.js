@@ -677,10 +677,26 @@ var UI = (function () {
   };
 
   /* ------------------------------------------------ RESULTS */
+  function continueRect() {
+    var w = 118, h = 22;
+    return { x: Math.round(VIEW_W / 2 - w / 2), y: VIEW_H - 30, w: w, h: h };
+  }
+  /* Anything at all gets you off a results screen, and if every input
+     path somehow fails it leaves by itself after a few seconds. */
+  function anyInput() {
+    return Input.pressed('confirm') || Input.pressed('jump') || Input.pressed('attack') ||
+           Input.pressed('pause') || Input.pressed('up') || Input.pressed('down') ||
+           Input.pressed('left') || Input.pressed('right') || Input.pressed('restart') ||
+           !!Input.takeTap();
+  }
+
   var clear = {
     update: function (G) {
-      if (G.resultT > 0) { G.resultT--; return; }
-      if (Input.pressed('confirm') || Input.pressed('jump') || Input.pressed('attack')) {
+      if (G.resultT > 0) { G.resultT--; }
+      if (G.autoOut === undefined) G.autoOut = 0;
+      G.autoOut++;
+      if (anyInput() || G.autoOut > 420) {
+        G.autoOut = 0;
         Sfx.confirm();
         if (Save.allCleared() && G.lastStage === LEVELS.length - 1) G.go('ending');
         else G.go('map');
@@ -706,16 +722,22 @@ var UI = (function () {
         pv + 30, 112, G.resultChests ? '#e8c45c' : '#6b6458', 1);
       Text.draw(g, 'PURSE', px0, 130, '#8d80ad', 1);
       Text.draw(g, String(Save.get().coins), pv, 130, '#ffe27a', 1);
-      if (G.resultT <= 0 && Math.floor(G.t / 24) % 2 === 0) {
-        Text.center(g, hint('PRESS ENTER', 'PRESS A', 'TAP TO CONTINUE'),
-          VIEW_W / 2, VIEW_H - 22, '#ffffff', 1);
-      }
+      var cr = continueRect();
+      tapBtn(g, cr, 'CONTINUE', Math.floor(G.t / 20) % 2 === 0);
     }
   };
 
+  function retryRect() { return { x: Math.round(VIEW_W / 2 - 122), y: VIEW_H - 32, w: 116, h: 22 }; }
+  function quitRect() { return { x: Math.round(VIEW_W / 2 + 6), y: VIEW_H - 32, w: 116, h: 22 }; }
+
   var fail = {
     update: function (G) {
-      if (G.resultT > 0) { G.resultT--; return; }
+      if (G.resultT > 0) { G.resultT--; }
+      var tap = Input.takeTap();
+      if (tap) {
+        if (inRect(tap, quitRect())) { Sfx.select(); G.go('map'); return; }
+        Sfx.confirm(); G.startStage(G.lastStage); return;   /* anywhere else retries */
+      }
       if (Input.pressed('confirm') || Input.pressed('jump')) { Sfx.confirm(); G.startStage(G.lastStage); }
       if (Input.pressed('attack') || Input.pressed('pause')) { Sfx.select(); G.go('map'); }
     },
@@ -724,18 +746,14 @@ var UI = (function () {
       Text.centerShadow(g, 'DOWN BOY', VIEW_W / 2, 52, '#e0424f', 3);
       g.drawImage(Art.dog.right.sit, VIEW_W / 2 - 18, 96, 36, 28);
       Text.center(g, 'THE COIN YOU PICKED UP IS KEPT.', VIEW_W / 2, 140, '#b8a8d8', 1);
-      if (G.resultT <= 0) {
-        Text.center(g, hint('ENTER  TRY AGAIN', 'A  TRY AGAIN', 'TAP TO TRY AGAIN'),
-          VIEW_W / 2, 164, '#ffffff', 1);
-        Text.center(g, hint('X  BACK TO MAP', 'X  BACK TO MAP', ''),
-          VIEW_W / 2, 178, '#8d80ad', 1);
-      }
+      tapBtn(g, retryRect(), 'TRY AGAIN', Math.floor(G.t / 20) % 2 === 0);
+      tapBtn(g, quitRect(), 'BACK TO MAP', false);
     }
   };
 
   var ending = {
     update: function (G) {
-      if (Input.pressed('confirm') || Input.pressed('pause')) { Sfx.confirm(); G.go('title'); }
+      if (anyInput()) { Sfx.confirm(); G.go('title'); }
     },
     draw: function (g, G) {
       backdrop(g, G.t, ['#101a2a', '#2a1f3a']);
