@@ -8,3 +8,12 @@ tests/*.sym
 external/
 runtime/interp_gen.c
 tests/jumptest.gb
+
+# Gradle's own working files
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+# The cartridge is yours; it does not belong in the repository
+android/app/src/main/assets/*.gb
+android/app/src/main/assets/*.gbc

@@ -1,0 +1,10 @@
+Put your Oracle of Seasons cartridge in this folder, named seasons.gbc.
+
+The build packages it into the app and, from the same file, translates the
+game's code into the C the app actually runs. Using one file for both is what
+makes it impossible for the code and the cartridge to disagree.
+
+It must be the same cartridge the disassembly checkout builds - the build says
+so if it is not.
+
+This note can stay; the build ignores everything that is not a .gb or .gbc.
