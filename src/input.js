@@ -60,6 +60,8 @@ var Input = (function () {
   }
   function apply() {
     if (!host) return;
+    /* The pad exists for gameplay only. Outside it the stick zone would
+       sit over the screen eating taps meant for menus. */
     if (!sawTouch || mode === 'controller' || menuMode) {
       host.classList.add('hidden');
       return;

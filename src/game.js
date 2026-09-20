@@ -145,6 +145,7 @@ var Game = (function () {
     var justCarryOn = (G.state === 'clear' || G.state === 'fail' ||
                        G.state === 'ending' || G.state === 'title');
     Input.setMenuMode(G.state !== 'play', justCarryOn);
+    syncMenuButtons();
 
     if (G.state === 'play') {
       if (Input.pressed('pause')) { Sfx.select(); G.state = 'pause'; }
@@ -170,15 +171,63 @@ var Game = (function () {
     }
   }
 
+  /* One thrown error used to kill the animation loop outright, which
+     froze the game and made every control look dead. Keep the loop
+     running no matter what, and report the first failure. */
+  var reported = false;
   function frame(now) {
     if (!last) last = now;
     var dt = Math.min(now - last, 250);
     last = now;
     acc += dt;
     var guard = 0;
-    while (acc >= STEP && guard++ < 5) { update(); acc -= STEP; }
-    draw();
+    try {
+      while (acc >= STEP && guard++ < 5) { update(); acc -= STEP; }
+    } catch (e) {
+      acc = 0;
+      Input.endFrame();
+      if (!reported) { reported = true; G.lastError = String(e && e.message || e); }
+      if (window.console) console.error('update failed:', e);
+    }
+    try {
+      draw();
+    } catch (e2) {
+      if (window.console) console.error('draw failed:', e2);
+    }
     requestAnimationFrame(frame);
+  }
+
+  /* Show the two result-screen buttons, label them for the screen we are
+     on, and wire them straight to the action. */
+  var menuEl, mbLeft, mbRight;
+  function initMenuButtons() {
+    menuEl = document.getElementById('menubtns');
+    mbLeft = document.getElementById('mb-left');
+    mbRight = document.getElementById('mb-right');
+    if (!menuEl) return;
+    function press(el, fn) {
+      var go = function (e) { e.preventDefault(); e.stopPropagation(); fn(); };
+      el.addEventListener('click', go);
+      el.addEventListener('touchend', go, { passive: false });
+    }
+    press(mbLeft, function () {
+      Sfx.select();
+      Save.flush();
+      G.go('map');
+    });
+    press(mbRight, function () {
+      Sfx.confirm();
+      Save.flush();              /* keep everything earned this run */
+      G.startStage(G.lastStage);
+    });
+  }
+  function syncMenuButtons() {
+    if (!menuEl) return;
+    var show = (G.state === 'clear' || G.state === 'fail');
+    if (!show) { menuEl.classList.add('hidden'); return; }
+    menuEl.classList.remove('hidden');
+    mbLeft.textContent = 'LEVEL SELECT';
+    mbRight.textContent = (G.state === 'fail') ? 'TRY AGAIN' : 'PLAY AGAIN';
   }
 
   function boot() {
@@ -188,6 +237,7 @@ var Game = (function () {
     Save.load();
     Sfx.setEnabled(Save.get().sound !== false);
     Input.init();
+    initMenuButtons();
     Input.setTouchMode(Save.get().touchMode || 'auto');
     fitCanvas();
     window.addEventListener('resize', fitCanvas);

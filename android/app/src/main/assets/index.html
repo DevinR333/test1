@@ -80,6 +80,26 @@ html, body {
   .act { width:72px; height:72px; }
   #stick { width:100px; height:100px; margin:-50px 0 0 -50px; }
 }
+
+/* Result-screen actions. These are real DOM buttons, not drawn into the
+   canvas: the canvas sits under a full-screen overlay whose stick zone
+   swallows taps, so anything painted on it can be unreachable. */
+#menubtns {
+  position:fixed; left:0; right:0;
+  bottom:calc(18px + env(safe-area-inset-bottom));
+  display:flex; justify-content:center; gap:16px;
+  z-index:20; pointer-events:none;
+}
+#menubtns.hidden { display:none; }
+.mbtn {
+  pointer-events:auto; touch-action:manipulation;
+  min-width:172px; padding:16px 22px; border-radius:14px;
+  border:2px solid #8d7fc0; background:rgba(34,28,52,.94);
+  color:#f2ecff; font:700 15px/1 ui-monospace,monospace; letter-spacing:.5px;
+  box-shadow:0 4px 18px rgba(0,0,0,.55);
+}
+.mbtn:active { background:#6b58a8; transform:translateY(2px); }
+@media (max-width:520px) { .mbtn { min-width:132px; padding:14px 12px; font-size:13px; } }
 </style>
 </head>
 <body>
@@ -94,8 +114,12 @@ html, body {
       </div>
       <button class="tbtn sys" data-key="pause" aria-label="Pause">II</button>
     </div>
+    <div id="menubtns" class="hidden">
+      <button class="mbtn" id="mb-left">LEVEL SELECT</button>
+      <button class="mbtn" id="mb-right">PLAY AGAIN</button>
+    </div>
   </div>
-  <script>window.BUILD_ID = "0920-0023-7be0257";</script>
+  <script>window.BUILD_ID = "0920-0034-34524bc";</script>
   <script>
 /* ===== util.js ===== */
 /* Buddy Blade - small helpers + a pixel-grid sprite baker. */
@@ -237,6 +261,8 @@ var Input = (function () {
   }
   function apply() {
     if (!host) return;
+    /* The pad exists for gameplay only. Outside it the stick zone would
+       sit over the screen eating taps meant for menus. */
     if (!sawTouch || mode === 'controller' || menuMode) {
       host.classList.add('hidden');
       return;
@@ -5390,7 +5416,7 @@ var UI = (function () {
       if (G.resultT > 0) { G.resultT--; }
       if (G.autoOut === undefined) G.autoOut = 0;
       G.autoOut++;
-      if (anyInput() || G.autoOut > 420) {
+      if (anyInput()) {
         G.autoOut = 0;
         Sfx.confirm();
         if (Save.allCleared() && G.lastStage === LEVELS.length - 1) G.go('ending');
@@ -5417,8 +5443,6 @@ var UI = (function () {
         pv + 30, 112, G.resultChests ? '#e8c45c' : '#6b6458', 1);
       Text.draw(g, 'PURSE', px0, 130, '#8d80ad', 1);
       Text.draw(g, String(Save.get().coins), pv, 130, '#ffe27a', 1);
-      var cr = continueRect();
-      tapBtn(g, cr, 'CONTINUE', Math.floor(G.t / 20) % 2 === 0);
       Text.draw(g, 'BUILD ' + (window.BUILD_ID || 'DEV'), 6, VIEW_H - 10, '#4e4663', 1);
     }
   };
@@ -5442,8 +5466,7 @@ var UI = (function () {
       Text.centerShadow(g, 'DOWN BOY', VIEW_W / 2, 52, '#e0424f', 3);
       g.drawImage(Art.dog.right.sit, VIEW_W / 2 - 18, 96, 36, 28);
       Text.center(g, 'THE COIN YOU PICKED UP IS KEPT.', VIEW_W / 2, 140, '#b8a8d8', 1);
-      tapBtn(g, retryRect(), 'TRY AGAIN', Math.floor(G.t / 20) % 2 === 0);
-      tapBtn(g, quitRect(), 'BACK TO MAP', false);
+
     }
   };
 
@@ -5620,6 +5643,7 @@ var Game = (function () {
     var justCarryOn = (G.state === 'clear' || G.state === 'fail' ||
                        G.state === 'ending' || G.state === 'title');
     Input.setMenuMode(G.state !== 'play', justCarryOn);
+    syncMenuButtons();
 
     if (G.state === 'play') {
       if (Input.pressed('pause')) { Sfx.select(); G.state = 'pause'; }
@@ -5645,15 +5669,63 @@ var Game = (function () {
     }
   }
 
+  /* One thrown error used to kill the animation loop outright, which
+     froze the game and made every control look dead. Keep the loop
+     running no matter what, and report the first failure. */
+  var reported = false;
   function frame(now) {
     if (!last) last = now;
     var dt = Math.min(now - last, 250);
     last = now;
     acc += dt;
     var guard = 0;
-    while (acc >= STEP && guard++ < 5) { update(); acc -= STEP; }
-    draw();
+    try {
+      while (acc >= STEP && guard++ < 5) { update(); acc -= STEP; }
+    } catch (e) {
+      acc = 0;
+      Input.endFrame();
+      if (!reported) { reported = true; G.lastError = String(e && e.message || e); }
+      if (window.console) console.error('update failed:', e);
+    }
+    try {
+      draw();
+    } catch (e2) {
+      if (window.console) console.error('draw failed:', e2);
+    }
     requestAnimationFrame(frame);
+  }
+
+  /* Show the two result-screen buttons, label them for the screen we are
+     on, and wire them straight to the action. */
+  var menuEl, mbLeft, mbRight;
+  function initMenuButtons() {
+    menuEl = document.getElementById('menubtns');
+    mbLeft = document.getElementById('mb-left');
+    mbRight = document.getElementById('mb-right');
+    if (!menuEl) return;
+    function press(el, fn) {
+      var go = function (e) { e.preventDefault(); e.stopPropagation(); fn(); };
+      el.addEventListener('click', go);
+      el.addEventListener('touchend', go, { passive: false });
+    }
+    press(mbLeft, function () {
+      Sfx.select();
+      Save.flush();
+      G.go('map');
+    });
+    press(mbRight, function () {
+      Sfx.confirm();
+      Save.flush();              /* keep everything earned this run */
+      G.startStage(G.lastStage);
+    });
+  }
+  function syncMenuButtons() {
+    if (!menuEl) return;
+    var show = (G.state === 'clear' || G.state === 'fail');
+    if (!show) { menuEl.classList.add('hidden'); return; }
+    menuEl.classList.remove('hidden');
+    mbLeft.textContent = 'LEVEL SELECT';
+    mbRight.textContent = (G.state === 'fail') ? 'TRY AGAIN' : 'PLAY AGAIN';
   }
 
   function boot() {
@@ -5663,6 +5735,7 @@ var Game = (function () {
     Save.load();
     Sfx.setEnabled(Save.get().sound !== false);
     Input.init();
+    initMenuButtons();
     Input.setTouchMode(Save.get().touchMode || 'auto');
     fitCanvas();
     window.addEventListener('resize', fitCanvas);

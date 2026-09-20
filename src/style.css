@@ -68,3 +68,23 @@ html, body {
   .act { width:72px; height:72px; }
   #stick { width:100px; height:100px; margin:-50px 0 0 -50px; }
 }
+
+/* Result-screen actions. These are real DOM buttons, not drawn into the
+   canvas: the canvas sits under a full-screen overlay whose stick zone
+   swallows taps, so anything painted on it can be unreachable. */
+#menubtns {
+  position:fixed; left:0; right:0;
+  bottom:calc(18px + env(safe-area-inset-bottom));
+  display:flex; justify-content:center; gap:16px;
+  z-index:20; pointer-events:none;
+}
+#menubtns.hidden { display:none; }
+.mbtn {
+  pointer-events:auto; touch-action:manipulation;
+  min-width:172px; padding:16px 22px; border-radius:14px;
+  border:2px solid #8d7fc0; background:rgba(34,28,52,.94);
+  color:#f2ecff; font:700 15px/1 ui-monospace,monospace; letter-spacing:.5px;
+  box-shadow:0 4px 18px rgba(0,0,0,.55);
+}
+.mbtn:active { background:#6b58a8; transform:translateY(2px); }
+@media (max-width:520px) { .mbtn { min-width:132px; padding:14px 12px; font-size:13px; } }
