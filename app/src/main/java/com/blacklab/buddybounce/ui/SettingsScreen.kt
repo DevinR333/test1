@@ -3,7 +3,6 @@ package com.blacklab.buddybounce.ui
 import android.graphics.Canvas
 import com.blacklab.buddybounce.Game
 import com.blacklab.buddybounce.data.Save
-import com.blacklab.buddybounce.game.Tuning
 import kotlin.math.min
 
 /** Orientation, controls, sound - everything the player can bend to their setup. */
@@ -23,7 +22,7 @@ class SettingsScreen(private val g: Game) {
     }
 
     private val orientationLabels = arrayOf("PORTRAIT", "LANDSCAPE")
-    private val controlLabels = arrayOf("TILT", "SLIDE", "BOTH")
+    private val controlLabels = arrayOf("TILT", "SWIPE", "BOTH")
 
     fun draw(c: Canvas) {
         val ui = g.ui
@@ -34,7 +33,7 @@ class SettingsScreen(private val g: Game) {
         }
         ui.text(c, "SETTINGS", g.worldW * 0.5f, ui.safeTop + 100f, 66f, Theme.TEXT, ui.title)
 
-        val wide = g.worldW > Tuning.VIEW_H * 1.12f
+        val wide = g.worldW > Theme.SCREEN_H * 1.12f
         val colW = min(g.worldW - ui.safeLeft - ui.safeRight - 80f, if (wide) 700f else 820f)
         val gap = 20f
 
@@ -74,7 +73,7 @@ class SettingsScreen(private val g: Game) {
         if (pickedMode != mode) {
             g.tap()
             save.controlMode = pickedMode
-            g.controls.clearGauge()
+            g.controls.clearTouch()
         }
         y += 104f
 
@@ -100,7 +99,7 @@ class SettingsScreen(private val g: Game) {
         }
 
         if (save.controlMode != Save.CONTROL_TILT) {
-            if (ui.toggle(c, Id.GAUGE, x, y, w, 88f, "Always show the gauge", save.showGaugeAlways)) {
+            if (ui.toggle(c, Id.GAUGE, x, y, w, 88f, "Show the swipe hint", save.showGaugeAlways)) {
                 g.tap(); save.showGaugeAlways = !save.showGaugeAlways
             }
             y += 100f

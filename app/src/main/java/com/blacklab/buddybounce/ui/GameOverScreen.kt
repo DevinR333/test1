@@ -21,12 +21,12 @@ class GameOverScreen(private val g: Game) {
     fun draw(c: Canvas) {
         val ui = g.ui
         val k = smoothstep(0f, 1f, g.screenAnim)
-        val wide = g.worldW > Tuning.VIEW_H * 1.12f
+        val wide = g.worldW > Theme.SCREEN_H * 1.12f
 
         val w = min(g.worldW - ui.safeLeft - ui.safeRight - 80f, if (wide) 900f else 760f)
-        val h = min(Tuning.VIEW_H - ui.safeTop - ui.safeBottom - 100f, 1020f)
+        val h = min(Theme.SCREEN_H - ui.safeTop - ui.safeBottom - 100f, 1020f)
         val x = (g.worldW - w) * 0.5f
-        val y = (Tuning.VIEW_H - h) * 0.5f + (1f - k) * 80f
+        val y = (Theme.SCREEN_H - h) * 0.5f + (1f - k) * 80f
 
         ui.panel(c, x, y, w, h)
 
@@ -54,9 +54,18 @@ class GameOverScreen(private val g: Game) {
         // stats strip
         val statsY = y + h * 0.60f
         val third = w / 3f
-        stat(c, x + third * 0.5f, statsY, g.lastCoins.toString(), "COINS", Theme.ACCENT)
+        stat(c, x + third * 0.5f, statsY, g.lastCoins.toString(), "COINS EARNED", Theme.ACCENT)
         stat(c, x + third * 1.5f, statsY, ((g.world.heightWu / Tuning.VIEW_H).toInt()).toString(), "SCREENS", Theme.TEXT)
         stat(c, x + third * 2.5f, statsY, Palettes.label(g.lastBiome).uppercase(), "REACHED", Palettes.get(g.lastBiome).platAccent)
+
+        ui.text(
+            c, "${'$'}{g.lastRunCoins} picked up  +  ${'$'}{g.lastBonusCoins} for the height  \u2192  banked",
+            x + w * 0.5f, statsY + 72f, 25f, Theme.TEXT_DIM, ui.body, false
+        )
+        ui.text(
+            c, "${'$'}{g.save.coins} coins in the bank",
+            x + w * 0.5f, statsY + 106f, 27f, ColorX.withAlpha(Theme.ACCENT, 0.9f), ui.body, false
+        )
 
         // buttons
         val bw = w - 96f

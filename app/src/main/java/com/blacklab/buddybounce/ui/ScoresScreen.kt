@@ -4,7 +4,6 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import com.blacklab.buddybounce.Game
-import com.blacklab.buddybounce.game.Tuning
 import com.blacklab.buddybounce.render.ColorX
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -24,7 +23,7 @@ class ScoresScreen(private val g: Game) {
 
     fun draw(c: Canvas) {
         val ui = g.ui
-        val h = Tuning.VIEW_H
+        val h = Theme.SCREEN_H
         val rise = (1f - g.screenAnim) * 50f
 
         if (ui.backButton(c, Id.BACK, ui.safeLeft + 78f, ui.safeTop + 78f, 52f)) {

@@ -7,6 +7,7 @@ import com.blacklab.buddybounce.Game
 import com.blacklab.buddybounce.data.Outfits
 import com.blacklab.buddybounce.game.Tuning
 import com.blacklab.buddybounce.render.ColorX
+import com.blacklab.buddybounce.render.Scenes
 import kotlin.math.min
 import kotlin.math.sin
 
@@ -23,11 +24,12 @@ class MenuScreen(private val g: Game) {
         const val SCORES = 2004
         const val SETTINGS = 2005
         const val NAME = 2006
+        const val SCENES = 2007
     }
 
     fun draw(c: Canvas) {
         val ui = g.ui
-        val h = Tuning.VIEW_H
+        val h = Theme.SCREEN_H
         val wide = g.worldW > h * 1.12f
         val rise = (1f - g.screenAnim) * 60f
 
@@ -52,7 +54,7 @@ class MenuScreen(private val g: Game) {
 
     /** Behind the native name-entry overlay: just Buddy, looking hopeful. */
     fun drawNamePrompt(c: Canvas) {
-        val h = Tuning.VIEW_H
+        val h = Theme.SCREEN_H
         drawTitle(c, g.worldW * 0.5f, h * 0.20f)
         g.drawMenuBuddy(c, g.worldW * 0.5f, h * 0.56f, 1.3f, Outfits.DEFAULT_ID)
     }
@@ -110,28 +112,35 @@ class MenuScreen(private val g: Game) {
         if (ui.button(c, Id.PLAY, x, cy, w, 132f, "PLAY", Ui.ButtonStyle.PRIMARY)) {
             g.tap(); g.startRun()
         }
-        cy += 160f
+        cy += 154f
 
         val halfW = (w - 24f) * 0.5f
-        if (ui.button(c, Id.WARDROBE, x, cy, halfW, 104f, "WARDROBE", Ui.ButtonStyle.SECONDARY,
+        if (ui.button(c, Id.WARDROBE, x, cy, halfW, 100f, "WARDROBE", Ui.ButtonStyle.SECONDARY,
                 sublabel = "${g.ownedCount()}/${Outfits.collectableCount} outfits")) {
             g.tap(); g.goto(Game.Screen.WARDROBE)
         }
         val machineReady = g.save.coins >= Tuning.GACHA_COST
-        if (ui.button(c, Id.GACHA, x + halfW + 24f, cy, halfW, 104f, "MACHINE", Ui.ButtonStyle.SECONDARY,
+        if (ui.button(c, Id.GACHA, x + halfW + 24f, cy, halfW, 100f, "MACHINE", Ui.ButtonStyle.SECONDARY,
                 sublabel = if (machineReady) "ready to pull!" else "${Tuning.GACHA_COST} coins a go")) {
             g.tap(); g.goto(Game.Screen.GACHA)
         }
         if (machineReady) {
             val pulse = 0.4f + 0.35f * sin(ui.time * 3.2f)
-            ui.shimmer(c, x + halfW + 24f, cy, halfW, 104f, 34f, pulse)
+            ui.shimmer(c, x + halfW + 24f, cy, halfW, 100f, 34f, pulse)
         }
-        cy += 128f
+        cy += 118f
 
-        if (ui.button(c, Id.SCORES, x, cy, halfW, 96f, "SCORES")) {
+        if (ui.button(c, Id.SCENES, x, cy, halfW, 100f, "WORLDS", Ui.ButtonStyle.SECONDARY,
+                sublabel = "${g.ownedSceneCount()}/${Scenes.ALL.size} unlocked")) {
+            g.tap(); g.goto(Game.Screen.SCENES)
+        }
+        if (ui.button(c, Id.SCORES, x + halfW + 24f, cy, halfW, 100f, "SCORES", Ui.ButtonStyle.SECONDARY,
+                sublabel = if (g.save.bestScore > 0) "best ${g.save.bestScore}" else "no runs yet")) {
             g.tap(); g.goto(Game.Screen.SCORES)
         }
-        if (ui.button(c, Id.SETTINGS, x + halfW + 24f, cy, halfW, 96f, "SETTINGS")) {
+        cy += 118f
+
+        if (ui.button(c, Id.SETTINGS, x, cy, w, 88f, "SETTINGS")) {
             g.tap(); g.goto(Game.Screen.SETTINGS)
         }
     }

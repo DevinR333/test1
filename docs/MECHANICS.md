@@ -5,10 +5,16 @@ descendants). This document is the reverse-engineering pass that the implementat
 from: first *what the reference game actually does*, then *the exact numbers Buddy Bounce uses*.
 
 All Buddy Bounce values are in **world units (wu)**. The camera always shows exactly
-**1600 wu of height**, whatever the device is, so a jump covers the same fraction of the screen
+**2560 wu of height**, whatever the device is, so a jump covers the same fraction of the screen
 on a 4:3 tablet, a 20:9 phone, in portrait, and in landscape. Width is derived:
-`worldW = 1600 * (screenW / screenH)` — 900 wu on a 16:9 portrait phone, 2844 wu on the same
+`worldW = 2560 * (screenW / screenH)` — 1440 wu on a 16:9 portrait phone, 4551 wu on the same
 phone in landscape.
+
+**Two coordinate spaces.** The UI is laid out in its own 1600-unit-tall space that fills the
+screen; the world is drawn inside it at 1600/2560 scale. That ratio *is* the camera zoom: Buddy
+and the platforms are sized in absolute wu, so a taller world view means a smaller dog in more
+sky, while the menus stay exactly the size they were. Zooming the game out is a one-line change
+to `Tuning.VIEW_H`.
 
 ---
 
@@ -28,14 +34,18 @@ phone in landscape.
 
 | Quantity | Value | Notes |
 |---|---|---|
-| Gravity | 3300 wu/s² | |
-| Bounce impulse | 1720 wu/s | apex = v²/2g = **448 wu** = 28 % of the view height |
+| Gravity | 6250 wu/s² | |
+| Bounce impulse | 3250 wu/s | apex = v²/2g = **845 wu** = 33 % of the view height |
 | Time up / down | 0.52 s / 0.52 s | one bounce cycle ≈ 1.04 s |
-| Terminal fall speed | 3000 wu/s | keeps a long fall readable |
+| Terminal fall speed | 5400 wu/s | keeps a long fall readable |
 | Physics step | fixed 1/240 s, max 8 substeps/frame | no tunnelling at rocket speed |
 
 Rationale: the apex must comfortably clear the largest platform gap, with enough margin left
-over to steer. 448 wu apex vs. a 336 wu worst-case gap leaves 112 wu (25 %) of slack.
+over to steer. An 845 wu apex vs. a 627 wu worst-case gap leaves 218 wu (26 %) of slack.
+
+**The yard floor.** A run opens standing on a full-width solid platform at the bottom of the
+world, with a launch pad above it. Missing the first bounce therefore lands you back on the
+grass rather than killing you; the floor is culled as soon as the camera leaves it behind.
 
 ---
 
@@ -52,11 +62,16 @@ over to steer. 448 wu apex vs. a 336 wu worst-case gap leaves 112 wu (25 %) of s
 **Buddy Bounce**
 
 * `targetVx = steer * maxVx`, and `vx` eases toward it: `vx += (targetVx - vx) * (1 - e^(-k·dt))`
-  with **k = 9** for tilt (weighty, slight overshoot) and **k = 16** for the touch gauge and
-  gamepad (crisper, because those inputs are already absolute).
-* `maxVx = 1035 * (worldW / 900)^0.6` — sub-linear so that a very wide landscape playfield does
-  not turn into a twitch-fest. 16:9 portrait ≈ 1035 wu/s (crosses the screen in 0.87 s);
-  16:9 landscape ≈ 2070 wu/s (crosses in 1.37 s).
+  with **k = 9** for tilt (weighty, slight overshoot) and **k = 16** for touch and gamepad
+  (crisper, because those inputs are already absolute).
+* `maxVx = 1700 * (worldW / 1440)^0.6` — sub-linear so that a very wide landscape playfield does
+  not turn into a twitch-fest.
+* **Touch is relative, not a fixed control.** Wherever a finger goes down becomes the centre;
+  sliding either side of that point steers that way, in proportion to the distance, out to a
+  full-lock range of 22 % of the screen width. It works anywhere on the screen, so there is
+  nothing to find and nothing to cover the action. Push past full lock and the anchor drags
+  along with the finger, so flicking back the other way responds immediately instead of having
+  to unwind. Releasing recentres.
 * Tilt input: raw accelerometer, remapped through the display rotation (so it works identically
   in portrait and landscape), minus a calibration offset captured on demand, with a 0.6 m/s²
   dead zone, divided by a 4.5 m/s² full-scale (≈ 27° of tilt), then clamped to [-1, 1] and
@@ -96,13 +111,20 @@ space). Behaviour is identical across skins so the read stays learnable:
 | `SPRING` | Solid + a spring: 2.0× bounce. | 1 screen |
 | `TRAMPOLINE` | Solid + a trampoline: 2.6× bounce, with a stretch animation. | 3 screens |
 
+**The fragile rule.** `FRAGILE` is the only platform that gives no bounce at all, so a row
+whose *only* platform is fragile is not a challenge — it is a forced death, with nothing left
+to land on. Fragiles are therefore never generated as a row's main platform: they are added
+*beside* one that bounces, as a trap to read and avoid. Everything else a row can throw at you
+still leaves a way out.
+
 Generation safety rules (these are what stop a run from ending unfairly):
 
-* Never two non-bouncing platforms (`FRAGILE`) in a row; never three "hazard" platforms
-  (fragile/crumble) in a row.
-* Every 6th row is guaranteed `SOLID`.
-* A row may spawn a second platform beside the first (12 % chance, rising with difficulty) to
-  widen the route.
+* A fragile platform is never a row's only platform (see above).
+* Never two hazard platforms in consecutive rows.
+* Every 4th row is guaranteed plain `SOLID`.
+* A row may spawn a second platform beside the first (5 % chance, rising to 14 %) to widen the
+  route. Rows are deliberately sparse — roughly 4–5 platforms are on screen at a time in
+  portrait, not a ladder.
 
 ---
 
@@ -118,13 +140,13 @@ one free hit.
 
 | Power-up | Effect | Height gained | Rarity/platform |
 |---|---|---|---|
-| Spring | impulse ×2.0 (3440 wu/s) | 1790 wu ≈ 1.1 screens | 9 % |
-| Trampoline | impulse ×2.6 (4472 wu/s) | 3030 wu ≈ 1.9 screens | 3 % |
-| Propeller cap | 1900 wu/s for 3.2 s | ≈ 6100 wu ≈ 3.8 screens | 1.6 % |
-| Jetpack | 2650 wu/s for 4.0 s | ≈ 10 600 wu ≈ 6.6 screens | 0.8 % |
-| Rocket bone | 3600 wu/s for 4.6 s | ≈ 16 500 wu ≈ 10 screens | 0.18 % |
+| Spring | impulse ×2.0 | 3380 wu ≈ 1.3 screens | 9 % |
+| Trampoline | impulse ×2.6 | 5710 wu ≈ 2.2 screens | 3 % |
+| Propeller cap | 3040 wu/s for 3.2 s | ≈ 9700 wu ≈ 3.8 screens | 1.6 % |
+| Jetpack | 4240 wu/s for 4.0 s | ≈ 17 000 wu ≈ 6.6 screens | 0.8 % |
+| Rocket bone | 5760 wu/s for 4.6 s | ≈ 26 500 wu ≈ 10 screens | 0.18 % |
 | Bubble shield | absorbs one hazard hit, 12 s | — | 1.1 % |
-| Coin magnet | pulls coins within 520 wu, 7 s | — | 1.3 % |
+| Coin magnet | pulls coins within 830 wu, 7 s | — | 1.3 % |
 
 Flight rules: platforms are ignored (`vy` is driven, not integrated), hazards are destroyed on
 contact, and the exit is a smooth hand-back to gravity rather than an instant drop.
@@ -166,8 +188,8 @@ A shield converts any lethal contact into a pop + brief invulnerability instead 
 * Anchor line: 45 % from the top. `camY = max(camY, playerY - 0.55 * 1600)`, then eased toward
   that target at 18/s for a silky rise, never downward.
 * Death: the whole sprite is below the camera bottom, or lethal hazard contact.
-* Score: `floor(maxHeightAboveStart / 10)` + hazard bonuses. So one screen of climb = 160 pts,
-  and a 10 000-point run is ~62 screens.
+* Score: `floor(maxHeightAboveStart × 0.0625)` + hazard bonuses. One screen of climb = 160 pts,
+  so a 5 000-point run is ~31 screens.
 * Game over: score is submitted to the local leaderboard under the name entered on first launch
   (top 10 kept, best run highlighted).
 
@@ -179,13 +201,14 @@ Everything is a function of `s` = screens climbed (`height / 1600`):
 
 | Parameter | s = 0 | s = 6 | s = 16 | s = 32 | s ≥ 55 |
 |---|---|---|---|---|---|
-| Row gap (wu) | 170–215 | 195–255 | 225–295 | 255–325 | 265–336 |
-| Platform width (wu, base 9:16) | 200 | 190 | 175 | 158 | 148 |
-| Hazard platform share | 0 % | 14 % | 26 % | 34 % | 38 % |
+| Row gap (wu) | 384–470 | 404–493 | 440–535 | 490–580 | 545–620 |
+| Platform width (wu, base 9:16) | 190 | 184 | 172 | 158 | 143 |
+| Crumbling main platform | 0 % | 12 % | 23 % | 30 % | 34 % |
+| Fragile trap beside it | 0 % | 0 % | 15 % | 25 % | 30 % |
 | Moving platform share | 0 % | 18 % | 28 % | 34 % | 36 % |
-| Enemies per screen | 0 | 0.35 | 0.8 | 1.15 | 1.3 |
+| Enemies per screen | 0 | 0.3 | 0.7 | 1.0 | 1.1 |
 
-Platform width also scales with `(worldW / 900)^0.35` so a landscape playfield is not a sea of
+Platform width also scales with `(worldW / 1440)^0.35` so a landscape playfield is not a sea of
 tiny ledges and a narrow portrait one is not a tightrope, and rows spawn proportionally more
 platforms as the playfield gets wider.
 
@@ -193,19 +216,123 @@ platforms as the playfield gets wider.
 
 ## 8. Where Buddy Bounce deliberately differs
 
-* **Coins and the gacha.** Roughly one platform in eight carries a coin, and 4.5% of rows
-  instead throw a 4-6 coin arc between two platforms that is worth going out of your way for;
-  ~1 coin in 11 is a 5-coin bone instead. A good run is 20-30 coins. 100 coins buys one pull
-  on the coin machine — a Crossy-Road-style prize
-  machine that dispenses a random outfit for Buddy, weighted by rarity, with duplicate
-  protection: a duplicate refunds 35 coins, and a rarity you have completed rolls down into
-  one you haven't.
-* **Wardrobe.** Every unlocked outfit can be equipped and swapped freely, any time, for free.
-* **No shooting.** The reference game's tap-to-shoot is dropped, per the brief.
+### Coins, and when they are yours
+
+Coins are deliberately scarce, because 100 of them buys a pull and a pull should feel earned.
+
+* **On the way up:** one coin roughly every 7 600–15 400 wu of climb (3–6 screens), placed off
+  to one side so it is a small detour rather than a freebie. Every 5th one is a 5-coin bone.
+* **At the end:** a height bonus of one coin per 300 points. This is most of a run's income and
+  it means climbing, not hunting, is the way to get rich.
+* A good run is ~12–20 coins, so a pull is four to seven runs of work.
+
+**Banking rule.** Coins collected during a run live in the simulation and nowhere else. They
+are banked **only when the run ends**, in a single synchronous commit that also writes the
+score, the leaderboard and the run count (`Save.bankRun`). Two consequences, both deliberate:
+killing the app mid-run loses that run's coins and cannot duplicate them, and anything already
+banked is on disk before the game-over screen draws, so an impulsive swipe-away never costs the
+player what they have earned. The pause screen shows the banked total as the headline number,
+with the run's pick-ups underneath and a note that they bank at the end.
+
+### The prize machine
+
+One pull is 100 coins and returns one of three things:
+
+| Prize | Chance | Notes |
+|---|---|---|
+| Consumable power-up | 55 % | the bread — a pull is never a total loss |
+| Outfit | 44 % | rarity weighted; a duplicate refunds 35 coins |
+| **A whole world** | **1 %** | only while any remain locked |
+
+Outfit rarity runs Common 60 / Rare 27 / Epic 10 / Legendary 3, and a rarity you have completed
+rolls down into one you haven't, so late pulls keep feeling like progress. 39 outfits are
+collectable; every one you own can be swapped freely in the wardrobe, any time, for free.
+
+### Worlds (scenes)
+
+A world is a full set of five altitude bands — its own skies, parallax silhouettes, platform
+skins and starting ground. The backyard is Buddy's; the other four are the rarest thing the
+machine hands out, and are picked from a menu of their own:
+
+| World | The climb |
+|---|---|
+| Backyard Skies | Backyard › Treetops › Cloudline › Aurora › Orbit |
+| Deep Blue | Seabed › Kelp Forest › Coral Reef › Sunlit Shallows › Open Sky |
+| Neon City | Back Alley › Rooftops › Skyline › Smog Layer › Cyber Orbit |
+| Frozen Peaks | Snowfield › Pine Woods › Ice Cliffs › Blizzard › Northern Lights |
+| Emberfall | Magma Vents › Obsidian Spires › Ash Clouds › Ember Sky › Cinder Void |
+
+### Consumable power-ups and the pre-run beat
+
+Pressing PLAY does not start the run. It lays out the world, then offers whatever consumables
+you own — one per run, spent whether you finish or not — and counts **3 · 2 · 1 · GO** over a
+slightly dimmed view of the ground you are about to launch from. That pause is the point: it
+gives you a moment to read the layout before anything moves.
+
+| Power-up | Effect |
+|---|---|
+| Moon Jump | opens with one colossal bounce, ~4 screens of free height |
+| Bubble Start | begin inside a shield that eats the first hit |
+| Magnet Paws | coins come to you, for the whole run |
+| Feather Fall | 30 s of floaty, forgiving gravity |
+| Lucky Paws | three times as many coins on the way up |
+| Safety Net | one free save — a ledge appears under you as you fall |
+| Coin Doubler | every coin, and the height bonus, counts double |
+| Jetpack Start | start the run already flying |
+| Head Start | begin six screens up, with the height already scored |
+| Rocket Start | start on a rocket; ten screens before you touch a platform |
+
+Anything that changes the layout (Head Start) is applied *before* the countdown so you can see
+what you are jumping into; anything that is pure velocity fires on "GO".
+
+### Other differences
+
+* **No shooting.** The reference game's tap-to-shoot is dropped, per the brief: steering is the
+  only input, so every hazard is solvable by routing or by stomping.
 * **Orientation.** Portrait or landscape, switchable in Settings, with the tilt axis remapped
   through the display rotation and the whole playfield re-tuned for the new aspect ratio.
 
 ---
+
+## Sources consulted for reference behaviour
+
+* Doodle Jump Wiki — [Classic](https://doodle-jump.fandom.com/wiki/Classic),
+  [Movable Platforms](https://doodle-jump.fandom.com/wiki/Movable_Platforms),
+  [Propeller Hat](https://doodle-jump.fandom.com/wiki/Propeller_Hat)
+* [Doodle Jump — Wikipedia](https://en.wikipedia.org/wiki/Doodle_Jump)
+* [Doodle Jump high score & power-up guide](https://doodlejump.io/doodle-jump-high-score-secrets-guide)
+* [Doodle Jump gameplay guide](https://www.playdoodlejumpgame.com/doodle_jump_gameplay/),
+  [levels guide](https://www.playdoodlejumpgame.com/doodle_jump_levels/)
+* [How to Make Doodle Jump with Felgo](https://felgo.com/doc/howto-doodle-jump-game-basic-tutorial/)
+  (physics scaffolding reference)
+
+---
+
+## 9. Balance check
+
+The simulation has no Android dependencies, so it can be played headless. `tools/sim/Sim.kt`
+runs a bot - it locks a reachable target platform at each bounce and steers toward it - through
+eight runs in six aspect ratios, which is how the numbers above were tuned. Current results:
+
+| Playfield | avg screens | best run | coins/run |
+|---|---|---|---|
+| portrait 21:9 (1080 wu) | 21.0 | 5 299 pts | 12.5 |
+| portrait 16:9 (1440 wu) | 24.7 | 6 345 pts | 16.5 |
+| portrait 3:4 (1707 wu) | 21.5 | 5 909 pts | 12.8 |
+| landscape 4:3 (3413 wu) | 21.5 | 5 415 pts | 12.8 |
+| landscape 16:9 (4551 wu) | 17.4 | 5 778 pts | 10.4 |
+| landscape 21:9 (5973 wu) | 20.8 | 4 908 pts | 11.9 |
+
+Every configuration is climbable, every run ends in a death rather than a stall, and the coin
+rate puts a prize pull four to seven runs apart. The bot ignores coins entirely, so a player
+who detours for them does better than these figures.
+
+To re-run it after changing anything in `Tuning.kt`:
+
+```bash
+kotlinc app/src/main/java/com/blacklab/buddybounce/game/ tools/sim/Sim.kt -include-runtime -d sim.jar
+java -jar sim.jar
+```
 
 ## Sources consulted for reference behaviour
 

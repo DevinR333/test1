@@ -6,12 +6,15 @@ import com.blacklab.buddybounce.game.Tuning
 import kotlin.math.abs
 
 /**
- * Turns the three input routes - phone tilt, the on-screen slide gauge and a physical
- * controller/keyboard - into a single steering value in [-1, 1].
+ * Turns the three input routes - phone tilt, touch, and a physical controller - into a single
+ * steering value in [-1, 1].
  *
- * The tilt route is the interesting one: the accelerometer reports in *device* axes, so the
- * reading has to be remapped through the current display rotation or landscape mode steers
- * the wrong way. The activity does that remap and hands us [tiltRaw] already in screen space.
+ * Touch is *relative*: wherever you put your finger down becomes the centre, and sliding either
+ * side of that point steers. It works anywhere on the screen, so you never have to look for a
+ * control, and the anchor drags along if you push past full lock so a reversal responds at once.
+ *
+ * The tilt route is remapped through the display rotation by the activity, otherwise landscape
+ * steers the wrong way.
  */
 class Controls(private val save: Save) {
 
@@ -20,10 +23,21 @@ class Controls(private val save: Save) {
         private set
     var tiltAvailable = false
 
-    var gaugeActive = false
+    // ---- relative touch ----
+    var touchActive = false
         private set
-    var gaugeValue = 0f
+    var touchAnchorX = 0f
         private set
+    var touchAnchorY = 0f
+        private set
+    var touchX = 0f
+        private set
+    var touchY = 0f
+        private set
+    private var touchSteer = 0f
+
+    /** Distance, in UI units, from the anchor to full lock. Set by the game on resize. */
+    var touchRange = 300f
 
     var keyLeft = false
     var keyRight = false
@@ -37,31 +51,49 @@ class Controls(private val save: Save) {
 
     fun onTiltSample(screenAxisAccel: Float) {
         tiltRaw = screenAxisAccel
-        // A light low-pass keeps hand tremor out without adding noticeable lag.
         smoothedTilt += (screenAxisAccel - smoothedTilt) * 0.35f
     }
 
-    fun onGauge(value: Float) {
-        gaugeValue = clamp(value, -1f, 1f)
-        gaugeActive = true
+    // -------------------------------------------------------------------------------------
+    // touch
+    // -------------------------------------------------------------------------------------
+
+    fun touchDown(x: Float, y: Float) {
+        touchActive = true
+        touchAnchorX = x
+        touchAnchorY = y
+        touchX = x
+        touchY = y
+        touchSteer = 0f
     }
 
-    fun releaseGauge() {
-        gaugeActive = false
+    fun touchMove(x: Float, y: Float) {
+        if (!touchActive) {
+            touchDown(x, y)
+            return
+        }
+        touchX = x
+        touchY = y
+        var dx = x - touchAnchorX
+        // Push past full lock and the anchor follows, so flicking the other way is instant.
+        if (dx > touchRange) {
+            touchAnchorX = x - touchRange
+            dx = touchRange
+        } else if (dx < -touchRange) {
+            touchAnchorX = x + touchRange
+            dx = -touchRange
+        }
+        touchSteer = clamp(dx / touchRange, -1f, 1f)
     }
 
-    fun clearGauge() {
-        gaugeActive = false
-        gaugeValue = 0f
+    fun touchUp() {
+        touchActive = false
+        touchSteer = 0f
     }
 
-    /** Captures the current tilt as "neutral" so you can play lying down. */
-    fun calibrate() {
-        save.tiltCalibration = smoothedTilt
-    }
-
-    fun resetCalibration() {
-        save.tiltCalibration = 0f
+    fun clearTouch() {
+        touchActive = false
+        touchSteer = 0f
     }
 
     val tiltEnabled: Boolean
@@ -91,9 +123,9 @@ class Controls(private val save: Save) {
         val pad = clamp(padAxis, -1f, 1f)
         val keys = (if (keyRight) 1f else 0f) - (if (keyLeft) 1f else 0f)
 
-        if (gaugeActive && touchEnabled) {
+        if (touchActive && touchEnabled) {
             lastInputDigital = true
-            return gaugeValue
+            return touchSteer
         }
         if (abs(keys) > 0.01f) {
             lastInputDigital = true
@@ -107,6 +139,11 @@ class Controls(private val save: Save) {
         return tiltSteer()
     }
 
-    /** Gauge position to draw, even when the finger is off the track. */
-    fun displayValue(): Float = if (gaugeActive) gaugeValue else steer()
+    /** Current deflection, for drawing the touch indicator. */
+    fun displayValue(): Float = if (touchActive) touchSteer else steer()
+
+    /** Captures the current tilt as "neutral" so you can play lying down. */
+    fun calibrate() {
+        save.tiltCalibration = smoothedTilt
+    }
 }

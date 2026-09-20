@@ -7,9 +7,12 @@ import org.json.JSONObject
 
 /**
  * Everything the game remembers between launches, backed by a single SharedPreferences file.
- * Writes are cheap and rare (end of a run, a purchase, a settings change), so every setter
- * commits immediately rather than batching - losing a legendary outfit to a process death
- * would be unforgivable.
+ *
+ * COIN RULE: coins are banked **only** when a run finishes, and that write is a synchronous
+ * commit of one atomic edit (see [bankRun]). Coins picked up during a run live in [World] and
+ * nowhere else, so killing the app mid-run loses that run's coins and cannot duplicate them.
+ * Everything already banked survives an impulsive swipe-away, because it is on disk before
+ * the game-over screen is even drawn.
  */
 class Save(ctx: Context) {
 
@@ -18,65 +21,83 @@ class Save(ctx: Context) {
     private val prefs: SharedPreferences =
         ctx.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
+    /** Fire-and-forget: fine for settings, never used for currency or progress. */
+    private inline fun editAsync(block: (SharedPreferences.Editor) -> Unit) {
+        val e = prefs.edit()
+        block(e)
+        e.apply()
+    }
+
+    /** Blocks until the value is on disk. Used for anything the player would be upset to lose. */
+    private inline fun editSync(block: (SharedPreferences.Editor) -> Unit) {
+        val e = prefs.edit()
+        block(e)
+        e.commit()
+    }
+
     // ---- identity -------------------------------------------------------------------------
 
     var playerName: String
         get() = prefs.getString(KEY_NAME, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_NAME, sanitizeName(value)).apply()
+        set(value) = editSync { it.putString(KEY_NAME, sanitizeName(value)) }
 
     val hasName: Boolean get() = playerName.isNotEmpty()
 
     // ---- currency & progress --------------------------------------------------------------
 
-    var coins: Int
-        get() = prefs.getInt(KEY_COINS, 0)
-        set(value) = prefs.edit().putInt(KEY_COINS, value.coerceAtLeast(0)).apply()
+    /** The banked total. Only [bankRun] and [spendCoins] ever change it. */
+    val coins: Int get() = prefs.getInt(KEY_COINS, 0)
 
-    var bestScore: Int
-        get() = prefs.getInt(KEY_BEST, 0)
-        private set(value) = prefs.edit().putInt(KEY_BEST, value).apply()
-
-    var totalRuns: Int
-        get() = prefs.getInt(KEY_RUNS, 0)
-        private set(value) = prefs.edit().putInt(KEY_RUNS, value).apply()
-
-    var totalCoinsEarned: Int
-        get() = prefs.getInt(KEY_COINS_EARNED, 0)
-        private set(value) = prefs.edit().putInt(KEY_COINS_EARNED, value).apply()
+    val bestScore: Int get() = prefs.getInt(KEY_BEST, 0)
+    val totalRuns: Int get() = prefs.getInt(KEY_RUNS, 0)
+    val totalCoinsEarned: Int get() = prefs.getInt(KEY_COINS_EARNED, 0)
 
     var highestBiome: Int
         get() = prefs.getInt(KEY_BIOME, 0)
-        set(value) = prefs.edit().putInt(KEY_BIOME, maxOf(value, prefs.getInt(KEY_BIOME, 0))).apply()
+        set(value) = editAsync { it.putInt(KEY_BIOME, maxOf(value, prefs.getInt(KEY_BIOME, 0))) }
 
-    fun addCoins(amount: Int) {
-        if (amount <= 0) return
-        coins += amount
-        totalCoinsEarned += amount
+    /**
+     * Banks a finished run: coins, score, leaderboard and run count, in one committed edit.
+     * @return the 0-based rank the run landed at, or -1 if it missed the table.
+     */
+    fun bankRun(score: Int, coinsEarned: Int): Int {
+        val earned = coinsEarned.coerceAtLeast(0)
+        val table = scores().toMutableList()
+        val stamp = System.currentTimeMillis()
+        table.add(ScoreEntry(playerName.ifEmpty { "BUDDY" }, score, stamp))
+        table.sortWith(compareByDescending<ScoreEntry> { it.score }.thenBy { it.whenMs })
+        while (table.size > MAX_SCORES) table.removeAt(table.size - 1)
+
+        editSync { e ->
+            e.putInt(KEY_COINS, coins + earned)
+            e.putInt(KEY_COINS_EARNED, totalCoinsEarned + earned)
+            e.putInt(KEY_RUNS, totalRuns + 1)
+            if (score > bestScore) e.putInt(KEY_BEST, score)
+            e.putString(KEY_SCORES, encodeScores(table))
+        }
+
+        for (i in table.indices) {
+            if (table[i].score == score && table[i].whenMs == stamp) return i
+        }
+        return -1
     }
 
     fun spendCoins(amount: Int): Boolean {
         if (amount <= 0 || coins < amount) return false
-        coins -= amount
+        editSync { it.putInt(KEY_COINS, coins - amount) }
         return true
     }
 
-    // ---- leaderboard ----------------------------------------------------------------------
-
-    /** @return the 0-based rank the run landed at, or -1 if it missed the table. */
-    fun submitRun(score: Int): Int {
-        totalRuns += 1
-        if (score > bestScore) bestScore = score
-        val table = scores().toMutableList()
-        table.add(ScoreEntry(playerName.ifEmpty { "BUDDY" }, score, System.currentTimeMillis()))
-        table.sortWith(compareByDescending<ScoreEntry> { it.score }.thenBy { it.whenMs })
-        while (table.size > MAX_SCORES) table.removeAt(table.size - 1)
-        writeScores(table)
-        // The rank of *this* run: first entry with our exact score/timestamp pair.
-        for (i in table.indices) {
-            if (table[i].score == score && table[i].whenMs > System.currentTimeMillis() - 5000) return i
+    /** Refunds from the machine (duplicates). Committed for the same reason as everything else. */
+    fun grantCoins(amount: Int) {
+        if (amount <= 0) return
+        editSync {
+            it.putInt(KEY_COINS, coins + amount)
+            it.putInt(KEY_COINS_EARNED, totalCoinsEarned + amount)
         }
-        return -1
     }
+
+    // ---- leaderboard ----------------------------------------------------------------------
 
     fun scores(): List<ScoreEntry> {
         val raw = prefs.getString(KEY_SCORES, null) ?: return emptyList()
@@ -93,7 +114,7 @@ class Save(ctx: Context) {
         }
     }
 
-    private fun writeScores(list: List<ScoreEntry>) {
+    private fun encodeScores(list: List<ScoreEntry>): String {
         val arr = JSONArray()
         for (e in list) {
             val o = JSONObject()
@@ -102,7 +123,7 @@ class Save(ctx: Context) {
             o.put("t", e.whenMs)
             arr.put(o)
         }
-        prefs.edit().putString(KEY_SCORES, arr.toString()).apply()
+        return arr.toString()
     }
 
     // ---- wardrobe -------------------------------------------------------------------------
@@ -120,7 +141,7 @@ class Save(ctx: Context) {
     fun unlock(id: String) {
         val set = ownedOutfits()
         set.add(id)
-        prefs.edit().putStringSet(KEY_OWNED, set).apply()
+        editSync { it.putStringSet(KEY_OWNED, set) }
     }
 
     var equippedOutfit: String
@@ -130,45 +151,100 @@ class Save(ctx: Context) {
         }
         set(value) {
             if (owns(value) && Outfits.byId(value) != null) {
-                prefs.edit().putString(KEY_EQUIPPED, value).apply()
+                editAsync { it.putString(KEY_EQUIPPED, value) }
             }
         }
+
+    // ---- scenes ---------------------------------------------------------------------------
+
+    fun ownedScenes(): MutableSet<String> {
+        val stored = prefs.getStringSet(KEY_SCENES, null)
+        val set = HashSet<String>()
+        if (stored != null) set.addAll(stored)
+        set.add(SCENE_DEFAULT)
+        return set
+    }
+
+    fun ownsScene(id: String): Boolean = id == SCENE_DEFAULT || ownedScenes().contains(id)
+
+    fun unlockScene(id: String) {
+        val set = ownedScenes()
+        set.add(id)
+        editSync { it.putStringSet(KEY_SCENES, set) }
+    }
+
+    var selectedScene: String
+        get() {
+            val id = prefs.getString(KEY_SCENE_PICK, SCENE_DEFAULT) ?: SCENE_DEFAULT
+            return if (ownsScene(id)) id else SCENE_DEFAULT
+        }
+        set(value) {
+            if (ownsScene(value)) editSync { it.putString(KEY_SCENE_PICK, value) }
+        }
+
+    // ---- consumable power-ups ---------------------------------------------------------------
+
+    fun powerupCount(id: String): Int = prefs.getInt(KEY_POWERUP_PREFIX + id, 0)
+
+    fun grantPowerup(id: String, count: Int = 1) {
+        if (count <= 0) return
+        editSync { it.putInt(KEY_POWERUP_PREFIX + id, powerupCount(id) + count) }
+    }
+
+    /** Spends one. Returns false (and changes nothing) if the shelf is empty. */
+    fun consumePowerup(id: String): Boolean {
+        val have = powerupCount(id)
+        if (have <= 0) return false
+        editSync { it.putInt(KEY_POWERUP_PREFIX + id, have - 1) }
+        return true
+    }
+
+    fun totalPowerups(): Int {
+        var n = 0
+        for (p in Powerups.ALL) n += powerupCount(p.id)
+        return n
+    }
 
     // ---- settings -------------------------------------------------------------------------
 
     var landscape: Boolean
         get() = prefs.getBoolean(KEY_LANDSCAPE, false)
-        set(value) = prefs.edit().putBoolean(KEY_LANDSCAPE, value).apply()
+        set(value) = editAsync { it.putBoolean(KEY_LANDSCAPE, value) }
 
     /** 0 = tilt only, 1 = touch gauge only, 2 = both at once. */
     var controlMode: Int
         get() = prefs.getInt(KEY_CONTROL, CONTROL_BOTH).coerceIn(0, 2)
-        set(value) = prefs.edit().putInt(KEY_CONTROL, value.coerceIn(0, 2)).apply()
+        set(value) = editAsync { it.putInt(KEY_CONTROL, value.coerceIn(0, 2)) }
 
     var tiltSensitivity: Float
         get() = prefs.getFloat(KEY_TILT_SENS, 1.0f).coerceIn(0.5f, 1.8f)
-        set(value) = prefs.edit().putFloat(KEY_TILT_SENS, value.coerceIn(0.5f, 1.8f)).apply()
+        set(value) = editAsync { it.putFloat(KEY_TILT_SENS, value.coerceIn(0.5f, 1.8f)) }
 
     /** Neutral tilt captured by "recalibrate", in m/s^2 along the screen's horizontal axis. */
     var tiltCalibration: Float
         get() = prefs.getFloat(KEY_TILT_CAL, 0f).coerceIn(-6f, 6f)
-        set(value) = prefs.edit().putFloat(KEY_TILT_CAL, value.coerceIn(-6f, 6f)).apply()
+        set(value) = editAsync { it.putFloat(KEY_TILT_CAL, value.coerceIn(-6f, 6f)) }
 
     var invertTilt: Boolean
         get() = prefs.getBoolean(KEY_TILT_INVERT, false)
-        set(value) = prefs.edit().putBoolean(KEY_TILT_INVERT, value).apply()
+        set(value) = editAsync { it.putBoolean(KEY_TILT_INVERT, value) }
 
     var soundOn: Boolean
         get() = prefs.getBoolean(KEY_SOUND, true)
-        set(value) = prefs.edit().putBoolean(KEY_SOUND, value).apply()
+        set(value) = editAsync { it.putBoolean(KEY_SOUND, value) }
 
     var hapticsOn: Boolean
         get() = prefs.getBoolean(KEY_HAPTICS, true)
-        set(value) = prefs.edit().putBoolean(KEY_HAPTICS, value).apply()
+        set(value) = editAsync { it.putBoolean(KEY_HAPTICS, value) }
 
     var showGaugeAlways: Boolean
         get() = prefs.getBoolean(KEY_GAUGE, true)
-        set(value) = prefs.edit().putBoolean(KEY_GAUGE, value).apply()
+        set(value) = editAsync { it.putBoolean(KEY_GAUGE, value) }
+
+    /** Called when the app is going away, so nothing is left in flight. */
+    fun flush() {
+        editSync { it.putLong(KEY_LAST_SEEN, System.currentTimeMillis()) }
+    }
 
     companion object {
         const val FILE = "buddy_bounce_save"
@@ -176,6 +252,7 @@ class Save(ctx: Context) {
         const val CONTROL_TILT = 0
         const val CONTROL_TOUCH = 1
         const val CONTROL_BOTH = 2
+        const val SCENE_DEFAULT = "yard"
 
         private const val KEY_NAME = "name"
         private const val KEY_COINS = "coins"
@@ -186,6 +263,9 @@ class Save(ctx: Context) {
         private const val KEY_SCORES = "scores"
         private const val KEY_OWNED = "owned"
         private const val KEY_EQUIPPED = "equipped"
+        private const val KEY_SCENES = "scenesOwned"
+        private const val KEY_SCENE_PICK = "scenePick"
+        private const val KEY_POWERUP_PREFIX = "pu_"
         private const val KEY_LANDSCAPE = "landscape"
         private const val KEY_CONTROL = "control"
         private const val KEY_TILT_SENS = "tiltSens"
@@ -194,6 +274,7 @@ class Save(ctx: Context) {
         private const val KEY_SOUND = "sound"
         private const val KEY_HAPTICS = "haptics"
         private const val KEY_GAUGE = "gauge"
+        private const val KEY_LAST_SEEN = "lastSeen"
 
         fun sanitizeName(raw: String): String {
             val trimmed = raw.trim()

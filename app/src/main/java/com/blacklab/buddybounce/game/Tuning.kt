@@ -11,23 +11,27 @@ import com.blacklab.buddybounce.game.MathX.smoothstep
  * The unit is the "world unit" (wu). The camera always shows exactly [VIEW_H] wu of height on
  * every device, in both orientations, so a bounce covers the same fraction of the screen
  * whether you're on a 4:3 tablet or a 21:9 phone. Width is whatever the aspect ratio gives.
+ *
+ * NOTE ON ZOOM: the world view is 2560 wu tall while the UI is laid out in a 1600-unit space
+ * (see Theme.SCREEN_H). Buddy and the platforms are sized in absolute wu, so making the world
+ * view taller is exactly a camera zoom-out: the same jump, more sky around it.
  */
 object Tuning {
 
     // ---- frame of reference ----------------------------------------------------------------
-    const val VIEW_H = 1600f
+    const val VIEW_H = 2560f
     /** Width of the reference playfield (a 9:16 phone), used to scale aspect-dependent values. */
-    const val REF_W = 900f
+    const val REF_W = 1440f
 
     // ---- vertical physics ------------------------------------------------------------------
-    const val GRAVITY = 3300f
-    const val JUMP_V = 1720f              // apex = 448 wu = 0.28 screens
-    const val TERMINAL_V = 3000f
+    const val GRAVITY = 6250f
+    const val JUMP_V = 3250f              // apex = v^2/2g = 845 wu = 33% of the view
+    const val TERMINAL_V = 5400f
     const val PHYSICS_STEP = 1f / 240f
     const val MAX_SUBSTEPS = 8
 
     // ---- horizontal ------------------------------------------------------------------------
-    const val REF_MAX_VX = 1035f
+    const val REF_MAX_VX = 1700f
     const val STEER_EASE_TILT = 9f
     const val STEER_EASE_DIGITAL = 16f
     const val TILT_DEADZONE = 0.6f        // m/s^2
@@ -36,49 +40,63 @@ object Tuning {
     // ---- camera --------------------------------------------------------------------------
     const val CAM_ANCHOR = 0.45f          // fraction from the top of the view
     const val CAM_EASE = 18f
-    const val CAM_START_EASE = 3.2f
 
     // ---- player ----------------------------------------------------------------------------
-    const val BUDDY_W = 128f
-    const val BUDDY_H = 128f
+    // He is drawn in profile, so he is wider than he is tall.
+    const val BUDDY_W = 220f
+    const val BUDDY_H = 160f
     /** Collision half-width at the paws - narrower than the art so near-misses feel generous. */
-    const val BUDDY_FOOT_HALF = 44f
-    const val BUDDY_HURT_HALF_W = 46f
-    const val BUDDY_HURT_HALF_H = 46f
+    const val BUDDY_FOOT_HALF = 48f
+    const val BUDDY_HURT_HALF_W = 62f
+    const val BUDDY_HURT_HALF_H = 52f
+
+    // ---- the starting yard -------------------------------------------------------------------
+    /** World Y of the solid ground Buddy starts above. Falling onto it is always safe. */
+    const val GROUND_Y = 150f
+    const val START_Y = 470f
 
     // ---- platforms -------------------------------------------------------------------------
-    const val PLAT_H = 30f
-    const val PLAT_EDGE_MARGIN = 26f      // keep platforms off the very edge of the playfield
+    const val PLAT_H = 34f
+    const val PLAT_EDGE_MARGIN = 40f
     const val CRUMBLE_TIME = 0.35f
     const val FRAGILE_TIME = 0.30f
-    const val SLIDER_SPEED_MIN = 80f
-    const val SLIDER_SPEED_MAX = 190f
-    const val HOVER_AMPLITUDE = 55f
+    const val SLIDER_SPEED_MIN = 130f
+    const val SLIDER_SPEED_MAX = 300f
+    const val HOVER_AMPLITUDE = 88f
     const val HOVER_HZ = 0.6f
 
     // ---- boosts ----------------------------------------------------------------------------
     const val SPRING_MULT = 2.0f
     const val TRAMPOLINE_MULT = 2.6f
-    const val PROPELLER_V = 1900f
+    const val PROPELLER_V = 3040f
     const val PROPELLER_TIME = 3.2f
-    const val JETPACK_V = 2650f
+    const val JETPACK_V = 4240f
     const val JETPACK_TIME = 4.0f
-    const val ROCKET_V = 3600f
+    const val ROCKET_V = 5760f
     const val ROCKET_TIME = 4.6f
     const val SHIELD_TIME = 12f
     const val MAGNET_TIME = 7f
-    const val MAGNET_RANGE = 520f
-    const val ENEMY_STOMP_V = 1400f
-    const val FLIGHT_EXIT_V = 250f        // velocity handed back to gravity when flight ends
+    const val MAGNET_RANGE = 830f
+    const val ENEMY_STOMP_V = 2640f
+    const val FLIGHT_EXIT_V = 400f        // velocity handed back to gravity when flight ends
 
     // ---- economy ---------------------------------------------------------------------------
+    // Coins are deliberately scarce: a pull should feel earned. Most of a run's coins come from
+    // the height bonus at the end, the rest from the handful of coins actually on the way up.
     const val COIN_VALUE = 1
     const val BONE_COIN_VALUE = 5
     const val GACHA_COST = 100
     const val DUPLICATE_REFUND = 35
+    /** Points per coin awarded at the end of a run. */
+    const val SCORE_PER_BONUS_COIN = 300
+    /** A coin is placed roughly this far apart, in wu of climb. */
+    const val COIN_SPACING_MIN = 7600f
+    const val COIN_SPACING_MAX = 15400f
+    /** One coin in this many is a 5-coin bone instead. */
+    const val BONE_EVERY = 5
 
     // ---- scoring -----------------------------------------------------------------------------
-    const val SCORE_PER_WU = 0.1f         // 1 screen climbed = 160 points
+    const val SCORE_PER_WU = 0.0625f      // 1 screen climbed = 160 points
     const val SCORE_BEE = 120
     const val SCORE_CROW = 150
 
@@ -92,33 +110,31 @@ object Tuning {
     /** Difficulty 0..1 as a function of screens climbed. */
     fun difficulty(screens: Float): Float = smoothstep(0f, 55f, screens)
 
-    fun gapMin(screens: Float): Float {
-        val d = difficulty(screens)
-        return lerp(170f, 265f, d)
-    }
+    fun gapMin(screens: Float): Float = lerp(384f, 560f, difficulty(screens))
 
-    fun gapMax(screens: Float): Float {
-        val d = difficulty(screens)
-        return lerp(215f, 336f, d)
-    }
+    fun gapMax(screens: Float): Float = lerp(470f, 627f, difficulty(screens))
 
     /** Platform width before the aspect-ratio correction in [Metrics]. */
-    fun platWidth(screens: Float): Float {
-        val d = difficulty(screens)
-        return lerp(200f, 148f, d)
-    }
+    fun platWidth(screens: Float): Float = lerp(190f, 140f, difficulty(screens))
 
-    /** Share of rows that get a crumbling/fragile platform. */
-    fun hazardShare(screens: Float): Float = lerp(0f, 0.38f, smoothstep(2f, 45f, screens))
+    /** Share of rows whose main platform crumbles after one bounce. */
+    fun hazardShare(screens: Float): Float = lerp(0f, 0.34f, smoothstep(2f, 45f, screens))
+
+    /**
+     * Chance a row gets a fragile platform ALONGSIDE its safe one. Fragiles give no bounce at
+     * all, so one is never allowed to be a row's only platform - that is a forced death, not a
+     * challenge.
+     */
+    fun fragileShare(screens: Float): Float = lerp(0f, 0.30f, smoothstep(6f, 45f, screens))
 
     /** Share of rows that get a moving platform. */
     fun moverShare(screens: Float): Float = lerp(0f, 0.36f, smoothstep(2f, 40f, screens))
 
     /** Expected enemies per screen of generated world. */
-    fun enemyDensity(screens: Float): Float = lerp(0f, 1.3f, smoothstep(4f, 45f, screens))
+    fun enemyDensity(screens: Float): Float = lerp(0f, 1.1f, smoothstep(4f, 45f, screens))
 
-    /** Chance a row spawns a second, side-by-side platform. */
-    fun doubleRowChance(screens: Float): Float = lerp(0.12f, 0.30f, difficulty(screens))
+    /** Chance a row spawns a second, side-by-side platform. Kept low: sparse is the point. */
+    fun doubleRowChance(screens: Float): Float = lerp(0.05f, 0.14f, difficulty(screens))
 
     fun biomeIndex(screens: Float): Int {
         val i = (screens / BIOME_SPAN).toInt()
@@ -142,7 +158,7 @@ object Tuning {
         val maxVx: Float = REF_MAX_VX * pow(widthRatio, 0.6f)
         val platScale: Float = pow(widthRatio, 0.35f)
         /** Platforms generated per row band, so wide screens don't feel empty. */
-        val rowMultiplier: Float = pow(widthRatio, 0.75f)
+        val rowMultiplier: Float = pow(widthRatio, 0.55f)
 
         fun platWidthAt(screens: Float): Float = platWidth(screens) * platScale
     }

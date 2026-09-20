@@ -38,16 +38,38 @@ object ColorX {
     fun tint(c: Int, t: Float): Int = lerp(c, 0xFFFFFFFF.toInt(), t)
 }
 
+/** Which backdrop flourish a band draws. */
+object BandStyle {
+    const val HILLS = 0
+    const val TREES = 1
+    const val CLOUDS = 2
+    const val AURORA = 3
+    const val NEBULA = 4
+    const val KELP = 5
+    const val REEF = 6
+    const val CITY = 7
+    const val PEAKS = 8
+    const val LAVA = 9
+}
+
+/** How the very bottom of a run is dressed, before the camera leaves it behind. */
+object GroundStyle {
+    const val YARD = 0
+    const val SEABED = 1
+    const val STREET = 2
+    const val SNOW = 3
+    const val ASH = 4
+}
+
 /**
- * One altitude band. Buddy Bounce cycles through five of these and then repeats with a slight
- * hue drift, so a very long run keeps changing without needing infinite art.
+ * One altitude band: the sky, the parallax silhouettes, and how platforms are skinned inside it.
  */
 class BiomePalette(
     val name: String,
+    val style: Int,
     val skyTop: Int,
     val skyMid: Int,
     val skyLow: Int,
-    val haze: Int,
     val farShape: Int,
     val midShape: Int,
     val nearShape: Int,
@@ -56,119 +78,284 @@ class BiomePalette(
     val platShade: Int,
     val platAccent: Int,
     val rim: Int,
-    val sunColor: Int,
-    val starAlpha: Float,
-    val cloudAlpha: Float
+    val starAlpha: Float = 0f,
+    val cloudAlpha: Float = 0.8f,
+    val haze: Int = skyLow,
+    val sunColor: Int = rim
 )
 
+/**
+ * A scene is a full set of altitude bands - a whole look for a run. The yard is the default;
+ * the rest are the rarest thing the prize machine can hand out.
+ */
+class Scene(
+    val id: String,
+    val name: String,
+    val blurb: String,
+    val groundStyle: Int,
+    val cardTint: Int,
+    val bands: List<BiomePalette>
+)
+
+object Scenes {
+
+    const val DEFAULT_ID = "yard"
+
+    // ---- Backyard Skies -------------------------------------------------------------------
+
+    private val YARD = Scene(
+        DEFAULT_ID, "Backyard Skies",
+        "Where every good dog starts: the lawn, the treetops, and everything above them.",
+        GroundStyle.YARD, 0xFF7FC25C.toInt(),
+        listOf(
+            BiomePalette(
+                "Backyard", BandStyle.HILLS,
+                0xFF63B8E8.toInt(), 0xFFA6DCF2.toInt(), 0xFFE7F5D8.toInt(),
+                0xFF7FB77E.toInt(), 0xFF5E9A66.toInt(), 0xFF3F7A53.toInt(),
+                0xFFC08A4E.toInt(), 0xFF8E5F35.toInt(), 0xFF6B462A.toInt(), 0xFF7FC25C.toInt(),
+                0xFFFFE6A8.toInt(), cloudAlpha = 0.85f
+            ),
+            BiomePalette(
+                "Treetops", BandStyle.TREES,
+                0xFF4FA3DE.toInt(), 0xFF8FD0EC.toInt(), 0xFFCFEDD6.toInt(),
+                0xFF69A97A.toInt(), 0xFF468C5F.toInt(), 0xFF2E6B48.toInt(),
+                0xFF8FA95A.toInt(), 0xFF6B7F3E.toInt(), 0xFF4C5C2C.toInt(), 0xFF9BD96B.toInt(),
+                0xFFE8F5B8.toInt(), cloudAlpha = 0.9f
+            ),
+            BiomePalette(
+                "Cloudline", BandStyle.CLOUDS,
+                0xFF2E7FC4.toInt(), 0xFF6BB6E6.toInt(), 0xFFC3E7F7.toInt(),
+                0xFFFFFFFF.toInt(), 0xFFEAF6FE.toInt(), 0xFFCFE6F6.toInt(),
+                0xFFF4FAFF.toInt(), 0xFFCFE2F2.toInt(), 0xFFA7C2DC.toInt(), 0xFF8FD3F4.toInt(),
+                0xFFFFFFFF.toInt(), starAlpha = 0.08f, cloudAlpha = 1f
+            ),
+            BiomePalette(
+                "Aurora", BandStyle.AURORA,
+                0xFF0B1030.toInt(), 0xFF17264F.toInt(), 0xFF2A3F72.toInt(),
+                0xFF35D6B0.toInt(), 0xFF4E8CE8.toInt(), 0xFF1B2A4E.toInt(),
+                0xFFBFF3E6.toInt(), 0xFF4FBFA8.toInt(), 0xFF2B7E72.toInt(), 0xFF7BE3FF.toInt(),
+                0xFFA9FFEA.toInt(), starAlpha = 0.85f, cloudAlpha = 0.35f
+            ),
+            BiomePalette(
+                "Orbit", BandStyle.NEBULA,
+                0xFF03030C.toInt(), 0xFF0A0A1C.toInt(), 0xFF161033.toInt(),
+                0xFF6C4BCE.toInt(), 0xFF3B2A7A.toInt(), 0xFF120D28.toInt(),
+                0xFF8D93AE.toInt(), 0xFF585E7C.toInt(), 0xFF373C52.toInt(), 0xFFFFB35C.toInt(),
+                0xFFCBD4FF.toInt(), starAlpha = 1f, cloudAlpha = 0.12f
+            )
+        )
+    )
+
+    // ---- Deep Blue ------------------------------------------------------------------------
+
+    private val OCEAN = Scene(
+        "ocean", "Deep Blue",
+        "Down on the seabed and all the way up through the reef to open sky.",
+        GroundStyle.SEABED, 0xFF2A9BC4.toInt(),
+        listOf(
+            BiomePalette(
+                "Seabed", BandStyle.REEF,
+                0xFF04203A.toInt(), 0xFF0A3A5C.toInt(), 0xFF14567F.toInt(),
+                0xFF2E8BA8.toInt(), 0xFF1E6F8C.toInt(), 0xFF123F55.toInt(),
+                0xFFD9C79A.toInt(), 0xFFA89263.toInt(), 0xFF6E6142.toInt(), 0xFFFF9E6B.toInt(),
+                0xFF9FE8FF.toInt(), cloudAlpha = 0.25f
+            ),
+            BiomePalette(
+                "Kelp Forest", BandStyle.KELP,
+                0xFF0A3A5C.toInt(), 0xFF12608A.toInt(), 0xFF2A87A8.toInt(),
+                0xFF2E7F52.toInt(), 0xFF1E6B44.toInt(), 0xFF14452F.toInt(),
+                0xFF7FBF8F.toInt(), 0xFF4E8C64.toInt(), 0xFF33603F.toInt(), 0xFFB7F0C0.toInt(),
+                0xFFBFFFD8.toInt(), cloudAlpha = 0.3f
+            ),
+            BiomePalette(
+                "Coral Reef", BandStyle.REEF,
+                0xFF12608A.toInt(), 0xFF2A9BC4.toInt(), 0xFF7FD4E8.toInt(),
+                0xFFFF8FA8.toInt(), 0xFFFFB05C.toInt(), 0xFF6FD6C0.toInt(),
+                0xFFFFD9B0.toInt(), 0xFFE8A36B.toInt(), 0xFFA8663F.toInt(), 0xFFFF7FA8.toInt(),
+                0xFFFFF0D0.toInt(), cloudAlpha = 0.4f
+            ),
+            BiomePalette(
+                "Sunlit Shallows", BandStyle.CLOUDS,
+                0xFF2A9BC4.toInt(), 0xFF7FD4E8.toInt(), 0xFFDFF6FF.toInt(),
+                0xFFEAFBFF.toInt(), 0xFFC4EEFA.toInt(), 0xFF9FDCEF.toInt(),
+                0xFFFFF4E0.toInt(), 0xFFE0D2B8.toInt(), 0xFFAFA189.toInt(), 0xFF6FD6C0.toInt(),
+                0xFFFFFFFF.toInt(), cloudAlpha = 0.9f
+            ),
+            BiomePalette(
+                "Open Sky", BandStyle.CLOUDS,
+                0xFF4FA6DC.toInt(), 0xFF9FDDF7.toInt(), 0xFFEAF7FF.toInt(),
+                0xFFFFFFFF.toInt(), 0xFFEAF6FE.toInt(), 0xFFCFE6F6.toInt(),
+                0xFFF4FAFF.toInt(), 0xFFCFE2F2.toInt(), 0xFFA7C2DC.toInt(), 0xFF8FD3F4.toInt(),
+                0xFFFFFFFF.toInt(), cloudAlpha = 1f
+            )
+        )
+    )
+
+    // ---- Neon City ------------------------------------------------------------------------
+
+    private val NEON = Scene(
+        "neon", "Neon City",
+        "Alleyways, rooftops and a skyline that never switches the lights off.",
+        GroundStyle.STREET, 0xFFFF3CAC.toInt(),
+        listOf(
+            BiomePalette(
+                "Back Alley", BandStyle.CITY,
+                0xFF0A0A14.toInt(), 0xFF14142A.toInt(), 0xFF221B3A.toInt(),
+                0xFF2A2A4A.toInt(), 0xFF1A1A32.toInt(), 0xFF101020.toInt(),
+                0xFF4A4A66.toInt(), 0xFF2E2E44.toInt(), 0xFF1A1A28.toInt(), 0xFFFF3CAC.toInt(),
+                0xFFFF7AD9.toInt(), starAlpha = 0.12f, cloudAlpha = 0.25f
+            ),
+            BiomePalette(
+                "Rooftops", BandStyle.CITY,
+                0xFF140F2E.toInt(), 0xFF2A1B4A.toInt(), 0xFF4A2A6E.toInt(),
+                0xFF3A2A6A.toInt(), 0xFF261A4A.toInt(), 0xFF150F2E.toInt(),
+                0xFF6E5AA8.toInt(), 0xFF453473.toInt(), 0xFF2A1F4A.toInt(), 0xFF4FE8FF.toInt(),
+                0xFF8FF6FF.toInt(), starAlpha = 0.3f, cloudAlpha = 0.3f
+            ),
+            BiomePalette(
+                "Skyline", BandStyle.CITY,
+                0xFF1E0F3A.toInt(), 0xFF4A1B6E.toInt(), 0xFF8A2A7E.toInt(),
+                0xFFFF3CAC.toInt(), 0xFF7A2A9E.toInt(), 0xFF2A1040.toInt(),
+                0xFFBFC6E0.toInt(), 0xFF7A83A8.toInt(), 0xFF454B6E.toInt(), 0xFFFFE07A.toInt(),
+                0xFFFFC8F0.toInt(), starAlpha = 0.5f, cloudAlpha = 0.45f
+            ),
+            BiomePalette(
+                "Smog Layer", BandStyle.CLOUDS,
+                0xFF2A1040.toInt(), 0xFF5A2060.toInt(), 0xFFA03A6E.toInt(),
+                0xFFFF6FC4.toInt(), 0xFFB04FA8.toInt(), 0xFF5A2060.toInt(),
+                0xFFE8D0F5.toInt(), 0xFFB08FC8.toInt(), 0xFF6E5288.toInt(), 0xFF4FE8FF.toInt(),
+                0xFFFFB0EC.toInt(), starAlpha = 0.6f, cloudAlpha = 0.8f
+            ),
+            BiomePalette(
+                "Cyber Orbit", BandStyle.NEBULA,
+                0xFF05030F.toInt(), 0xFF0C0820.toInt(), 0xFF1A0F35.toInt(),
+                0xFF4FE8FF.toInt(), 0xFFFF3CAC.toInt(), 0xFF120A28.toInt(),
+                0xFF9FA8D0.toInt(), 0xFF5A6390.toInt(), 0xFF333A5E.toInt(), 0xFF4FE8FF.toInt(),
+                0xFFCFF6FF.toInt(), starAlpha = 1f, cloudAlpha = 0.1f
+            )
+        )
+    )
+
+    // ---- Frozen Peaks ---------------------------------------------------------------------
+
+    private val FROST = Scene(
+        "frost", "Frozen Peaks",
+        "Snowfields, pines and ice cliffs, with the northern lights at the top.",
+        GroundStyle.SNOW, 0xFF9FE0F5.toInt(),
+        listOf(
+            BiomePalette(
+                "Snowfield", BandStyle.PEAKS,
+                0xFF6FAEDC.toInt(), 0xFFBFE0F5.toInt(), 0xFFF0FAFF.toInt(),
+                0xFFC8DCEC.toInt(), 0xFFA8C4DC.toInt(), 0xFF8FA8C0.toInt(),
+                0xFFFFFFFF.toInt(), 0xFFD8E8F5.toInt(), 0xFFA8BFD4.toInt(), 0xFF7FD4FF.toInt(),
+                0xFFFFFFFF.toInt(), cloudAlpha = 0.85f
+            ),
+            BiomePalette(
+                "Pine Woods", BandStyle.TREES,
+                0xFF5A93C4.toInt(), 0xFF8FC0E0.toInt(), 0xFFDCEEF7.toInt(),
+                0xFF2E5A4A.toInt(), 0xFF1E4038.toInt(), 0xFF16302A.toInt(),
+                0xFFE8F4FF.toInt(), 0xFFB8CFE0.toInt(), 0xFF86A0B8.toInt(), 0xFF6FBF9F.toInt(),
+                0xFFE8FFFF.toInt(), cloudAlpha = 0.8f
+            ),
+            BiomePalette(
+                "Ice Cliffs", BandStyle.PEAKS,
+                0xFF2E6E9E.toInt(), 0xFF5FA8CE.toInt(), 0xFFA8DCEF.toInt(),
+                0xFF9FE0F5.toInt(), 0xFF6FB8D8.toInt(), 0xFF3A6E8E.toInt(),
+                0xFFDFF8FF.toInt(), 0xFF9FD8EF.toInt(), 0xFF5F93B0.toInt(), 0xFFB0F0FF.toInt(),
+                0xFFFFFFFF.toInt(), starAlpha = 0.1f, cloudAlpha = 0.7f
+            ),
+            BiomePalette(
+                "Blizzard", BandStyle.CLOUDS,
+                0xFF3A5E80.toInt(), 0xFF7F9FBA.toInt(), 0xFFC0D4E0.toInt(),
+                0xFFFFFFFF.toInt(), 0xFFDCE8F0.toInt(), 0xFFB0C4D4.toInt(),
+                0xFFF7FCFF.toInt(), 0xFFC8DCE8.toInt(), 0xFF93AABC.toInt(), 0xFFBFEAFF.toInt(),
+                0xFFFFFFFF.toInt(), starAlpha = 0.25f, cloudAlpha = 1f
+            ),
+            BiomePalette(
+                "Northern Lights", BandStyle.AURORA,
+                0xFF050C22.toInt(), 0xFF0E2046.toInt(), 0xFF1A3060.toInt(),
+                0xFF6FFFC4.toInt(), 0xFF8F7FFF.toInt(), 0xFF12203E.toInt(),
+                0xFFDFF8FF.toInt(), 0xFF8FC8E8.toInt(), 0xFF4E7A99.toInt(), 0xFF9FFFE0.toInt(),
+                0xFFCFFFF0.toInt(), starAlpha = 0.95f, cloudAlpha = 0.2f
+            )
+        )
+    )
+
+    // ---- Emberfall ------------------------------------------------------------------------
+
+    private val EMBER = Scene(
+        "ember", "Emberfall",
+        "Up out of the magma vents, past the obsidian spires, into the cinder void.",
+        GroundStyle.ASH, 0xFFFF7A3C.toInt(),
+        listOf(
+            BiomePalette(
+                "Magma Vents", BandStyle.LAVA,
+                0xFF1C0608.toInt(), 0xFF3A0C0A.toInt(), 0xFF5E1408.toInt(),
+                0xFFFF5A1E.toInt(), 0xFFA82A10.toInt(), 0xFF2A0A08.toInt(),
+                0xFF6E3A28.toInt(), 0xFF45221A.toInt(), 0xFF2A1410.toInt(), 0xFFFF7A2E.toInt(),
+                0xFFFFB37A.toInt(), cloudAlpha = 0.3f
+            ),
+            BiomePalette(
+                "Obsidian Spires", BandStyle.PEAKS,
+                0xFF140610.toInt(), 0xFF2A0C1A.toInt(), 0xFF46142A.toInt(),
+                0xFF6E2A44.toInt(), 0xFF3A1428.toInt(), 0xFF1A0812.toInt(),
+                0xFF4A3A48.toInt(), 0xFF2E2030.toInt(), 0xFF1A1020.toInt(), 0xFFFF4FA8.toInt(),
+                0xFFFF9FD0.toInt(), starAlpha = 0.2f, cloudAlpha = 0.35f
+            ),
+            BiomePalette(
+                "Ash Clouds", BandStyle.CLOUDS,
+                0xFF241614.toInt(), 0xFF4A302A.toInt(), 0xFF6E4638.toInt(),
+                0xFF8A6450.toInt(), 0xFF5E4034.toInt(), 0xFF33211C.toInt(),
+                0xFF6E5A50.toInt(), 0xFF443630.toInt(), 0xFF281E1A.toInt(), 0xFFFFA14F.toInt(),
+                0xFFFFCFA0.toInt(), starAlpha = 0.3f, cloudAlpha = 0.9f
+            ),
+            BiomePalette(
+                "Ember Sky", BandStyle.NEBULA,
+                0xFF180810.toInt(), 0xFF3A1418.toInt(), 0xFF6E2A20.toInt(),
+                0xFFFF7A3C.toInt(), 0xFFB03A6E.toInt(), 0xFF2A1018.toInt(),
+                0xFF7A5A50.toInt(), 0xFF4E3630.toInt(), 0xFF2E2020.toInt(), 0xFFFFD07A.toInt(),
+                0xFFFFC49F.toInt(), starAlpha = 0.7f, cloudAlpha = 0.25f
+            ),
+            BiomePalette(
+                "Cinder Void", BandStyle.NEBULA,
+                0xFF06040A.toInt(), 0xFF120818.toInt(), 0xFF1E0C22.toInt(),
+                0xFFFF6A2E.toInt(), 0xFF7A2ABF.toInt(), 0xFF120A18.toInt(),
+                0xFF8F8296.toInt(), 0xFF5A5162.toInt(), 0xFF342F3C.toInt(), 0xFFFF9A4F.toInt(),
+                0xFFFFD4C0.toInt(), starAlpha = 1f, cloudAlpha = 0.1f
+            )
+        )
+    )
+
+    val ALL: List<Scene> = listOf(YARD, OCEAN, NEON, FROST, EMBER)
+
+    private val index: Map<String, Scene> = ALL.associateBy { it.id }
+
+    fun byId(id: String): Scene? = index[id]
+
+    fun of(id: String): Scene = index[id] ?: YARD
+
+    /** Scenes other than the default, i.e. the ones the machine can hand out. */
+    val unlockable: List<Scene> = ALL.filter { it.id != DEFAULT_ID }
+}
+
+/** Band lookup for the scene currently being played. */
 object Palettes {
 
-    val BACKYARD = BiomePalette(
-        name = "Backyard",
-        skyTop = 0xFF63B8E8.toInt(),
-        skyMid = 0xFFA6DCF2.toInt(),
-        skyLow = 0xFFE7F5D8.toInt(),
-        haze = 0xFFD9F0E4.toInt(),
-        farShape = 0xFF7FB77E.toInt(),
-        midShape = 0xFF5E9A66.toInt(),
-        nearShape = 0xFF3F7A53.toInt(),
-        platTop = 0xFFC08A4E.toInt(),
-        platBody = 0xFF8E5F35.toInt(),
-        platShade = 0xFF6B462A.toInt(),
-        platAccent = 0xFF7FC25C.toInt(),
-        rim = 0xFFFFE6A8.toInt(),
-        sunColor = 0xFFFFF0B8.toInt(),
-        starAlpha = 0f,
-        cloudAlpha = 0.85f
-    )
+    @Volatile
+    var current: Scene = Scenes.of(Scenes.DEFAULT_ID)
 
-    val TREETOPS = BiomePalette(
-        name = "Treetops",
-        skyTop = 0xFF4FA3DE.toInt(),
-        skyMid = 0xFF8FD0EC.toInt(),
-        skyLow = 0xFFCFEDD6.toInt(),
-        haze = 0xFFBDE4CE.toInt(),
-        farShape = 0xFF69A97A.toInt(),
-        midShape = 0xFF468C5F.toInt(),
-        nearShape = 0xFF2E6B48.toInt(),
-        platTop = 0xFF8FA95A.toInt(),
-        platBody = 0xFF6B7F3E.toInt(),
-        platShade = 0xFF4C5C2C.toInt(),
-        platAccent = 0xFF9BD96B.toInt(),
-        rim = 0xFFE8F5B8.toInt(),
-        sunColor = 0xFFFFF4C4.toInt(),
-        starAlpha = 0f,
-        cloudAlpha = 0.9f
-    )
-
-    val CLOUDLINE = BiomePalette(
-        name = "Cloudline",
-        skyTop = 0xFF2E7FC4.toInt(),
-        skyMid = 0xFF6BB6E6.toInt(),
-        skyLow = 0xFFC3E7F7.toInt(),
-        haze = 0xFFDDF1FB.toInt(),
-        farShape = 0xFFFFFFFF.toInt(),
-        midShape = 0xFFEAF6FE.toInt(),
-        nearShape = 0xFFCFE6F6.toInt(),
-        platTop = 0xFFF4FAFF.toInt(),
-        platBody = 0xFFCFE2F2.toInt(),
-        platShade = 0xFFA7C2DC.toInt(),
-        platAccent = 0xFF8FD3F4.toInt(),
-        rim = 0xFFFFFFFF.toInt(),
-        sunColor = 0xFFFFF7DD.toInt(),
-        starAlpha = 0.08f,
-        cloudAlpha = 1f
-    )
-
-    val AURORA = BiomePalette(
-        name = "Aurora",
-        skyTop = 0xFF0B1030.toInt(),
-        skyMid = 0xFF17264F.toInt(),
-        skyLow = 0xFF2A3F72.toInt(),
-        haze = 0xFF2B4C74.toInt(),
-        farShape = 0xFF35D6B0.toInt(),
-        midShape = 0xFF4E8CE8.toInt(),
-        nearShape = 0xFF1B2A4E.toInt(),
-        platTop = 0xFFBFF3E6.toInt(),
-        platBody = 0xFF4FBFA8.toInt(),
-        platShade = 0xFF2B7E72.toInt(),
-        platAccent = 0xFF7BE3FF.toInt(),
-        rim = 0xFFA9FFEA.toInt(),
-        sunColor = 0xFFDDE8FF.toInt(),
-        starAlpha = 0.85f,
-        cloudAlpha = 0.35f
-    )
-
-    val SPACE = BiomePalette(
-        name = "Orbit",
-        skyTop = 0xFF03030C.toInt(),
-        skyMid = 0xFF0A0A1C.toInt(),
-        skyLow = 0xFF161033.toInt(),
-        haze = 0xFF2A1D50.toInt(),
-        farShape = 0xFF6C4BCE.toInt(),
-        midShape = 0xFF3B2A7A.toInt(),
-        nearShape = 0xFF120D28.toInt(),
-        platTop = 0xFF8D93AE.toInt(),
-        platBody = 0xFF585E7C.toInt(),
-        platShade = 0xFF373C52.toInt(),
-        platAccent = 0xFFFFB35C.toInt(),
-        rim = 0xFFCBD4FF.toInt(),
-        sunColor = 0xFFFFFFFF.toInt(),
-        starAlpha = 1f,
-        cloudAlpha = 0.12f
-    )
-
-    val list = listOf(BACKYARD, TREETOPS, CLOUDLINE, AURORA, SPACE)
+    val bandCount: Int get() = current.bands.size
 
     fun get(biome: Int): BiomePalette {
-        var i = biome % list.size
-        if (i < 0) i += list.size
-        return list[i]
+        val bands = current.bands
+        var i = biome % bands.size
+        if (i < 0) i += bands.size
+        return bands[i]
     }
 
     /** Band name including the lap number, e.g. "Orbit II". */
     fun label(biome: Int): String {
-        val lap = biome / list.size
+        val lap = biome / current.bands.size
         val base = get(biome).name
         return if (lap <= 0) base else base + " " + roman(lap + 1)
     }

@@ -6,7 +6,6 @@ import android.graphics.RectF
 import com.blacklab.buddybounce.Game
 import com.blacklab.buddybounce.data.Outfits
 import com.blacklab.buddybounce.game.MathX.clamp
-import com.blacklab.buddybounce.game.Tuning
 import com.blacklab.buddybounce.render.ColorX
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -33,7 +32,7 @@ class WardrobeScreen(private val g: Game) {
 
     fun draw(c: Canvas) {
         val ui = g.ui
-        val wide = g.worldW > Tuning.VIEW_H * 1.12f
+        val wide = g.worldW > Theme.SCREEN_H * 1.12f
         val rise = (1f - g.screenAnim) * 50f
 
         // keep the selection on the equipped outfit when arriving
@@ -55,16 +54,16 @@ class WardrobeScreen(private val g: Game) {
 
         if (wide) {
             val previewW = min(g.worldW * 0.38f, 560f)
-            drawPreview(c, ui.safeLeft + 40f, ui.safeTop + 180f + rise, previewW, Tuning.VIEW_H - ui.safeTop - ui.safeBottom - 240f)
+            drawPreview(c, ui.safeLeft + 40f, ui.safeTop + 180f + rise, previewW, Theme.SCREEN_H - ui.safeTop - ui.safeBottom - 240f)
             val gridX = ui.safeLeft + previewW + 80f
             drawGrid(c, gridX, ui.safeTop + 180f, g.worldW - gridX - ui.safeRight - 40f,
-                Tuning.VIEW_H - ui.safeTop - ui.safeBottom - 220f, 4)
+                Theme.SCREEN_H - ui.safeTop - ui.safeBottom - 220f, 4)
         } else {
             val previewH = 430f
             drawPreview(c, ui.safeLeft + 36f, ui.safeTop + 172f + rise, g.worldW - ui.safeLeft - ui.safeRight - 72f, previewH)
             val gridTop = ui.safeTop + 172f + previewH + 26f
             drawGrid(c, ui.safeLeft + 36f, gridTop, g.worldW - ui.safeLeft - ui.safeRight - 72f,
-                Tuning.VIEW_H - gridTop - ui.safeBottom - 24f, 3)
+                Theme.SCREEN_H - gridTop - ui.safeBottom - 24f, 3)
         }
     }
 

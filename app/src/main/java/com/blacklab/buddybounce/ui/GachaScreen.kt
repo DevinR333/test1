@@ -1,24 +1,32 @@
 package com.blacklab.buddybounce.ui
 
 import android.graphics.Canvas
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import android.graphics.Shader
 import com.blacklab.buddybounce.Game
 import com.blacklab.buddybounce.audio.Audio
 import com.blacklab.buddybounce.data.Outfits
+import com.blacklab.buddybounce.data.Powerups
 import com.blacklab.buddybounce.game.Hash
 import com.blacklab.buddybounce.game.MathX.clamp01
 import com.blacklab.buddybounce.game.MathX.smoothstep
 import com.blacklab.buddybounce.game.Tuning
 import com.blacklab.buddybounce.render.ColorX
+import com.blacklab.buddybounce.render.Scenes
+import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.random.Random
 
 /**
- * The prize machine. One pull costs [Tuning.GACHA_COST] coins and dispenses a capsule with a
- * random outfit, weighted by rarity; a duplicate hands some of the coins back.
+ * The prize machine. One pull costs [Tuning.GACHA_COST] coins and dispenses one of three things:
+ *
+ *  - a **power-up** (55%) - the bread, so a pull is never a total loss
+ *  - an **outfit** (44%) - rarity weighted, duplicates refund part of the cost
+ *  - a **world** (1%) - the rare one, a whole new set of biomes to climb
  */
 class GachaScreen(private val g: Game) {
 
@@ -26,6 +34,7 @@ class GachaScreen(private val g: Game) {
     private val path = Path()
     private val rect = RectF()
     private val rng = Random(System.nanoTime())
+    private val icons = PowerupIcon()
 
     private object Id {
         const val BACK = 4001
@@ -34,14 +43,28 @@ class GachaScreen(private val g: Game) {
         const val DONE = 4004
     }
 
+    private object Kind {
+        const val OUTFIT = 0
+        const val POWERUP = 1
+        const val SCENE = 2
+    }
+
     private enum class State { IDLE, CRANK, DROP, REVEAL }
+
+    private companion object {
+        const val SCENE_CHANCE = 0.01f
+        const val POWERUP_CHANCE = 0.55f
+    }
 
     private var state = State.IDLE
     private var timer = 0f
-    private var prize: Outfits.Outfit? = null
+    private var prizeKind = Kind.OUTFIT
+    private var prizeId = ""
     private var duplicate = false
     private var revealAnim = 0f
     private var crankAngle = 0f
+
+    // -------------------------------------------------------------------------------------
 
     fun update(dt: Float) {
         when (state) {
@@ -56,10 +79,10 @@ class GachaScreen(private val g: Game) {
                     state = State.REVEAL
                     revealAnim = 0f
                     g.audio.play(Audio.GACHA_REVEAL, 0.9f)
-                    val r = prize?.rarity
-                    if (!duplicate && (r == Outfits.Rarity.EPIC || r == Outfits.Rarity.LEGENDARY)) {
-                        g.shakeScreen(0.5f)
-                        g.flashScreen(0.35f)
+                    if (isBigPrize()) {
+                        g.shakeScreen(if (prizeKind == Kind.SCENE) 0.9f else 0.5f)
+                        g.flashScreen(if (prizeKind == Kind.SCENE) 0.6f else 0.35f)
+                        if (prizeKind == Kind.SCENE) g.audio.play(Audio.FANFARE, 0.9f)
                     }
                 }
             }
@@ -68,9 +91,49 @@ class GachaScreen(private val g: Game) {
         }
     }
 
+    private fun isBigPrize(): Boolean = when (prizeKind) {
+        Kind.SCENE -> true
+        Kind.OUTFIT -> !duplicate && (Outfits.of(prizeId).rarity == Outfits.Rarity.EPIC ||
+            Outfits.of(prizeId).rarity == Outfits.Rarity.LEGENDARY)
+        else -> false
+    }
+
+    private fun prizeTint(): Int = when (prizeKind) {
+        Kind.SCENE -> Scenes.of(prizeId).cardTint
+        Kind.POWERUP -> Powerups.of(prizeId).tint
+        else -> Outfits.of(prizeId).rarity.tint
+    }
+
+    private fun prizeName(): String = when (prizeKind) {
+        Kind.SCENE -> Scenes.of(prizeId).name
+        Kind.POWERUP -> Powerups.of(prizeId).name
+        else -> Outfits.of(prizeId).name
+    }
+
+    private fun prizeBlurb(): String = when (prizeKind) {
+        Kind.SCENE -> Scenes.of(prizeId).blurb
+        Kind.POWERUP -> Powerups.of(prizeId).blurb
+        else -> Outfits.of(prizeId).blurb
+    }
+
+    private fun prizeBanner(): String = when {
+        prizeKind == Kind.SCENE -> "A WHOLE NEW WORLD!"
+        prizeKind == Kind.POWERUP -> "POWER-UP!"
+        duplicate -> "ALREADY HAD IT"
+        else -> "NEW OUTFIT!"
+    }
+
+    private fun prizeRarityLabel(): String = when (prizeKind) {
+        Kind.SCENE -> "WORLD"
+        Kind.POWERUP -> "POWER-UP"
+        else -> Outfits.of(prizeId).rarity.label.uppercase()
+    }
+
+    // -------------------------------------------------------------------------------------
+
     fun draw(c: Canvas) {
         val ui = g.ui
-        val wide = g.worldW > Tuning.VIEW_H * 1.12f
+        val wide = g.worldW > Theme.SCREEN_H * 1.12f
 
         if (ui.backButton(c, Id.BACK, ui.safeLeft + 78f, ui.safeTop + 78f, 52f)) {
             g.tap(); reset(); g.goto(Game.Screen.MENU)
@@ -85,7 +148,7 @@ class GachaScreen(private val g: Game) {
         )
 
         val areaTop = ui.safeTop + 176f
-        val areaBottom = Tuning.VIEW_H - ui.safeBottom - 200f
+        val areaBottom = Theme.SCREEN_H - ui.safeBottom - 200f
         val machineH = (areaBottom - areaTop).coerceAtLeast(320f)
         val machineW = min(g.worldW * (if (wide) 0.42f else 0.86f), machineH * 0.72f)
         val cx = if (wide) g.worldW * 0.32f else g.worldW * 0.5f
@@ -95,67 +158,96 @@ class GachaScreen(private val g: Game) {
 
         val btnW = min(g.worldW - ui.safeLeft - ui.safeRight - 100f, 560f)
         val btnX = if (wide) g.worldW * 0.60f else (g.worldW - btnW) * 0.5f
-        val btnY = if (wide) Tuning.VIEW_H * 0.5f else Tuning.VIEW_H - ui.safeBottom - 168f
+        val btnY = if (wide) Theme.SCREEN_H * 0.5f else Theme.SCREEN_H - ui.safeBottom - 168f
 
         if (state == State.REVEAL) {
-            drawReveal(c, wide)
+            drawReveal(c)
         } else {
-            val everythingOwned = g.ownedCount() >= Outfits.collectableCount
-            val canPull = coins >= Tuning.GACHA_COST && state == State.IDLE && !everythingOwned
+            val canPull = coins >= Tuning.GACHA_COST && state == State.IDLE
             val label = when {
-                everythingOwned -> "ALL COLLECTED"
                 state != State.IDLE -> "..."
-                coins >= Tuning.GACHA_COST -> "PULL THE CRANK"
+                canPull -> "PULL THE CRANK"
                 else -> "NOT ENOUGH COINS"
             }
-            val sub = when {
-                everythingOwned -> "Buddy has every outfit. Show-off."
-                coins >= Tuning.GACHA_COST -> "-${Tuning.GACHA_COST} coins"
-                else -> "collect ${Tuning.GACHA_COST - coins} more"
-            }
+            val sub = if (canPull) "-${Tuning.GACHA_COST} coins" else "collect ${Tuning.GACHA_COST - coins} more"
             val pullW = if (wide) min(btnW, g.worldW - btnX - ui.safeRight - 40f) else btnW
             if (ui.button(c, Id.PULL, btnX, btnY, pullW, 118f, label, Ui.ButtonStyle.PRIMARY, canPull, sub)) {
                 pull()
+            }
+            if (wide || btnY > Theme.SCREEN_H * 0.6f) {
+                ui.text(
+                    c, "power-ups • outfits • and very rarely, a new world",
+                    btnX + pullW * 0.5f, btnY + 148f, 26f, Theme.TEXT_DIM, ui.body, false
+                )
             }
         }
     }
 
     private fun reset() {
         state = State.IDLE
-        prize = null
+        prizeId = ""
         duplicate = false
         revealAnim = 0f
     }
 
-    // -----------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------------
     // the pull
-    // -----------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------------
 
     private fun pull() {
         if (!g.save.spendCoins(Tuning.GACHA_COST)) return
         g.audio.play(Audio.GACHA_SPIN, 0.8f)
-        prize = rollPrize()
-        val outfit = prize
-        duplicate = outfit != null && g.save.owns(outfit.id)
-        if (outfit != null && !duplicate) g.save.unlock(outfit.id)
-        if (duplicate) g.save.addCoins(Tuning.DUPLICATE_REFUND)
+        rollPrize()
+        grantPrize()
         state = State.CRANK
         timer = 0.85f
         crankAngle = 0f
     }
 
+    private fun rollPrize() {
+        duplicate = false
+        val lockedScenes = Scenes.unlockable.filter { !g.save.ownsScene(it.id) }
+        val roll = rng.nextFloat()
+
+        if (lockedScenes.isNotEmpty() && roll < SCENE_CHANCE) {
+            prizeKind = Kind.SCENE
+            prizeId = lockedScenes[rng.nextInt(lockedScenes.size)].id
+            return
+        }
+
+        val anyOutfitLeft = Outfits.ALL.any { it.id != Outfits.DEFAULT_ID && !g.save.owns(it.id) }
+        if (roll < SCENE_CHANCE + POWERUP_CHANCE || !anyOutfitLeft) {
+            prizeKind = Kind.POWERUP
+            prizeId = rollPowerup()
+            return
+        }
+
+        prizeKind = Kind.OUTFIT
+        prizeId = rollOutfit()
+        duplicate = g.save.owns(prizeId)
+    }
+
+    private fun rollPowerup(): String {
+        var roll = rng.nextInt(Powerups.totalWeight)
+        for (pu in Powerups.ALL) {
+            roll -= pu.weight
+            if (roll < 0) return pu.id
+        }
+        return Powerups.ALL[0].id
+    }
+
     /**
-     * Weighted by rarity. A rarity the player has completed rolls down into one they haven't,
-     * so late pulls keep feeling like progress; inside a rarity a duplicate is still possible
-     * and refunds part of the cost.
+     * Rarity weighted. A rarity the player has completed rolls down into one they haven't, so
+     * late pulls keep feeling like progress; inside a rarity a duplicate is still possible and
+     * refunds part of the cost.
      */
-    private fun rollPrize(): Outfits.Outfit? {
+    private fun rollOutfit(): String {
         val rarities = Outfits.Rarity.values()
         val open = rarities.filter { r -> Outfits.inRarity(r).any { !g.save.owns(it.id) } }
         val pool = if (open.isEmpty()) rarities.toList() else open
         var total = 0
         for (r in pool) total += r.weight
-        if (total <= 0) return null
+        if (total <= 0) return Outfits.ALL[1].id
         var roll = rng.nextInt(total)
         var chosen = pool[0]
         for (r in pool) {
@@ -163,13 +255,21 @@ class GachaScreen(private val g: Game) {
             if (roll < 0) { chosen = r; break }
         }
         val items = Outfits.inRarity(chosen)
-        if (items.isEmpty()) return null
-        return items[rng.nextInt(items.size)]
+        if (items.isEmpty()) return Outfits.ALL[1].id
+        return items[rng.nextInt(items.size)].id
     }
 
-    // -----------------------------------------------------------------------------------
+    private fun grantPrize() {
+        when (prizeKind) {
+            Kind.SCENE -> g.save.unlockScene(prizeId)
+            Kind.POWERUP -> g.save.grantPowerup(prizeId, 1)
+            else -> if (duplicate) g.save.grantCoins(Tuning.DUPLICATE_REFUND) else g.save.unlock(prizeId)
+        }
+    }
+
+    // -------------------------------------------------------------------------------------
     // machine art
-    // -----------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------------
 
     private fun drawMachine(c: Canvas, cx: Float, top: Float, w: Float, h: Float) {
         val ui = g.ui
@@ -181,7 +281,6 @@ class GachaScreen(private val g: Game) {
         g.art.drawShadow(c, cx, bodyBottom + 12f, w * 1.15f, h * 0.22f, 0.55f)
         p.reset(); p.isAntiAlias = true
 
-        // body
         p.color = 0xFFC0392B.toInt()
         rect.set(cx - w * 0.5f, bodyTop - w * 0.12f, cx + w * 0.5f, bodyBottom)
         c.drawRoundRect(rect, w * 0.1f, w * 0.1f, p)
@@ -192,13 +291,11 @@ class GachaScreen(private val g: Game) {
         rect.set(cx - w * 0.42f, bodyTop - w * 0.06f, cx - w * 0.28f, bodyBottom - h * 0.06f)
         c.drawRoundRect(rect, w * 0.05f, w * 0.05f, p)
 
-        // plaque
         p.color = Theme.ACCENT
         rect.set(cx - w * 0.36f, bodyTop + w * 0.02f, cx + w * 0.36f, bodyTop + w * 0.20f)
         c.drawRoundRect(rect, w * 0.05f, w * 0.05f, p)
         ui.text(c, "BUDDY PRIZES", cx, bodyTop + w * 0.155f, w * 0.10f, 0xFF2A1D04.toInt(), ui.title, false)
 
-        // dome + capsules
         p.color = 0xFFE2E8F2.toInt()
         rect.set(cx - domeR * 1.06f, domeCY + domeR * 0.52f, cx + domeR * 1.06f, domeCY + domeR * 0.92f)
         c.drawRoundRect(rect, domeR * 0.2f, domeR * 0.2f, p)
@@ -212,16 +309,14 @@ class GachaScreen(private val g: Game) {
             val rr = domeR * (0.22f + Hash.f(i, 303) * 0.62f)
             val jx = sin(ui.time * 14f + i) * 5f * jiggle
             val jy = sin(ui.time * 11f + i * 2f) * 5f * jiggle
-            val px = cx + kotlin.math.cos(a) * rr + jx
+            val px = cx + cos(a) * rr + jx
             val py = domeCY + sin(a) * rr * 0.86f + jy
-            val col = capsuleColor(i)
-            p.color = col
+            p.color = capsuleColor(i)
             c.drawCircle(px, py, domeR * 0.15f, p)
             p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.55f)
             c.drawCircle(px - domeR * 0.05f, py - domeR * 0.05f, domeR * 0.045f, p)
         }
 
-        // glass highlight + rim
         p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.28f)
         path.reset()
         path.moveTo(cx - domeR * 0.75f, domeCY - domeR * 0.15f)
@@ -235,7 +330,6 @@ class GachaScreen(private val g: Game) {
         c.drawCircle(cx, domeCY, domeR, p)
         p.style = Paint.Style.FILL
 
-        // crank
         val crankCX = cx + w * 0.26f
         val crankCY = bodyTop + w * 0.36f
         p.color = 0xFFD8DEE9.toInt()
@@ -251,12 +345,10 @@ class GachaScreen(private val g: Game) {
         c.drawCircle(crankCX, crankCY - w * 0.085f, w * 0.028f, p)
         c.restore()
 
-        // coin slot
         p.color = 0xFF3A2320.toInt()
         rect.set(cx - w * 0.36f, bodyTop + w * 0.30f, cx - w * 0.16f, bodyTop + w * 0.36f)
         c.drawRoundRect(rect, w * 0.03f, w * 0.03f, p)
 
-        // chute
         val chuteY = bodyBottom - h * 0.19f
         p.color = 0xFF7E241F.toInt()
         rect.set(cx - w * 0.28f, chuteY, cx + w * 0.28f, chuteY + h * 0.11f)
@@ -265,12 +357,11 @@ class GachaScreen(private val g: Game) {
         rect.set(cx - w * 0.24f, chuteY + h * 0.012f, cx + w * 0.24f, chuteY + h * 0.085f)
         c.drawRoundRect(rect, w * 0.04f, w * 0.04f, p)
 
-        // the capsule on its way out
         if (state == State.DROP || state == State.REVEAL) {
             val k = if (state == State.DROP) smoothstep(0f, 1f, 1f - clamp01(timer / 0.75f)) else 1f
             val capY = domeCY + (chuteY + h * 0.05f - domeCY) * k
             val bounce = if (k > 0.92f) sin((k - 0.92f) * 60f) * 8f else 0f
-            drawCapsule(c, cx, capY + bounce, w * 0.15f, prize?.rarity?.tint ?: Theme.ACCENT)
+            drawCapsule(c, cx, capY + bounce, w * 0.15f, prizeTint())
         }
     }
 
@@ -296,80 +387,120 @@ class GachaScreen(private val g: Game) {
         c.drawCircle(cx - r * 0.35f, cy - r * 0.42f, r * 0.16f, p)
     }
 
-    // -----------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------------
     // reveal
-    // -----------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------------
 
-    private fun drawReveal(c: Canvas, wide: Boolean) {
+    private fun drawReveal(c: Canvas) {
         val ui = g.ui
-        val outfit = prize ?: return
+        if (prizeId.isEmpty()) return
         val k = smoothstep(0f, 1f, revealAnim)
         val pop = 1f + (1f - k) * 0.25f
+        val tint = prizeTint()
 
-        ui.scrim(c, g.worldW, Tuning.VIEW_H, 0.72f * k)
+        ui.scrim(c, g.worldW, Theme.SCREEN_H, 0.72f * k)
 
         val w = min(g.worldW - ui.safeLeft - ui.safeRight - 80f, 720f)
-        val h = min(Tuning.VIEW_H - ui.safeTop - ui.safeBottom - 120f, 980f)
+        val h = min(Theme.SCREEN_H - ui.safeTop - ui.safeBottom - 120f, 980f)
         val x = (g.worldW - w) * 0.5f
-        val y = (Tuning.VIEW_H - h) * 0.5f
+        val y = (Theme.SCREEN_H - h) * 0.5f
 
         c.save()
-        c.scale(pop, pop, g.worldW * 0.5f, Tuning.VIEW_H * 0.5f)
+        c.scale(pop, pop, g.worldW * 0.5f, Theme.SCREEN_H * 0.5f)
 
-        // rarity burst
-        val burst = outfit.rarity.tint
-        g.art.drawGlow(c, g.worldW * 0.5f, y + h * 0.42f, w * 1.1f, burst, 0.35f * k)
-        if (outfit.rarity == Outfits.Rarity.LEGENDARY || outfit.rarity == Outfits.Rarity.EPIC) {
+        g.art.drawGlow(c, g.worldW * 0.5f, y + h * 0.42f, w * 1.1f, tint, 0.35f * k)
+        if (isBigPrize()) {
             p.reset(); p.isAntiAlias = true
             for (i in 0 until 12) {
                 val a = ui.time * 0.5f + i * 0.5236f
-                p.color = ColorX.withAlpha(burst, 0.16f * k)
+                p.color = ColorX.withAlpha(tint, 0.16f * k)
                 path.reset()
                 path.moveTo(g.worldW * 0.5f, y + h * 0.42f)
-                path.lineTo(
-                    g.worldW * 0.5f + kotlin.math.cos(a) * w * 1.2f - 40f,
-                    y + h * 0.42f + sin(a) * w * 1.2f
-                )
-                path.lineTo(
-                    g.worldW * 0.5f + kotlin.math.cos(a) * w * 1.2f + 40f,
-                    y + h * 0.42f + sin(a) * w * 1.2f
-                )
+                path.lineTo(g.worldW * 0.5f + cos(a) * w * 1.2f - 40f, y + h * 0.42f + sin(a) * w * 1.2f)
+                path.lineTo(g.worldW * 0.5f + cos(a) * w * 1.2f + 40f, y + h * 0.42f + sin(a) * w * 1.2f)
                 path.close()
                 c.drawPath(path, p)
             }
         }
 
         ui.panel(c, x, y, w, h)
-        ui.shimmer(c, x, y, w, h, Theme.RADIUS, if (outfit.rarity == Outfits.Rarity.LEGENDARY) 1f else 0.5f)
+        ui.shimmer(c, x, y, w, h, Theme.RADIUS, if (isBigPrize()) 1f else 0.5f)
 
         ui.text(
-            c, if (duplicate) "ALREADY HAD IT" else "NEW OUTFIT!",
-            g.worldW * 0.5f, y + 96f, 54f, if (duplicate) Theme.TEXT_DIM else Theme.ACCENT, ui.title
+            c, prizeBanner(), g.worldW * 0.5f, y + 96f, 52f,
+            if (duplicate && prizeKind == Kind.OUTFIT) Theme.TEXT_DIM else Theme.ACCENT, ui.title
         )
-        ui.pill(c, g.worldW * 0.5f - 110f, y + 122f, 220f, 52f, ColorX.withAlpha(outfit.rarity.tint, 0.25f))
-        ui.text(c, outfit.rarity.label.uppercase(), g.worldW * 0.5f, y + 158f, 30f, outfit.rarity.tint, ui.title, false)
+        ui.pill(c, g.worldW * 0.5f - 110f, y + 122f, 220f, 52f, ColorX.withAlpha(tint, 0.25f))
+        ui.text(c, prizeRarityLabel(), g.worldW * 0.5f, y + 158f, 28f, tint, ui.title, false)
 
-        g.drawPosedBuddy(c, g.worldW * 0.5f, y + h * 0.74f, min(w / 300f, h / 620f) * 1.55f, outfit.id, ui.time)
+        when (prizeKind) {
+            Kind.OUTFIT -> g.drawPosedBuddy(
+                c, g.worldW * 0.5f, y + h * 0.72f, min(w / 300f, h / 620f) * 1.05f, prizeId, ui.time
+            )
+            Kind.POWERUP -> icons.draw(c, g.art, prizeId, g.worldW * 0.5f, y + h * 0.46f, h * 0.13f, tint)
+            else -> drawScenePreview(c, g.worldW * 0.5f, y + h * 0.46f, w * 0.52f, h * 0.30f)
+        }
 
-        ui.text(c, outfit.name.uppercase(), g.worldW * 0.5f, y + h - 168f, 50f, Theme.TEXT, ui.title)
+        ui.text(c, prizeName().uppercase(), g.worldW * 0.5f, y + h - 168f, 48f, Theme.TEXT, ui.title)
+        val blurb = if (duplicate && prizeKind == Kind.OUTFIT) {
+            "+${Tuning.DUPLICATE_REFUND} coins back"
+        } else {
+            prizeBlurb()
+        }
+        var blurbSize = 30f
+        while (ui.measure(blurb, blurbSize, ui.body) > w - 60f && blurbSize > 18f) blurbSize -= 1f
         ui.text(
-            c, if (duplicate) "+${Tuning.DUPLICATE_REFUND} coins back" else outfit.blurb,
-            g.worldW * 0.5f, y + h - 124f, 30f,
-            if (duplicate) Theme.ACCENT else Theme.TEXT_DIM, ui.body, false
+            c, blurb, g.worldW * 0.5f, y + h - 124f, blurbSize,
+            if (duplicate && prizeKind == Kind.OUTFIT) Theme.ACCENT else Theme.TEXT_DIM, ui.body, false
         )
 
         val bw = (w - 120f) * 0.5f
         val by = y + h - 96f
         val canAgain = g.save.coins >= Tuning.GACHA_COST
         if (ui.button(c, Id.AGAIN, x + 40f, by, bw, 78f, "AGAIN", Ui.ButtonStyle.PRIMARY, canAgain,
-                sublabel = "-${Tuning.GACHA_COST}") && canAgain) {
+                sublabel = "-${Tuning.GACHA_COST}")) {
             reset(); pull()
         }
-        if (ui.button(c, Id.DONE, x + 80f + bw, by, bw, 78f, if (duplicate) "OK" else "WEAR IT")) {
+        val doneLabel = when {
+            prizeKind == Kind.SCENE -> "PLAY IT"
+            prizeKind == Kind.POWERUP -> "NICE"
+            duplicate -> "OK"
+            else -> "WEAR IT"
+        }
+        if (ui.button(c, Id.DONE, x + 80f + bw, by, bw, 78f, doneLabel)) {
             g.tap()
-            if (!duplicate) g.save.equippedOutfit = outfit.id
+            when {
+                prizeKind == Kind.SCENE -> {
+                    g.save.selectedScene = prizeId
+                    g.applyScene()
+                }
+                prizeKind == Kind.OUTFIT && !duplicate -> g.save.equippedOutfit = prizeId
+            }
             reset()
         }
         c.restore()
+    }
+
+    /** The won world, as a stack of its skies. */
+    private fun drawScenePreview(c: Canvas, cx: Float, cy: Float, w: Float, h: Float) {
+        val scene = Scenes.of(prizeId)
+        val bands = scene.bands
+        val colors = IntArray(bands.size + 1)
+        for (i in bands.indices) colors[bands.size - 1 - i] = bands[i].skyMid
+        colors[bands.size] = bands[0].skyLow
+        p.reset(); p.isAntiAlias = true
+        p.shader = LinearGradient(cx, cy - h * 0.5f, cx, cy + h * 0.5f, colors, null, Shader.TileMode.CLAMP)
+        rect.set(cx - w * 0.5f, cy - h * 0.5f, cx + w * 0.5f, cy + h * 0.5f)
+        c.drawRoundRect(rect, 22f, 22f, p)
+        p.shader = null
+        p.color = ColorX.withAlpha(bands[0].platTop, 0.95f)
+        rect.set(cx - w * 0.5f, cy + h * 0.5f - 26f, cx + w * 0.5f, cy + h * 0.5f)
+        c.drawRoundRect(rect, 12f, 12f, p)
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 4f
+        p.color = ColorX.withAlpha(scene.cardTint, 0.8f)
+        rect.set(cx - w * 0.5f, cy - h * 0.5f, cx + w * 0.5f, cy + h * 0.5f)
+        c.drawRoundRect(rect, 22f, 22f, p)
+        p.style = Paint.Style.FILL
     }
 }

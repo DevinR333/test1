@@ -13,8 +13,17 @@ import com.blacklab.buddybounce.render.Art
 import com.blacklab.buddybounce.render.ColorX
 import kotlin.math.sin
 
-/** The game's visual language, in one place. Everything is in world units. */
+/**
+ * The game's visual language, in one place.
+ *
+ * The UI is laid out in its own 1600-unit-tall space ([SCREEN_H]) that always maps to the full
+ * screen height. The world is drawn in a taller 2560-unit space (Tuning.VIEW_H) inside that,
+ * which is what zooms the camera out without shrinking the menus.
+ */
 object Theme {
+    /** Height of the UI coordinate space. Width is SCREEN_H * aspect. */
+    const val SCREEN_H = 1600f
+
     const val BG_DEEP = 0xFF0C101B.toInt()
     const val PANEL_SOLID = 0xFF1A2236.toInt()
     const val PANEL_RAISED = 0xFF232D46.toInt()

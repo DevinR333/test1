@@ -22,6 +22,13 @@ import kotlin.math.sin
 class GameRenderer(private val art: Art) {
 
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val ink = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+        strokeWidth = 5f
+        color = 0xCC080A0F.toInt()
+    }
     private val path = Path()
     private val r = RectF()
 
@@ -30,6 +37,8 @@ class GameRenderer(private val art: Art) {
     // -----------------------------------------------------------------------------------
 
     fun drawPlatform(c: Canvas, plat: Platform, pal: BiomePalette, viewTop: Float) {
+        // The starting ground is part of the backdrop; it just happens to also be collidable.
+        if (plat.isGround) return
         val alpha = plat.alpha
         if (alpha <= 0.02f) return
         val top = viewTop - plat.y
@@ -40,7 +49,7 @@ class GameRenderer(private val art: Art) {
         val w = plat.w * (1f + squash * 0.05f)
         val left = plat.x - w * 0.5f
         val right = plat.x + w * 0.5f
-        val skin = plat.biome % Palettes.list.size
+        val skin = skinFor(pal.style)
 
         c.save()
         if (plat.state == 1 && plat.tilt != 0f) c.rotate(plat.tilt * 34f, plat.x, top)
@@ -68,6 +77,10 @@ class GameRenderer(private val art: Art) {
         p.color = ColorX.withAlpha(bodyColor, alpha)
         r.set(left, top + h * 0.12f, right, top + h * 0.86f)
         c.drawRoundRect(r, h * 0.36f, h * 0.36f, p)
+        ink.color = ColorX.withAlpha(0xFF080A0F.toInt(), alpha * 0.75f)
+        ink.strokeWidth = 5f
+        r.set(left, top, right, top + h)
+        c.drawRoundRect(r, h * 0.38f, h * 0.38f, ink)
         p.color = ColorX.withAlpha(topColor, alpha)
         r.set(left, top, right, top + h * 0.46f)
         c.drawRoundRect(r, h * 0.3f, h * 0.3f, p)
@@ -111,7 +124,20 @@ class GameRenderer(private val art: Art) {
             Boost.TRAMPOLINE -> trampoline(c, plat, top, alpha)
         }
 
+        if (plat.rescue) {
+            art.drawGlow(c, plat.x, top + h * 0.5f, w * 0.8f, 0xFF7BE3A0.toInt(), 0.45f * alpha)
+        }
+
         c.restore()
+    }
+
+    /** Which platform dressing suits a band: grass, moss, snow/cloud, crystal or rock. */
+    private fun skinFor(style: Int): Int = when (style) {
+        BandStyle.HILLS -> 0
+        BandStyle.TREES, BandStyle.KELP -> 1
+        BandStyle.CLOUDS, BandStyle.PEAKS -> 2
+        BandStyle.AURORA, BandStyle.REEF -> 3
+        else -> 4
     }
 
     private fun grassTufts(c: Canvas, plat: Platform, top: Float, left: Float, right: Float, pal: BiomePalette, a: Float) {
@@ -304,6 +330,9 @@ class GameRenderer(private val art: Art) {
         p.color = edge
         r.set(x - w - 3f, y - rad, x + w + 3f, y + rad)
         c.drawOval(r, p)
+        ink.strokeWidth = 4f
+        ink.color = 0x99080A0F.toInt()
+        c.drawOval(r, ink)
         p.color = face
         r.set(x - w, y - rad + 3f, x + w, y + rad - 3f)
         c.drawOval(r, p)

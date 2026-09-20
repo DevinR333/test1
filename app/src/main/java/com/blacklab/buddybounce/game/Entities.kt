@@ -70,6 +70,11 @@ class Platform : Poolable {
     var biome = 0
     var seed = 0
 
+    /** The yard floor at the bottom of a run: full width, always safe, drawn differently. */
+    var isGround = false
+    /** Spawned by a Safety Net rescue, so the renderer can make it arrive with a flourish. */
+    var rescue = false
+
     /** 0 = intact, 1 = breaking/crumbling away. */
     var state = 0
     var timer = 0f
@@ -90,6 +95,7 @@ class Platform : Poolable {
         x = 0f; y = 0f; w = 0f
         kind = PlatKind.SOLID; boost = Boost.NONE
         vx = 0f; baseY = 0f; phase = 0f; biome = 0; seed = 0
+        isGround = false; rescue = false
         state = 0; timer = 0f; hitAnim = 0f; boostAnim = 0f
         alpha = 1f; fallVy = 0f; tilt = 0f
     }

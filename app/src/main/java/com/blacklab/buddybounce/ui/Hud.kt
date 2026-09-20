@@ -4,6 +4,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import com.blacklab.buddybounce.Game
+import com.blacklab.buddybounce.data.Powerups
 import com.blacklab.buddybounce.game.Flight
 import com.blacklab.buddybounce.game.MathX.clamp01
 import com.blacklab.buddybounce.game.Tuning
@@ -11,7 +12,7 @@ import com.blacklab.buddybounce.render.ColorX
 import kotlin.math.abs
 import kotlin.math.sin
 
-/** Score, coins, power-up timers, the pause button and the touch steering gauge. */
+/** Score, coins, power-up timers, the pause button and the touch steering indicator. */
 class Hud(private val g: Game) {
 
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -25,21 +26,13 @@ class Hud(private val g: Game) {
         const val QUIT = 1005
     }
 
-    // ---- gauge geometry, shared with Game's touch routing ------------------------------
-
-    fun gaugeTrackY(): Float = Tuning.VIEW_H - g.ui.safeBottom - 96f
-    fun gaugeHalfWidth(): Float =
-        ((g.worldW - g.ui.safeLeft - g.ui.safeRight) * 0.5f - 86f).coerceAtLeast(120f)
-    fun gaugeCentreX(): Float = g.ui.safeLeft + (g.worldW - g.ui.safeLeft - g.ui.safeRight) * 0.5f
-    /** Touches below this line steer instead of doing anything else. */
-    fun gaugeBandTop(): Float = gaugeTrackY() - 190f
-
+    /** The only screen region that is NOT a steering surface. */
     fun isOverPauseButton(x: Float, y: Float): Boolean {
         val cx = g.worldW - g.ui.safeRight - 74f
         val cy = g.ui.safeTop + 74f
         val dx = x - cx
         val dy = y - cy
-        return dx * dx + dy * dy < 96f * 96f
+        return dx * dx + dy * dy < 104f * 104f
     }
 
     // -----------------------------------------------------------------------------------
@@ -49,9 +42,9 @@ class Hud(private val g: Game) {
         val left = ui.safeLeft + 34f
         val top = ui.safeTop + 30f
 
-        // score
-        val score = g.world.score
-        ui.text(c, score.toString(), left, top + 74f, 84f, Theme.TEXT, ui.numbers)
+        if (g.controls.touchEnabled) drawTouchIndicator(c)
+
+        ui.text(c, g.world.score.toString(), left, top + 74f, 84f, Theme.TEXT, ui.numbers)
         val best = g.save.bestScore
         if (best > 0) {
             ui.text(c, "BEST $best", left + 4f, top + 116f, 32f, ColorX.withAlpha(Theme.TEXT_DIM, 0.95f), ui.bodyLeft, false)
@@ -70,7 +63,7 @@ class Hud(private val g: Game) {
         rect.set(pcx + 5f, pcy - 19f, pcx + 17f, pcy + 19f)
         c.drawRoundRect(rect, 5f, 5f, p)
 
-        // coins earned this run
+        // coins picked up this run (they bank when the run ends)
         val coinText = g.world.runCoins.toString()
         val cw = ui.measure(coinText, 40f, ui.bodyLeft) + 104f
         val cx = g.worldW - ui.safeRight - cw - 18f
@@ -88,20 +81,16 @@ class Hud(private val g: Game) {
             ui.text(c, "NEW HEIGHTS", g.worldW * 0.5f, y + 42f, 28f, ColorX.withAlpha(Theme.ACCENT, a * 0.9f), ui.body, false)
         }
 
-        if (g.controls.touchEnabled && (g.save.showGaugeAlways || g.controls.gaugeActive)) {
-            drawGauge(c)
-        }
-
         if (hintTimer > 0f) {
             val a = clamp01(hintTimer / 0.8f)
             val msg = when {
-                g.controls.touchEnabled && g.controls.tiltEnabled -> "Tilt your phone, or slide the bar"
-                g.controls.touchEnabled -> "Slide along the bar to steer"
+                g.controls.touchEnabled && g.controls.tiltEnabled -> "Tilt, or slide a finger anywhere"
+                g.controls.touchEnabled -> "Slide a finger anywhere to steer"
                 else -> "Tilt your phone to steer"
             }
             ui.text(
-                c, msg, g.worldW * 0.5f, Tuning.VIEW_H * 0.60f, 40f,
-                ColorX.withAlpha(Theme.TEXT, a * 0.85f), g.ui.body
+                c, msg, g.worldW * 0.5f, Theme.SCREEN_H * 0.72f, 40f,
+                ColorX.withAlpha(Theme.TEXT, a * 0.85f), ui.body
             )
         }
     }
@@ -127,8 +116,17 @@ class Hud(private val g: Game) {
             timerPill(c, x, y + slot * 62f, "SHIELD", b.shieldTime / Tuning.SHIELD_TIME, 0xFF8FD3F4.toInt())
             slot++
         }
-        if (b.magnetTime > 0f) {
-            timerPill(c, x, y + slot * 62f, "MAGNET", b.magnetTime / Tuning.MAGNET_TIME, 0xFFE8595B.toInt())
+        if (b.magnetTime > 0f || g.world.magnetForever) {
+            val fill = if (g.world.magnetForever) 1f else b.magnetTime / Tuning.MAGNET_TIME
+            timerPill(c, x, y + slot * 62f, "MAGNET", fill, 0xFFE8595B.toInt())
+            slot++
+        }
+        if (g.world.safetyNets > 0) {
+            timerPill(c, x, y + slot * 62f, "SAFETY NET", 1f, 0xFF7BE3A0.toInt())
+            slot++
+        }
+        if (g.world.coinMultiplier > 1) {
+            timerPill(c, x, y + slot * 62f, "COINS x${g.world.coinMultiplier}", 1f, Theme.ACCENT)
         }
     }
 
@@ -157,101 +155,104 @@ class Hud(private val g: Game) {
     }
 
     /**
-     * The steering gauge: an absolute track - wherever your finger sits along it is where
-     * Buddy steers, like a slider rather than a d-pad.
+     * Relative steering feedback: the ring is where your finger went down (the centre), the
+     * knob is where it is now. Slide either side of the ring to steer that way, anywhere on
+     * the screen. Nothing is drawn until you touch.
      */
-    private fun drawGauge(c: Canvas) {
-        val ui = g.ui
-        val cx = gaugeCentreX()
-        val y = gaugeTrackY()
-        val half = gaugeHalfWidth()
-        val value = g.controls.displayValue()
-        val active = g.controls.gaugeActive
+    private fun drawTouchIndicator(c: Canvas) {
+        val ctl = g.controls
+        if (!ctl.touchActive) {
+            if (g.save.showGaugeAlways) {
+                val pulse = 0.18f + 0.1f * sin(g.ui.time * 2.2f)
+                g.ui.text(
+                    c, "◀  slide anywhere  ▶", g.worldW * 0.5f,
+                    Theme.SCREEN_H - g.ui.safeBottom - 54f, 28f,
+                    ColorX.withAlpha(Theme.TEXT_DIM, pulse * 2.4f), g.ui.body, false
+                )
+            }
+            return
+        }
 
-        val trackH = 22f
+        val ax = ctl.touchAnchorX
+        val ay = ctl.touchAnchorY
+        val fx = ctl.touchX
+        val value = ctl.displayValue()
+        val range = ctl.touchRange
+
         p.reset(); p.isAntiAlias = true
 
-        // track
-        p.color = ColorX.withAlpha(0xFF0B1220.toInt(), if (active) 0.75f else 0.5f)
-        rect.set(cx - half - 26f, y - trackH, cx + half + 26f, y + trackH)
-        c.drawRoundRect(rect, trackH, trackH, p)
+        // the track you are sliding along, centred on the anchor
+        p.color = ColorX.withAlpha(0xFF0B1220.toInt(), 0.35f)
+        rect.set(ax - range, ay - 13f, ax + range, ay + 13f)
+        c.drawRoundRect(rect, 13f, 13f, p)
 
-        // ticks
-        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.18f)
-        for (i in -4..4) {
-            if (i == 0) continue
-            val tx = cx + half * (i / 4f)
-            val hh = if (i % 2 == 0) 9f else 5f
-            rect.set(tx - 2f, y - hh, tx + 2f, y + hh)
-            c.drawRoundRect(rect, 2f, 2f, p)
-        }
-        // centre notch
-        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.35f)
-        rect.set(cx - 2.5f, y - 15f, cx + 2.5f, y + 15f)
-        c.drawRoundRect(rect, 2.5f, 2.5f, p)
-
-        // fill from centre toward the knob
-        val knobX = cx + half * value
-        p.color = ColorX.withAlpha(Theme.ACCENT, if (active) 0.9f else 0.55f)
-        rect.set(minOf(cx, knobX), y - 9f, maxOf(cx, knobX), y + 9f)
+        // deflection fill
+        p.color = ColorX.withAlpha(Theme.ACCENT, 0.55f)
+        rect.set(minOf(ax, fx), ay - 9f, maxOf(ax, fx), ay + 9f)
         c.drawRoundRect(rect, 9f, 9f, p)
 
-        // knob
-        val knobR = if (active) 32f else 26f
-        g.art.drawGlow(c, knobX, y, knobR * 2.6f, Theme.ACCENT, if (active) 0.5f else 0.25f)
-        p.color = 0xFFF3F6FB.toInt()
-        c.drawCircle(knobX, y, knobR, p)
-        p.color = Theme.ACCENT
-        c.drawCircle(knobX, y, knobR * 0.55f, p)
-        if (abs(value) > 0.04f) {
-            p.color = 0xFF2A1D04.toInt()
-            val dir = if (value > 0f) 1f else -1f
-            val tri = knobR * 0.3f
-            c.drawCircle(knobX + dir * knobR * 0.02f, y, tri * 0.6f, p)
-        }
-
-        // end chevrons
+        // anchor ring
         p.style = Paint.Style.STROKE
-        p.strokeWidth = 6f
-        p.strokeCap = Paint.Cap.ROUND
-        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.35f)
-        chevron(c, cx - half - 52f, y, -1f)
-        chevron(c, cx + half + 52f, y, 1f)
+        p.strokeWidth = 5f
+        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.45f)
+        c.drawCircle(ax, ay, 26f, p)
         p.style = Paint.Style.FILL
+        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.18f)
+        c.drawCircle(ax, ay, 26f, p)
 
-        if (!active) {
-            val pulse = 0.35f + 0.25f * sin(ui.time * 2.4f)
-            ui.text(
-                c, "SLIDE TO STEER", cx, y + 62f, 24f,
-                ColorX.withAlpha(Theme.TEXT_DIM, pulse), ui.body, false
-            )
+        // knob under the finger
+        val knobR = 34f
+        g.art.drawGlow(c, fx, ay, knobR * 2.6f, Theme.ACCENT, 0.45f)
+        p.color = 0xFFF3F6FB.toInt()
+        c.drawCircle(fx, ay, knobR, p)
+        p.color = Theme.ACCENT
+        c.drawCircle(fx, ay, knobR * 0.55f, p)
+
+        // direction chevron once you are actually steering
+        if (abs(value) > 0.08f) {
+            p.style = Paint.Style.STROKE
+            p.strokeWidth = 6f
+            p.strokeCap = Paint.Cap.ROUND
+            p.color = ColorX.withAlpha(0xFF2A1D04.toInt(), 0.9f)
+            val dir = if (value > 0f) 1f else -1f
+            c.drawLine(fx - 6f * dir, ay - 11f, fx + 7f * dir, ay, p)
+            c.drawLine(fx + 7f * dir, ay, fx - 6f * dir, ay + 11f, p)
+            p.style = Paint.Style.FILL
         }
-    }
-
-    private fun chevron(c: Canvas, x: Float, y: Float, dir: Float) {
-        c.drawLine(x - 9f * dir, y - 13f, x + 5f * dir, y, p)
-        c.drawLine(x + 5f * dir, y, x - 9f * dir, y + 13f, p)
     }
 
     // ---- pause -------------------------------------------------------------------------
 
     fun drawPause(c: Canvas) {
         val ui = g.ui
-        ui.scrim(c, g.worldW, Tuning.VIEW_H, 0.66f)
+        ui.scrim(c, g.worldW, Theme.SCREEN_H, 0.66f)
         val w = (g.worldW * 0.8f).coerceAtMost(700f)
-        val h = 640f
+        val h = 720f
         val x = (g.worldW - w) * 0.5f
-        val y = (Tuning.VIEW_H - h) * 0.5f
+        val y = (Theme.SCREEN_H - h) * 0.5f
         ui.panel(c, x, y, w, h)
-        ui.text(c, "PAUSED", x + w * 0.5f, y + 108f, 72f, Theme.TEXT, ui.title)
+        ui.text(c, "PAUSED", x + w * 0.5f, y + 96f, 68f, Theme.TEXT, ui.title)
+
+        // Banked total first - that is the number that actually belongs to the player.
+        val purse = g.save.coins
+        val pillW = w - 96f
+        ui.pill(c, x + 48f, y + 126f, pillW, 84f, 0xFF121828.toInt())
+        coinIcon(c, x + 92f, y + 168f, 24f)
+        ui.text(c, purse.toString(), x + 126f, y + 182f, 48f, Theme.ACCENT, ui.bodyLeft, false)
+        ui.text(c, "COINS IN THE BANK", x + w - 72f, y + 178f, 26f, Theme.TEXT_DIM, ui.bodyRight, false)
+
         ui.text(
-            c, "Score ${g.world.score}   •   ${g.world.runCoins} coins",
-            x + w * 0.5f, y + 158f, 32f, Theme.TEXT_DIM, ui.body, false
+            c, "This run: ${g.world.score} pts, ${g.world.runCoins} coins picked up",
+            x + w * 0.5f, y + 244f, 28f, Theme.TEXT_DIM, ui.body, false
+        )
+        ui.text(
+            c, "run coins are banked when the run ends",
+            x + w * 0.5f, y + 280f, 24f, ColorX.withAlpha(Theme.TEXT_DIM, 0.75f), ui.body, false
         )
 
         val bw = w - 96f
         val bx = x + 48f
-        var by = y + 210f
+        var by = y + 316f
         if (ui.button(c, Id.RESUME, bx, by, bw, 100f, "RESUME", Ui.ButtonStyle.PRIMARY)) {
             g.tap(); g.goto(Game.Screen.PLAY)
         }

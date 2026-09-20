@@ -3,6 +3,7 @@ package com.blacklab.buddybounce
 import android.graphics.Canvas
 import com.blacklab.buddybounce.audio.Audio
 import com.blacklab.buddybounce.data.Outfits
+import com.blacklab.buddybounce.data.Powerups
 import com.blacklab.buddybounce.data.Save
 import com.blacklab.buddybounce.game.Buddy
 import com.blacklab.buddybounce.game.DeathCause
@@ -24,10 +25,13 @@ import com.blacklab.buddybounce.render.Fx
 import com.blacklab.buddybounce.render.GameRenderer
 import com.blacklab.buddybounce.render.Palettes
 import com.blacklab.buddybounce.render.Pose
+import com.blacklab.buddybounce.render.Scenes
 import com.blacklab.buddybounce.ui.GachaScreen
 import com.blacklab.buddybounce.ui.GameOverScreen
 import com.blacklab.buddybounce.ui.Hud
 import com.blacklab.buddybounce.ui.MenuScreen
+import com.blacklab.buddybounce.ui.PreRunScreen
+import com.blacklab.buddybounce.ui.ScenesScreen
 import com.blacklab.buddybounce.ui.ScoresScreen
 import com.blacklab.buddybounce.ui.SettingsScreen
 import com.blacklab.buddybounce.ui.Theme
@@ -37,20 +41,25 @@ import kotlin.math.abs
 import kotlin.math.sin
 
 /**
- * Owns the screen the player is on, the simulation, and the draw order. Rendering happens in
- * world units and a single canvas scale maps that onto whatever device this is.
+ * Owns the screen the player is on, the simulation, and the draw order.
+ *
+ * Two coordinate spaces: the UI is laid out in a 1600-unit-tall space that fills the screen,
+ * and the world is drawn inside it at [Theme.SCREEN_H] / [Tuning.VIEW_H] scale. That ratio is
+ * the camera zoom - the world view is 2560 units tall, so Buddy and the platforms sit small in
+ * a lot of sky, while the menus stay exactly the size they were.
  */
 class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
 
     interface Host {
-        /** Locks the activity to the requested orientation. */
         fun setLandscape(landscape: Boolean)
-        /** Shows the name-entry overlay (the one place the game uses a real View). */
         fun promptName(current: String, title: String)
         fun vibrate(ms: Long, amplitude: Int)
     }
 
-    enum class Screen { NAME, MENU, PLAY, PAUSE, GAMEOVER, WARDROBE, GACHA, SCORES, SETTINGS }
+    enum class Screen { NAME, MENU, PRERUN, PLAY, PAUSE, GAMEOVER, WARDROBE, GACHA, SCENES, SCORES, SETTINGS }
+
+    /** What the pre-run screen is doing. */
+    enum class PreRun { PICK, COUNTDOWN }
 
     val controls = Controls(save)
     val fx = Fx()
@@ -69,9 +78,11 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
     private val menu = MenuScreen(this)
     private val wardrobe = WardrobeScreen(this)
     private val gacha = GachaScreen(this)
+    private val scenes = ScenesScreen(this)
     private val scores = ScoresScreen(this)
     private val settings = SettingsScreen(this)
     private val gameOver = GameOverScreen(this)
+    private val preRun = PreRunScreen(this)
     private val hud = Hud(this)
 
     var screen = Screen.MENU
@@ -81,9 +92,12 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
     var screenAnim = 1f
         private set
 
-    var worldW = Tuning.REF_W
+    /** Width of the UI space (height is always [Theme.SCREEN_H]). */
+    var worldW = Theme.SCREEN_H
         private set
-    val viewH = Tuning.VIEW_H
+    /** Width of the world space. */
+    var playW = Tuning.REF_W
+        private set
     var scale = 1f
         private set
     var widthPx = 0
@@ -93,12 +107,28 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
     var time = 0f
         private set
 
-    // run bookkeeping, read by the game-over screen
+    /** UI units per world unit. */
+    val zoom: Float get() = Theme.SCREEN_H / Tuning.VIEW_H
+
+    // ---- pre-run ----
+    var preRunPhase = PreRun.PICK
+        private set
+    var countdown = 0f
+        private set
+    var chosenPowerup: String? = null
+        private set
+    private var pendingPowerup: String? = null
+    private var lastCountdownTick = -1
+
+    // ---- run bookkeeping, read by the game-over screen ----
     var lastScore = 0
+    var lastRunCoins = 0
+    var lastBonusCoins = 0
     var lastCoins = 0
     var lastRank = -1
     var lastNewBest = false
     var lastBiome = 0
+    var lastPowerup: String? = null
 
     private var shake = 0f
     private var shakeSeed = 0f
@@ -121,14 +151,15 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
 
     fun onSurface(wPx: Int, hPx: Int) {
         if (wPx <= 0 || hPx <= 0) return
-        val newScale = hPx / Tuning.VIEW_H
-        val newWorldW = wPx / newScale
+        val newScale = hPx / Theme.SCREEN_H
         val scaleChanged = abs(newScale - scale) > 0.0001f
 
         widthPx = wPx
         heightPx = hPx
         scale = newScale
-        worldW = newWorldW
+        worldW = wPx / newScale
+        playW = worldW / zoom
+        controls.touchRange = (worldW * 0.22f).coerceIn(200f, 460f)
 
         if (scaleChanged) {
             art.dispose()
@@ -142,9 +173,10 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
             backdrop = Backdrop(art)
         }
 
-        world.resize(worldW)
+        world.resize(playW)
         if (!started) {
             started = true
+            applyScene()
             world.reset()
             menuBuddy.reset(0f, 0f)
             screen = if (save.hasName) Screen.MENU else Screen.NAME
@@ -154,7 +186,6 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
 
     private val uiInsets = FloatArray(4)
 
-    /** Insets arrive in pixels from the view and are kept in world units. */
     fun setInsets(topPx: Int, bottomPx: Int, leftPx: Int, rightPx: Int) {
         uiInsets[0] = topPx / scale
         uiInsets[1] = bottomPx / scale
@@ -166,13 +197,18 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         ui.safeRight = uiInsets[3]
     }
 
+    /** Points the renderer at the scene the player has selected. */
+    fun applyScene() {
+        Palettes.current = Scenes.of(save.selectedScene)
+    }
+
     fun goto(s: Screen) {
         if (s == screen) return
         previousScreen = screen
         screen = s
         screenAnim = 0f
         if (s != Screen.PLAY) {
-            controls.clearGauge()
+            controls.clearTouch()
             audio.stopJet()
         }
         if (s == Screen.MENU || s == Screen.GAMEOVER) fx.clear()
@@ -180,12 +216,63 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
 
     fun tap() = audio.play(Audio.TAP, 0.45f)
 
+    /**
+     * Pressing PLAY doesn't start the run: it lays out a fresh world and hands over to the
+     * pre-run screen, so you can spend a power-up and see the ground before the countdown.
+     */
     fun startRun() {
         fx.clear()
+        applyScene()
         world.reset()
-        lastScore = 0; lastCoins = 0; lastRank = -1; lastNewBest = false
-        hintTimer = if (controls.tiltEnabled) 2.6f else 2.2f
-        goto(Screen.PLAY)
+        lastScore = 0; lastRunCoins = 0; lastBonusCoins = 0; lastCoins = 0
+        lastRank = -1; lastNewBest = false
+        chosenPowerup = null
+        pendingPowerup = null
+        lastCountdownTick = -1
+        hintTimer = 3.2f
+        preRunPhase = if (save.totalPowerups() > 0) PreRun.PICK else PreRun.COUNTDOWN
+        countdown = COUNTDOWN_SECONDS
+        goto(Screen.PRERUN)
+    }
+
+    /** Called by the pre-run picker: spend the chosen power-up (or none) and count down. */
+    fun beginCountdown(powerupId: String?) {
+        chosenPowerup = powerupId
+        lastPowerup = powerupId
+        if (powerupId != null && save.consumePowerup(powerupId)) {
+            applyPowerupNow(powerupId)
+        } else {
+            chosenPowerup = null
+        }
+        preRunPhase = PreRun.COUNTDOWN
+        countdown = COUNTDOWN_SECONDS
+        lastCountdownTick = -1
+    }
+
+    /**
+     * Anything that changes the layout is applied immediately so the countdown shows the player
+     * what they are about to jump into; anything that is pure velocity waits for "GO".
+     */
+    private fun applyPowerupNow(id: String) {
+        when (id) {
+            Powerups.HEAD_START -> world.startWithHeadStart(6f)
+            Powerups.MAGNET_RUN -> world.startWithMagnet()
+            Powerups.COIN_DOUBLER -> world.startWithCoinMultiplier(2)
+            Powerups.LUCKY_PAWS -> world.startWithLuckyCoins(0.34f)
+            Powerups.FEATHER_FALL -> world.startWithLowGravity(30f)
+            Powerups.SAFETY_NET -> world.startWithSafetyNets(1)
+            Powerups.SHIELD_START -> world.startWithShield(Tuning.SHIELD_TIME * 1.8f)
+            else -> pendingPowerup = id
+        }
+    }
+
+    private fun applyPowerupOnGo() {
+        when (pendingPowerup) {
+            Powerups.MOON_JUMP -> { world.startWithMoonJump(4.2f); shake = 0.8f }
+            Powerups.ROCKET_START -> world.startWithFlight(Flight.ROCKET, Tuning.ROCKET_TIME)
+            Powerups.JETPACK_START -> world.startWithFlight(Flight.JETPACK, Tuning.JETPACK_TIME)
+        }
+        pendingPowerup = null
     }
 
     fun onNameEntered(name: String) {
@@ -197,7 +284,8 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
     fun onBackPressed(): Boolean = when (screen) {
         Screen.PLAY -> { goto(Screen.PAUSE); true }
         Screen.PAUSE -> { goto(Screen.PLAY); true }
-        Screen.WARDROBE, Screen.GACHA, Screen.SCORES, Screen.SETTINGS -> { goto(Screen.MENU); true }
+        Screen.PRERUN -> { goto(Screen.MENU); true }
+        Screen.WARDROBE, Screen.GACHA, Screen.SCENES, Screen.SCORES, Screen.SETTINGS -> { goto(Screen.MENU); true }
         Screen.GAMEOVER -> { goto(Screen.MENU); true }
         else -> false
     }
@@ -205,6 +293,7 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
     fun onPauseApp() {
         if (screen == Screen.PLAY) goto(Screen.PAUSE)
         audio.stopJet()
+        save.flush()
     }
 
     // -------------------------------------------------------------------------------------
@@ -218,33 +307,48 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         shake = MathX.approach(shake, 0f, 6f, dt)
         flash = MathX.approach(flash, 0f, 5f, dt)
         if (biomeToast > 0f) biomeToast -= dt
-        if (hintTimer > 0f) hintTimer -= dt
         ui.beginFrame(dt)
 
         when (screen) {
             Screen.PLAY -> updatePlay(dt)
+            Screen.PRERUN -> updatePreRun(dt)
             Screen.GACHA -> { gacha.update(dt); fx.update(dt); updateMenuBuddy(dt) }
             else -> { fx.update(dt); updateMenuBuddy(dt) }
         }
     }
 
     private fun updatePlay(dt: Float) {
+        if (hintTimer > 0f) hintTimer -= dt
         val steer = controls.steer()
         world.update(dt, steer, controls.lastInputDigital)
         fx.update(dt)
         emitFlightTrail(dt)
-
         if (world.deathSettled) finishRun()
+    }
+
+    private fun updatePreRun(dt: Float) {
+        fx.update(dt)
+        world.buddy.updateAnim(dt, world.metrics.maxVx)
+        if (preRunPhase != PreRun.COUNTDOWN) return
+        countdown -= dt
+        val tick = countdown.toInt()
+        if (tick != lastCountdownTick && countdown > 0f) {
+            lastCountdownTick = tick
+            audio.play(Audio.TAP, 0.6f, if (tick <= 0) 1.5f else 1f)
+        }
+        if (countdown <= 0f) {
+            applyPowerupOnGo()
+            goto(Screen.PLAY)
+        }
     }
 
     private fun updateMenuBuddy(dt: Float) {
         menuCamY += dt * 70f
-        // A tiny standalone bounce loop so Buddy is always alive behind the menus.
-        menuBuddy.vy -= Tuning.GRAVITY * 0.55f * dt
+        menuBuddy.vy -= Tuning.GRAVITY * 0.4f * dt
         menuBuddy.y += menuBuddy.vy * dt
         if (menuBuddy.y <= 0f && menuBuddy.vy < 0f) {
             menuBuddy.y = 0f
-            menuBuddy.vy = Tuning.JUMP_V * 0.52f
+            menuBuddy.vy = Tuning.JUMP_V * 0.38f
             menuBuddy.onBounce(1f)
         }
         menuBuddy.updateAnim(dt, 1000f)
@@ -268,18 +372,24 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         }
         while (trailAccum > period) {
             trailAccum -= period
-            fx.trail(b.x, b.y + 8f, color, if (b.flight == Flight.ROCKET) 46f else 30f)
+            fx.trail(b.x, b.y + 8f, color, if (b.flight == Flight.ROCKET) 60f else 40f)
         }
     }
 
+    /**
+     * End of a run. This is the ONLY place coins are banked, and [Save.bankRun] commits score,
+     * coins and the leaderboard in one synchronous write - so quitting mid-run loses that run's
+     * coins, and anything banked survives the app being killed.
+     */
     private fun finishRun() {
         lastScore = world.score
-        lastCoins = world.runCoins
+        lastRunCoins = world.runCoins
+        lastBonusCoins = world.heightBonusCoins
+        lastCoins = lastRunCoins + lastBonusCoins
         lastBiome = world.biome
         lastNewBest = lastScore > save.bestScore
-        save.addCoins(lastCoins)
         save.highestBiome = world.biome
-        lastRank = save.submitRun(lastScore)
+        lastRank = save.bankRun(lastScore, lastCoins)
         if (lastNewBest && lastScore > 0) audio.play(Audio.FANFARE, 0.7f)
         goto(Screen.GAMEOVER)
     }
@@ -302,9 +412,13 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
                 hud.draw(c, hintTimer, biomeToast, biomeToastName)
                 if (screen == Screen.PAUSE) hud.drawPause(c)
             }
+            Screen.PRERUN -> {
+                drawWorld(c)
+                preRun.draw(c)
+            }
             Screen.GAMEOVER -> {
                 drawWorld(c)
-                ui.scrim(c, worldW, viewH, 0.62f * screenAnim)
+                ui.scrim(c, worldW, Theme.SCREEN_H, 0.62f * screenAnim)
                 gameOver.draw(c)
             }
             else -> {
@@ -314,6 +428,7 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
                     Screen.MENU -> menu.draw(c)
                     Screen.WARDROBE -> wardrobe.draw(c)
                     Screen.GACHA -> gacha.draw(c)
+                    Screen.SCENES -> scenes.draw(c)
                     Screen.SCORES -> scores.draw(c)
                     Screen.SETTINGS -> settings.draw(c)
                     else -> {}
@@ -322,22 +437,26 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         }
 
         if (flash > 0.01f) {
-            ui.fill(c, worldW, viewH, ColorX.withAlpha(0xFFFFFFFF.toInt(), flash * 0.55f))
+            ui.fill(c, worldW, Theme.SCREEN_H, ColorX.withAlpha(0xFFFFFFFF.toInt(), flash * 0.55f))
         }
         c.restore()
         ui.endFrame()
     }
 
+    /** Draws the simulation, zoomed out inside the UI space. */
     private fun drawWorld(c: Canvas) {
         val camY = world.camY
-        val viewTop = camY + viewH
-        val screensNow = world.screensAt(camY + viewH * 0.5f)
+        val viewTop = camY + Tuning.VIEW_H
+        val screensNow = world.screensAt(camY + Tuning.VIEW_H * 0.5f)
         val biome = Tuning.biomeIndex(screensNow)
         val blend = Tuning.biomeBlend(screensNow)
         val pal = Palettes.get(biome)
 
-        backdrop.draw(c, worldW, camY, time, biome, blend)
-        backdrop.drawGround(c, worldW, viewTop, 60f)
+        c.save()
+        c.scale(zoom, zoom)
+
+        backdrop.draw(c, playW, camY, time, biome, blend)
+        backdrop.drawGround(c, playW, viewTop, Tuning.GROUND_Y, Palettes.current)
 
         for (p in world.platforms.items) {
             if (p.alive) gameArt.drawPlatform(c, p, Palettes.get(p.biome), viewTop)
@@ -352,16 +471,18 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         fx.draw(c, art, viewTop)
         drawBuddy(c, viewTop)
         fx.drawPops(c, ui.title, viewTop)
+        backdrop.drawVignette(c, playW, 0.85f)
+
+        c.restore()
     }
 
     private fun drawBuddy(c: Canvas, viewTop: Float) {
         val b = world.buddy
         posePlayer(b)
         val sy = viewTop - b.y
-        // Wrap-aware: draw a second copy when he straddles the seam.
         buddyArt.draw(c, b.x, sy, 1f, pose, equippedOutfit, rimColor)
-        if (b.x < Tuning.BUDDY_W) buddyArt.draw(c, b.x + worldW, sy, 1f, pose, equippedOutfit, rimColor)
-        if (b.x > worldW - Tuning.BUDDY_W) buddyArt.draw(c, b.x - worldW, sy, 1f, pose, equippedOutfit, rimColor)
+        if (b.x < Tuning.BUDDY_W) buddyArt.draw(c, b.x + playW, sy, 1f, pose, equippedOutfit, rimColor)
+        if (b.x > playW - Tuning.BUDDY_W) buddyArt.draw(c, b.x - playW, sy, 1f, pose, equippedOutfit, rimColor)
     }
 
     private fun posePlayer(b: Buddy) {
@@ -382,25 +503,25 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         pose.time = b.t
     }
 
-    /** The idle Buddy used by every menu; [scaleFactor] lets each screen size him. */
+    /** The idle Buddy used by every menu. Menus are in UI space, so he is drawn smaller. */
     fun drawMenuBuddy(c: Canvas, cx: Float, groundY: Float, scaleFactor: Float, outfit: String) {
         pose.reset()
         pose.squash = menuBuddy.squash
-        pose.lean = sin(time * 0.9f) * 0.25f
+        pose.lean = sin(time * 0.9f) * 0.2f
         pose.earFlap = menuBuddy.earFlap
         pose.tail = menuBuddy.tailPhase
         pose.blink = menuBuddy.blinkAmount
         pose.mouth = menuBuddy.mouthOpen
         pose.facing = 1f
         pose.time = time
-        buddyArt.draw(c, cx, groundY - menuBuddy.y * 0.5f, scaleFactor, pose, outfit, 0xFFFFE6A8.toInt())
+        buddyArt.draw(c, cx, groundY - menuBuddy.y * 0.28f, scaleFactor, pose, outfit, 0xFFFFE6A8.toInt())
     }
 
-    /** A static Buddy for wardrobe cards and the prize reveal. */
+    /** A gently idling Buddy for wardrobe cards and the prize reveal. */
     fun drawPosedBuddy(c: Canvas, cx: Float, pawY: Float, scaleFactor: Float, outfit: String, phase: Float) {
         pose.reset()
-        pose.squash = sin(phase) * 0.12f
-        pose.lean = sin(phase * 0.7f) * 0.18f
+        pose.squash = sin(phase) * 0.1f
+        pose.lean = sin(phase * 0.7f) * 0.14f
         pose.tail = phase * 3.4f
         pose.time = phase
         pose.facing = 1f
@@ -408,9 +529,14 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
     }
 
     private fun drawMenuBackdrop(c: Canvas) {
-        val biome = if (screen == Screen.GACHA) 0 else (save.highestBiome).coerceIn(0, 4)
-        backdrop.draw(c, worldW, menuCamY, time, biome, 0f)
-        ui.scrim(c, worldW, viewH, 0.34f)
+        val bands = Palettes.current.bands.size
+        val biome = if (screen == Screen.GACHA) 0 else save.highestBiome.coerceIn(0, bands - 1)
+        c.save()
+        c.scale(zoom, zoom)
+        backdrop.draw(c, playW, menuCamY, time, biome, 0f)
+        backdrop.drawVignette(c, playW, 0.7f)
+        c.restore()
+        ui.scrim(c, worldW, Theme.SCREEN_H, 0.34f)
     }
 
     // -------------------------------------------------------------------------------------
@@ -421,41 +547,39 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         val x = xPx / scale
         val y = yPx / scale
         ui.onDown(x, y)
-        if (screen == Screen.PLAY) handleGauge(x, y, down = true)
+        if (screen == Screen.PLAY) beginTouchSteer(x, y)
     }
 
     fun onPointerMove(xPx: Float, yPx: Float) {
         val x = xPx / scale
         val y = yPx / scale
         ui.onMove(x, y)
-        if (screen == Screen.PLAY) handleGauge(x, y, down = true)
+        if (screen == Screen.PLAY && controls.touchEnabled) controls.touchMove(x, y)
     }
 
     fun onPointerUp(xPx: Float, yPx: Float) {
         val x = xPx / scale
         val y = yPx / scale
         ui.onUp(x, y)
-        if (screen == Screen.PLAY) controls.releaseGauge()
+        controls.touchUp()
     }
 
-    private fun handleGauge(x: Float, y: Float, down: Boolean) {
+    /** Touching anywhere but the pause button starts steering, relative to that point. */
+    private fun beginTouchSteer(x: Float, y: Float) {
         if (!controls.touchEnabled) return
         if (hud.isOverPauseButton(x, y)) return
-        if (y < hud.gaugeBandTop()) return
-        val half = hud.gaugeHalfWidth()
-        val centre = hud.gaugeCentreX()
-        controls.onGauge(((x - centre) / half).coerceIn(-1f, 1f))
+        controls.touchDown(x, y)
     }
 
     fun onKeyLeft(down: Boolean) { controls.keyLeft = down }
     fun onKeyRight(down: Boolean) { controls.keyRight = down }
     fun onPadAxis(value: Float) { controls.padAxis = value }
 
-    /** Start / A button and the like. */
     fun onConfirmKey() {
         when (screen) {
             Screen.MENU -> startRun()
             Screen.GAMEOVER -> startRun()
+            Screen.PRERUN -> if (preRunPhase == PreRun.PICK) beginCountdown(null)
             Screen.PAUSE -> goto(Screen.PLAY)
             Screen.PLAY -> goto(Screen.PAUSE)
             else -> goto(Screen.MENU)
@@ -472,13 +596,13 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         when {
             strength >= Tuning.TRAMPOLINE_MULT -> {
                 audio.play(Audio.TRAMPOLINE, 0.9f)
-                fx.ring(platform.x, platform.y + 20f, 0xFF7FB2FF.toInt(), 70f)
+                fx.ring(platform.x, platform.y + 20f, 0xFF7FB2FF.toInt(), 90f)
                 shake = 0.5f
                 haptic(18)
             }
             strength > 1f -> {
                 audio.play(Audio.SPRING, 0.8f)
-                fx.ring(platform.x, platform.y + 20f, Theme.ACCENT, 55f)
+                fx.ring(platform.x, platform.y + 20f, Theme.ACCENT, 70f)
                 shake = 0.28f
                 haptic(12)
             }
@@ -500,20 +624,21 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         when (pickup.kind) {
             PickupKind.COIN -> {
                 audio.play(Audio.COIN, 0.6f, 0.95f + (world.runCoins % 5) * 0.03f)
-                fx.sparkle(pickup.x, pickup.y, Theme.ACCENT, 8)
+                fx.sparkle(pickup.x, pickup.y, Theme.ACCENT, 12)
+                fx.pop(pickup.x, pickup.y + 40f, "+" + (Tuning.COIN_VALUE * world.coinMultiplier), Theme.ACCENT, 60f)
                 haptic(5)
             }
             PickupKind.BONE -> {
                 audio.play(Audio.BONE, 0.75f)
-                fx.sparkle(pickup.x, pickup.y, 0xFFFFE9A8.toInt(), 18, 1.4f)
-                fx.pop(pickup.x, pickup.y, "+" + Tuning.BONE_COIN_VALUE, Theme.ACCENT, 54f)
+                fx.sparkle(pickup.x, pickup.y, 0xFFFFE9A8.toInt(), 20, 1.4f)
+                fx.pop(pickup.x, pickup.y + 40f, "+" + (Tuning.BONE_COIN_VALUE * world.coinMultiplier), Theme.ACCENT, 72f)
                 haptic(10)
             }
             else -> {
                 audio.play(Audio.POWERUP, 0.8f)
                 fx.sparkle(pickup.x, pickup.y, 0xFF9FDDF7.toInt(), 16, 1.2f)
-                fx.ring(pickup.x, pickup.y, 0xFFBDEBFF.toInt(), 80f)
-                fx.pop(pickup.x, pickup.y + 40f, labelFor(pickup.kind), 0xFFBDEBFF.toInt(), 46f)
+                fx.ring(pickup.x, pickup.y, 0xFFBDEBFF.toInt(), 110f)
+                fx.pop(pickup.x, pickup.y + 60f, labelFor(pickup.kind), 0xFFBDEBFF.toInt(), 60f)
                 haptic(14)
             }
         }
@@ -541,18 +666,28 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         audio.play(Audio.STOMP, 0.8f)
         fx.feathers(enemy.x, enemy.y, if (enemy.kind == EnemyKind.BEE) 0xFFF2C14E.toInt() else 0xFF23252D.toInt())
         val points = if (enemy.kind == EnemyKind.BEE) Tuning.SCORE_BEE else Tuning.SCORE_CROW
-        fx.pop(enemy.x, enemy.y + 40f, "+$points", Theme.GOOD, 50f)
+        fx.pop(enemy.x, enemy.y + 40f, "+$points", Theme.GOOD, 66f)
         shake = 0.35f
         haptic(16)
     }
 
     override fun onShieldBreak(x: Float, y: Float) {
         audio.play(Audio.HURT, 0.7f)
-        fx.ring(x, y, 0xFFBDEBFF.toInt(), 110f)
+        fx.ring(x, y, 0xFFBDEBFF.toInt(), 150f)
         fx.sparkle(x, y, 0xFFBDEBFF.toInt(), 20, 1.4f)
         flash = 0.5f
         shake = 0.6f
         haptic(30)
+    }
+
+    override fun onRescue(x: Float, y: Float) {
+        audio.play(Audio.POWERUP, 0.9f)
+        fx.ring(x, y, 0xFF7BE3A0.toInt(), 180f)
+        fx.sparkle(x, y, 0xFF7BE3A0.toInt(), 24, 1.5f)
+        fx.pop(x, y + 120f, "SAFETY NET!", Theme.GOOD, 72f)
+        flash = 0.35f
+        shake = 0.5f
+        haptic(26)
     }
 
     override fun onDeath(cause: Int) {
@@ -576,15 +711,17 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         if (save.hapticsOn) host.vibrate(ms, -1)
     }
 
-    fun shakeScreen(amount: Float) {
-        shake = amount.coerceIn(0f, 1.2f)
-    }
+    fun shakeScreen(amount: Float) { shake = amount.coerceIn(0f, 1.2f) }
 
-    fun flashScreen(amount: Float) {
-        flash = amount.coerceIn(0f, 1f)
-    }
+    fun flashScreen(amount: Float) { flash = amount.coerceIn(0f, 1f) }
 
-    // helpers used by screens
     fun outfitOwned(id: String) = save.owns(id)
+
     fun ownedCount() = save.ownedOutfits().count { it != Outfits.DEFAULT_ID }
+
+    fun ownedSceneCount() = save.ownedScenes().size
+
+    companion object {
+        const val COUNTDOWN_SECONDS = 3.9f
+    }
 }
