@@ -124,8 +124,11 @@ var UI = (function () {
         if (inRect(tap, mapShopRect())) { Sfx.confirm(); G.go('shop'); return; }
         for (var ti = 0; ti < LEVELS.length && ti < d.unlocked; ti++) {
           if (inRect(tap, nodeRect(ti))) {
-            if (G.sel === ti) { Sfx.confirm(); G.startStage(ti); }
-            else { G.sel = ti; Sfx.select(); }
+            /* one tap plays it - a second tap to confirm just read as
+               nothing happening */
+            G.sel = ti;
+            Sfx.confirm();
+            G.startStage(ti);
             return;
           }
         }
@@ -174,12 +177,29 @@ var UI = (function () {
         var open = i < d.unlocked;
         var done = !!d.cleared[L.id];
         var isBoss = !!L.boss;
-        g.fillStyle = open ? (done ? '#3f7a52' : (isBoss ? '#7a2d3f' : '#3c3558')) : '#241f33';
+        /* locked stays a dim placeholder; playable is bright and solid;
+           finished is green */
+        var fill = !open ? '#1d1a28'
+                 : (done ? '#3f7a52' : (isBoss ? '#93304a' : '#5a4e91'));
+        var edge = !open ? '#2e2940'
+                 : (done ? '#7fe0a0' : (isBoss ? '#ff6b7f' : '#b9a8ff'));
+        g.fillStyle = fill;
         g.fillRect(p.x, p.y, 24, 14);
-        g.fillStyle = open ? (isBoss ? '#e0424f' : '#8d80ad') : '#3a3350';
+        if (open) {
+          g.fillStyle = 'rgba(255,255,255,.14)';
+          g.fillRect(p.x + 1, p.y + 1, 22, 4);
+        }
+        g.fillStyle = edge;
         g.fillRect(p.x, p.y, 24, 1); g.fillRect(p.x, p.y + 13, 24, 1);
         g.fillRect(p.x, p.y, 1, 14); g.fillRect(p.x + 23, p.y, 1, 14);
-        Text.draw(g, open ? L.id : '??', p.x + 5, p.y + 4, open ? '#ffffff' : '#5a5170', 1);
+        Text.draw(g, open ? L.id : '??', p.x + 5, p.y + 4,
+          open ? '#ffffff' : '#443e5c', 1);
+        /* a playable stage you have not finished gets a nudge */
+        if (open && !done) {
+          g.fillStyle = 'rgba(185,168,255,' + (0.30 + 0.25 * Math.sin(G.t * 0.1 + i)) + ')';
+          g.fillRect(p.x - 2, p.y - 2, 28, 1);
+          g.fillRect(p.x - 2, p.y + 15, 28, 1);
+        }
         if (!isBoss && open) {
           var got = d.gems[L.id] || 0;
           var gimg = Art.GEMS[L.theme] || Art.GEMS.meadow;
