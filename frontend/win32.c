@@ -66,6 +66,7 @@ static struct {
     double        best_pct;
     volatile LONG seamless;    /* pace room crossings by Link, not by the clock */
     int           burst, shown_x, shown_y, settling;
+    int           hurried;      /* frames run unwaited in this crossing */
     gb_fit_mode_t fit;
     gb_view_mode_t view_mode;
     int           menu_open, menu_sel;
@@ -225,7 +226,17 @@ static void on_frame(gb_t *gb, void *user)
      * boundary.
      */
     int step_x, step_y;
-    int crossing = gb_world_scrolling(gb);
+
+    /* Only a crossing of the overworld counts.
+     *
+     * The flag this reads is set for every screen transition the game makes,
+     * not only for walking between two outdoor rooms - going through a door,
+     * a warp, a cutscene changing the scene. In those, Link does not move at
+     * all, so the rule below found he had not moved and kept running frames
+     * without waiting, for as long as the state lasted. Requiring the world
+     * to be the overworld and no menu to be up keeps it to the case it was
+     * written for. */
+    int crossing = gb_world_scrolling(gb) && app.track.in_world;
 
     /* The game also holds Link still for a few frames after the scroll ends,
      * reloading the room it has arrived in. Left at the game's pace that is a
@@ -237,11 +248,24 @@ static void on_frame(gb_t *gb, void *user)
     else if (app.settling > 0)
         app.settling--;
 
+    /* And a hard ceiling on the whole thing.
+     *
+     * The count of frames run without waiting was reset every time one was
+     * shown, so the pattern was: skip thirty-two, show one, skip thirty-two.
+     * That is thirty-two times speed for as long as the state holds, which is
+     * how the game ran away. This counts the whole episode instead. A real
+     * crossing takes about fifty frames; past a hundred and twenty something
+     * is wrong, and real time is the right answer whatever it is. */
+    if (!crossing && app.settling == 0)
+        app.hurried = 0;
+
     if (InterlockedCompareExchange(&app.seamless, 0, 0)
         && (crossing || app.settling > 0)
+        && app.hurried < 120
         && gb_world_link_step(gb, &step_x, &step_y)) {
         if (step_x == app.shown_x && step_y == app.shown_y && app.burst < 32) {
             app.burst++;
+            app.hurried++;
             return;                     /* not moved yet: no repaint, no wait */
         }
         /* Arriving in the new room wraps his coordinates by a whole room

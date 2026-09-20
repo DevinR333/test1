@@ -17,8 +17,8 @@ const char *gb_view_name(gb_view_mode_t mode)
 const char *gb_view_note(gb_view_mode_t mode)
 {
     switch (mode) {
-    case GB_VIEW_16_9: return "THE GAME SCREEN IN A 16:9 FRAME";
-    case GB_VIEW_4_3:  return "THE GAME SCREEN IN A 4:3 FRAME";
+    case GB_VIEW_16_9: return "GAME SCREEN STRETCHED TO FILL 16:9";
+    case GB_VIEW_4_3:  return "GAME SCREEN STRETCHED TO FILL 4:3";
     default:           return "THE WORLD DRAWN AROUND THE GAME";
     }
 }
@@ -47,24 +47,18 @@ gb_rect_t gb_view_frame(gb_view_mode_t mode, int win_w, int win_h)
     return r;
 }
 
-/* Inside that frame, the hardware's screen at its own shape. Whole multiples
- * where one fits, so the pixels stay square and none is doubled while its
- * neighbour is not. */
+/* The picture fills the frame.
+ *
+ * It used to be fitted inside it at a whole multiple of its own size, which
+ * meant a 10:9 image with bars down the sides of a 4:3 box - so choosing 4:3
+ * looked no different from choosing anything else, which is not what the name
+ * says and not what anyone picking it wants. The hardware is 160 by 144, or
+ * 10:9; a television showing it at 4:3 stretched it, and that is what 4:3
+ * here now means. The open world mode is the one that distorts nothing.
+ */
 gb_rect_t gb_view_screen(gb_view_mode_t mode, int win_w, int win_h)
 {
-    gb_rect_t f = gb_view_frame(mode, win_w, win_h);
-    gb_rect_t r;
-
-    int scale = f.w / GB_W;
-    int by = f.h / GB_H;
-    if (by < scale) scale = by;
-    if (scale < 1) scale = 1;
-
-    r.w = GB_W * scale;
-    r.h = GB_H * scale;
-    r.x = f.x + (f.w - r.w) / 2;
-    r.y = f.y + (f.h - r.h) / 2;
-    return r;
+    return gb_view_frame(mode, win_w, win_h);
 }
 
 static const uint8_t FONT[64][7] = {
