@@ -169,20 +169,44 @@ typedef struct {
     uint32_t px[GB_GHOST_PX];        /* 0 where the object is see-through */
 } gb_world_ghost_t;
 
+/* One object being followed while its room is loaded. */
+typedef struct {
+    int16_t  x, y;
+    uint8_t  h, used;
+    uint16_t held;               /* frames seen holding this spot */
+    uint16_t missing;            /* frames since last seen */
+    uint32_t px[GB_GHOST_PX];
+} gb_world_track_t;
+
+#define GB_TRACKS      40
+#define GB_HOLD_FRAMES 100       /* stillness before it counts as part of the room */
+#define GB_GRACE       10        /* frames it may vanish for and still be followed */
+
 typedef struct {
     gb_world_ghost_t obj[GB_WORLD_ROOMS][GB_REMEMBERED];
     uint8_t          count[GB_WORLD_ROOMS];
     uint8_t          known[GB_WORLD_ROOMS];
 
-    /* The fullest view of each room, rather than the latest. A single look is
-     * a poor record: the player standing next to someone hides them, and the
-     * object table is briefly empty while a room loads, so a room caught at
-     * either moment would be remembered as deserted. */
-    int8_t           fullest[GB_WORLD_ROOMS];
-    int              watching;      /* the room loaded when last recorded */
+    /* Objects are followed over time in the room that is loaded, rather than
+     * photographed once.
+     *
+     * A photograph cannot tell a signpost from a spark. Anything that holds
+     * still in one spot for a while is part of the room and worth keeping;
+     * anything that moves is passing through - a cutscene walking itself out,
+     * an effect around the player, a thrown pot - and keeping it leaves a
+     * figure hovering somewhere it never stood. Following them separates the
+     * two without having to know what any of them are.
+     *
+     * It also rides out the hardware's flickering: an object dropped from the
+     * table for a frame or two is still being followed, so it does not blink
+     * out of the world. */
+    gb_world_track_t track[GB_TRACKS];
+    int              track_room;
+    int              settling;      /* frames before a fresh look is trusted */
 } gb_world_memory_t;
 
-/* Records what is in the room the game currently has loaded. */
+/* Follows what is in the room the game currently has loaded. Pass -1 for the
+ * room while the screen is crossing between two. */
 void gb_world_remember(gb_world_memory_t *mem, const gb_t *gb,
                        float screen_x, float screen_y,
                        float link_x, float link_y, int room);
@@ -196,7 +220,8 @@ void gb_world_draw_remembered(const gb_world_memory_t *mem,
 /* Draws every object the game has active, at its live position, anywhere in
  * the view - so nothing is cut off at the edge of the hardware's screen, and
  * nothing is lost to its limit of ten objects on a line. */
-void gb_world_draw_objects(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
+void gb_world_draw_objects(const gb_t *gb, const uint8_t *oam,
+                           uint32_t *dst, int dst_w, int dst_h,
                            float cam_x, float cam_y, float scale,
                            float screen_x, float screen_y);
 

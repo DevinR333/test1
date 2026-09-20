@@ -73,6 +73,9 @@ static struct {
     /* World map view: the whole world drawn from its room data, at any
      * scale, rather than the hardware's 160x144 window. */
     gb_world_memory_t memory;   /* who was in each room when last seen */
+    uint8_t       prev_oam[160]; /* the frame before, to cover for flicker */
+    float         prev_screen_x, prev_screen_y;
+    int           prev_room, prev_objects;
     uint32_t     *map_pixels;   /* scratch for the pulled-back view */
     float         cam_x, cam_y; /* eased, so a room change glides */
     int           cam_valid;
@@ -578,6 +581,8 @@ static void paint(HWND hwnd)
      * pixels out of place with the hearts and rupees painted into it, and the
      * status bar travelled around with the player. Sampling both here, by
      * index, through one position and scale, none of that can happen. */
+    int loaded = gb_world_active_room(view);
+
     gb_world_render(view, app.map_pixels, cw, ch, cam_x, cam_y, scale, 1);
 
     /* Who was in the other rooms.
@@ -588,7 +593,6 @@ static void paint(HWND hwnd)
      * stays populated rather than emptying to bare ground everywhere the
      * player is not. They hold their last pose until their room is loaded
      * again, at which point the live ones take over. */
-    int loaded = gb_world_active_room(view);
     gb_world_remember(&app.memory, view, screen_x, screen_y,
                       cam_x, cam_y, where->crossing ? -1 : loaded);
     gb_world_draw_remembered(&app.memory, app.map_pixels, cw, ch,
@@ -601,8 +605,25 @@ static void paint(HWND hwnd)
      * before the live screen, so where that screen is used its own rendering
      * wins and keeps the game's own ordering; the only pixels left are the
      * ones it never covered. */
-    gb_world_draw_objects(view, app.map_pixels, cw, ch, cam_x, cam_y, scale,
+    /* The frame before's objects first, then this frame's over them.
+     *
+     * The hardware draws at most ten objects on a line and drops the rest,
+     * and the game rotates which ones it drops so that everything is seen
+     * some of the time. On the small screen that reads as a shimmer; drawn
+     * large it reads as people blinking in and out. Whatever was dropped this
+     * frame was almost certainly present last frame, so last frame covers for
+     * it, and this frame's copy lands on top with the positions up to date. */
+    if (app.prev_objects && app.prev_room == loaded)
+        gb_world_draw_objects(view, app.prev_oam, app.map_pixels, cw, ch,
+                              cam_x, cam_y, scale,
+                              app.prev_screen_x, app.prev_screen_y);
+    gb_world_draw_objects(view, NULL, app.map_pixels, cw, ch, cam_x, cam_y, scale,
                           screen_x, screen_y);
+    memcpy(app.prev_oam, view->oam, sizeof(app.prev_oam));
+    app.prev_screen_x = screen_x;
+    app.prev_screen_y = screen_y;
+    app.prev_room = loaded;
+    app.prev_objects = 1;
 
     /* Crossing between rooms, the hardware's screen is not to be trusted.
      *

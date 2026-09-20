@@ -462,24 +462,37 @@ static void ghost_pixels(const gb_t *gb, int i, int tall, uint32_t *px)
 
 void gb_world_remember(gb_world_memory_t *mem, const gb_t *gb,
                        float screen_x, float screen_y,
-                       float link_x, float link_y, int loaded_room)
+                       float link_x, float link_y, int room)
 {
-    static gb_world_ghost_t seen[40];
-    static int seen_room[40];
-
     if (!mem)
         return;
 
-    /* Arriving in a room starts its record over, so what is remembered is
-     * this visit rather than a previous one. */
-    if (loaded_room != mem->watching) {
-        mem->watching = loaded_room;
-        if (loaded_room >= 0 && loaded_room < GB_WORLD_ROOMS)
-            mem->fullest[loaded_room] = -1;
-    }
+    /* Not while the screen is between two rooms: the objects of the one being
+     * left are being torn down and the ones being entered are not built yet,
+     * and neither state says anything about either room. */
+    if (room < 0 || room >= GB_WORLD_ROOMS)
+        return;
 
+    /* Arriving somewhere new starts the following again - but not the
+     * record. Nothing has held its ground yet, so a record written now would
+     * say the room is empty, and walking back out of a room you had just
+     * walked into left it deserted behind you. The previous record stands
+     * until the new one has had time to mean something. */
+    if (room != mem->track_room) {
+        mem->track_room = room;
+        mem->settling = GB_HOLD_FRAMES + GB_GRACE * 2;
+        for (int i = 0; i < GB_TRACKS; i++)
+            mem->track[i].used = 0;
+    }
+    if (mem->settling > 0) mem->settling--;
+
+    float room_x = (float)((room % GB_WORLD_COLS) * ROOM_PX_W);
+    float room_y = (float)((room / GB_WORLD_COLS) * ROOM_PX_H);
     int tall = (gb->io[0x40] & 0x04) ? 16 : 8;
-    int kept = 0;
+
+    for (int i = 0; i < GB_TRACKS; i++)
+        if (mem->track[i].used)
+            mem->track[i].missing++;
 
     for (int i = 0; i < 40; i++) {
         int oy = gb->oam[i * 4], ox = gb->oam[i * 4 + 1];
@@ -487,51 +500,68 @@ void gb_world_remember(gb_world_memory_t *mem, const gb_t *gb,
 
         float wx = screen_x + (ox - 8);
         float wy = screen_y + (oy - 16) - GB_STATUS_H;
+        int16_t rx = (int16_t)(wx - room_x), ry = (int16_t)(wy - room_y);
 
-        /* Not the player. He is drawn live wherever he is, and a copy of him
-         * left in every room he has walked through would be absurd. Kept
-         * tight: anything wider takes in whoever he is standing next to. */
-        float dx = wx + 4 - link_x, dy = wy + tall / 2 - link_y;
-        if (dx * dx + dy * dy < 12.0f * 12.0f) continue;
+        /* Only what is inside this room. */
+        if (rx < -8 || rx > ROOM_PX_W || ry < -8 || ry > ROOM_PX_H) continue;
 
-        /* Filed by where it actually is, not by which room happens to be
-         * loaded. Crossing a boundary the screen spans two rooms, and an
-         * object at the far edge of either belongs to that one - requiring
-         * everything to sit inside the loaded room threw all of it away, so
-         * a room walked through and left was remembered as empty. */
-        int rx = (int)(wx / ROOM_PX_W), ry = (int)(wy / ROOM_PX_H);
-        if (wx < 0 || wy < 0 || rx >= GB_WORLD_COLS || ry >= GB_WORLD_ROWS)
-            continue;
+        /* Something already standing here. Matching by place is what
+         * separates a signpost from a spark: whatever holds its ground keeps
+         * the same record and its count climbs, while anything that moves
+         * starts a new one every frame and never gets anywhere. */
+        int at = -1;
+        for (int k = 0; k < GB_TRACKS; k++) {
+            if (!mem->track[k].used) continue;
+            int dx = mem->track[k].x - rx, dy = mem->track[k].y - ry;
+            if (dx > -3 && dx < 3 && dy > -3 && dy < 3) { at = k; break; }
+        }
 
-        gb_world_ghost_t *g = &seen[kept];
-        g->x = (int16_t)(wx - rx * ROOM_PX_W);
-        g->y = (int16_t)(wy - ry * ROOM_PX_H);
-        g->h = (uint8_t)tall;
-        ghost_pixels(gb, i, tall, g->px);
-        seen_room[kept++] = ry * GB_WORLD_COLS + rx;
+        if (at < 0) {
+            /* The player's own sprites move with him, so they never hold a
+             * spot - but standing still they would, and a copy of him left
+             * behind is absurd. He is kept out of new records only; anything
+             * already recorded goes on being followed even as he walks over
+             * it, so standing next to someone no longer erases them. */
+            float dxl = wx + 4 - link_x, dyl = wy + tall / 2 - link_y;
+            if (dxl * dxl + dyl * dyl < 14.0f * 14.0f) continue;
+
+            for (int k = 0; k < GB_TRACKS; k++)
+                if (!mem->track[k].used) { at = k; break; }
+            if (at < 0) continue;
+            mem->track[at].used = 1;
+            mem->track[at].held = 0;
+            mem->track[at].x = rx;
+            mem->track[at].y = ry;
+        }
+
+        mem->track[at].missing = 0;
+        if (mem->track[at].held < 0xFFFF) mem->track[at].held++;
+        mem->track[at].h = (uint8_t)tall;
+        ghost_pixels(gb, i, tall, mem->track[at].px);
     }
 
-    /* Each room that anything was seen in, kept only if this is the fullest
-     * look at it so far. */
-    for (int i = 0; i < kept; i++) {
-        int room = seen_room[i];
-        int already = 0;
-        for (int j = 0; j < i; j++)
-            if (seen_room[j] == room) { already = 1; break; }
-        if (already) continue;
+    /* Gone for long enough to be gone. A cutscene that walks itself off, or
+     * an object the game removes, stops being remembered - which it did not
+     * before, leaving people standing about in rooms they had left. */
+    for (int i = 0; i < GB_TRACKS; i++)
+        if (mem->track[i].used && mem->track[i].missing > GB_GRACE)
+            mem->track[i].used = 0;
 
-        int count = 0;
-        for (int j = i; j < kept && count < GB_REMEMBERED; j++)
-            if (seen_room[j] == room) count++;
-        if (count <= mem->fullest[room]) continue;
+    /* What has held its ground long enough to belong to the room. */
+    if (mem->settling > 0)
+        return;
 
-        mem->fullest[room] = (int8_t)count;
-        int at = 0;
-        for (int j = i; j < kept && at < GB_REMEMBERED; j++)
-            if (seen_room[j] == room) mem->obj[room][at++] = seen[j];
-        mem->count[room] = (uint8_t)at;
-        mem->known[room] = 1;
+    int kept = 0;
+    for (int i = 0; i < GB_TRACKS && kept < GB_REMEMBERED; i++) {
+        if (!mem->track[i].used || mem->track[i].held < GB_HOLD_FRAMES) continue;
+        gb_world_ghost_t *g = &mem->obj[room][kept++];
+        g->x = mem->track[i].x;
+        g->y = mem->track[i].y;
+        g->h = mem->track[i].h;
+        memcpy(g->px, mem->track[i].px, sizeof(g->px));
     }
+    mem->count[room] = (uint8_t)kept;
+    mem->known[room] = 1;
 }
 
 void gb_world_draw_remembered(const gb_world_memory_t *mem,
@@ -586,12 +616,14 @@ void gb_world_draw_remembered(const gb_world_memory_t *mem,
     }
 }
 
-void gb_world_draw_objects(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
+void gb_world_draw_objects(const gb_t *gb, const uint8_t *oam,
+                           uint32_t *dst, int dst_w, int dst_h,
                            float cam_x, float cam_y, float scale,
                            float screen_x, float screen_y)
 {
     if (!dst || scale <= 0.0f)
         return;
+    if (!oam) oam = gb->oam;
 
     /* Objects are positioned against the hardware's screen, so that is what
      * they are anchored to - not the corner of a room, which is a different
@@ -606,10 +638,10 @@ void gb_world_draw_objects(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
     /* Later entries draw first so earlier ones end up on top, matching the
      * hardware's priority. */
     for (int i = 39; i >= 0; i--) {
-        int raw_y = gb->oam[i * 4];
-        int raw_x = gb->oam[i * 4 + 1];
-        uint8_t index = gb->oam[i * 4 + 2];
-        uint8_t attr = gb->oam[i * 4 + 3];
+        int raw_y = oam[i * 4];
+        int raw_x = oam[i * 4 + 1];
+        uint8_t index = oam[i * 4 + 2];
+        uint8_t attr = oam[i * 4 + 3];
 
         /* The hardware hides an object by parking it outside the screen. */
         if (raw_y == 0 || raw_y >= 160) continue;
