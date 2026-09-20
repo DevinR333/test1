@@ -3,3 +3,6 @@ android/app/build/
 android/.gradle/
 android/local.properties
 android/.idea/
+
+# packaged for download; android/ is the source of truth
+BuddyBlade.zip
