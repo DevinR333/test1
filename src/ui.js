@@ -1,5 +1,23 @@
 /* Menus, map screen, shop and result screens. */
 var UI = (function () {
+  function inRect(p, r) {
+    return !!p && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+  }
+  /* Label the controls for whatever is actually in the player's hands. */
+  function hint(kb, pad, touch) {
+    var m = Input.mode();
+    return m === 'touch' ? touch : (m === 'controller' ? pad : kb);
+  }
+  /* A tappable on-screen button, drawn and hit-tested from one rect. */
+  function tapBtn(g, r, label, hot) {
+    g.fillStyle = hot ? 'rgba(255,215,94,.18)' : 'rgba(20,16,30,.72)';
+    g.fillRect(r.x, r.y, r.w, r.h);
+    g.fillStyle = hot ? '#ffd75e' : '#6b5a8a';
+    g.fillRect(r.x, r.y, r.w, 1); g.fillRect(r.x, r.y + r.h - 1, r.w, 1);
+    g.fillRect(r.x, r.y, 1, r.h); g.fillRect(r.x + r.w - 1, r.y, 1, r.h);
+    Text.center(g, label, r.x + r.w / 2, r.y + Math.round((r.h - 7) / 2), '#ffffff', 1);
+  }
+
   function panel(g, x, y, w, h, fill) {
     g.fillStyle = fill || 'rgba(14,10,22,.88)';
     g.fillRect(x, y, w, h);
@@ -71,9 +89,13 @@ var UI = (function () {
       Art.drawBlade(g, px + 30, py + 17, -0.5 + Math.sin(G.t * 0.05) * 0.12, Save.bladeId(), 1);
 
       if (Math.floor(G.t / 26) % 2 === 0) {
-        Text.centerShadow(g, 'PRESS ENTER', cx, VIEW_H - 32, '#ffffff', 1);
+        Text.centerShadow(g, hint('PRESS ENTER', 'PRESS A', 'TAP TO START'),
+          cx, VIEW_H - 32, '#ffffff', 1);
       }
-      Text.centerShadow(g, 'ARROWS MOVE   Z JUMP   X SWING   M MUTE', cx, VIEW_H - 16, '#8d80ad', 1);
+      Text.centerShadow(g, hint('ARROWS MOVE   Z JUMP   X SWING',
+                                'STICK MOVE   A JUMP   X SWING',
+                                'STICK MOVE   JUMP   SWING'),
+        cx, VIEW_H - 16, '#8d80ad', 1);
     }
   };
 
@@ -83,9 +105,30 @@ var UI = (function () {
     var step = Math.floor((VIEW_W - 104) / 3);
     return { x: 52 + s * step, y: 62 + w * 44 };
   }
+  function nodeRect(i) {
+    var p = nodePos(i);
+    return { x: p.x - 3, y: p.y - 4, w: 30, h: 22 };
+  }
+  function mapShopRect() {
+    return { x: VIEW_W - 86, y: VIEW_H - 22, w: 78, h: 16 };
+  }
+
   var map = {
     update: function (G) {
       var d = Save.get();
+
+      /* touch: tap a stage to pick it, tap it again to go */
+      var tap = Input.takeTap();
+      if (tap) {
+        if (inRect(tap, mapShopRect())) { Sfx.confirm(); G.go('shop'); return; }
+        for (var ti = 0; ti < LEVELS.length && ti < d.unlocked; ti++) {
+          if (inRect(tap, nodeRect(ti))) {
+            if (G.sel === ti) { Sfx.confirm(); G.startStage(ti); }
+            else { G.sel = ti; Sfx.select(); }
+            return;
+          }
+        }
+      }
       var max = Math.min(d.unlocked, LEVELS.length) - 1;
       var moved = 0;
       if (Input.pressed('right')) moved = 1;
@@ -155,12 +198,62 @@ var UI = (function () {
       Text.draw(g, L2.id + ' ' + L2.name, 16, VIEW_H - 38, '#ffd75e', 1);
       Text.draw(g, 'COINS ' + d.coins + '   GEMS ' + Save.gemsFound() + '/' + Save.gemsTotal() +
         '   CHESTS ' + Save.chestsFound(), 16, VIEW_H - 27, '#b8a8d8', 1);
-      Text.draw(g, 'ENTER PLAY   X SHOP + WARDROBE', VIEW_W - 186, VIEW_H - 16, '#7f72a0', 1);
+      /* the selected stage glows so a tap-to-confirm is obvious */
+      var selR = nodeRect(G.sel);
+      g.fillStyle = 'rgba(255,215,94,' + (0.25 + 0.15 * Math.sin(G.t * 0.12)) + ')';
+      g.fillRect(selR.x, selR.y, selR.w, 1);
+      g.fillRect(selR.x, selR.y + selR.h - 1, selR.w, 1);
+      g.fillRect(selR.x, selR.y, 1, selR.h);
+      g.fillRect(selR.x + selR.w - 1, selR.y, 1, selR.h);
+
+      tapBtn(g, mapShopRect(), 'SHOP', false);
+      Text.draw(g, hint('ENTER PLAY', 'A PLAY', 'TAP A STAGE TO PLAY'),
+        16, VIEW_H - 16, '#7f72a0', 1);
     }
   };
 
   /* ------------------------------------------------ SHOP */
   /* one shared tab header, clear of the title */
+  function tabRects() {
+    var names = ['GEAR', 'BLADES', 'WARDROBE'];
+    var txt = names.join('  ');
+    var x = Math.round(VIEW_W / 2 - Text.width(txt, 1) / 2);
+    var out = [];
+    for (var j = 0; j < names.length; j++) {
+      var w = Text.width(names[j], 1);
+      out.push({ x: x - 3, y: 19, w: w + 6, h: 16, name: names[j] });
+      x += w + 12;
+    }
+    return out;
+  }
+  function shopBackRect() { return { x: 8, y: VIEW_H - 22, w: 60, h: 16 }; }
+  function shopRowRect(i) { return { x: 12, y: 41 + i * 18, w: Math.round(VIEW_W * 0.52), h: 18 }; }
+
+  /* Shared tap handling for all three shop tabs. Returns true when the
+     tap was consumed. */
+  function shopTap(G, rows, onPick, top) {
+    top = top || 0;
+    var tap = Input.takeTap();
+    if (!tap) return false;
+    if (inRect(tap, shopBackRect())) { Sfx.select(); G.go('map'); return true; }
+    var tabs = tabRects();
+    for (var t = 0; t < tabs.length; t++) {
+      if (inRect(tap, tabs[t])) {
+        if (G.shopTab !== t) { G.shopTab = t; G.shopSel = 0; Sfx.select(); }
+        return true;
+      }
+    }
+    for (var i = 0; i < rows; i++) {
+      if (inRect(tap, shopRowRect(i))) {
+        var idx = top + i;
+        if (G.shopSel === idx) onPick();
+        else { G.shopSel = idx; Sfx.select(); }
+        return true;
+      }
+    }
+    return false;
+  }
+
   function tabStrip(g, G) {
     var names = ['GEAR', 'BLADES', 'WARDROBE'];
     var txt = '';
@@ -194,6 +287,13 @@ var UI = (function () {
       if (G.shopTab === 1) return shop.blades(G);
       if (G.shopTab === 2) return shop.wardrobe(G);
       var list = Save.SHOP;
+      var gtop = Util.clamp(G.shopSel - 3, 0, Math.max(0, list.length - 7));
+      if (shopTap(G, Math.min(7, list.length), function () {
+        var it2 = list[G.shopSel];
+        if (Save.buy(it2)) { Sfx.buy(); G.shopMsg = 'BOUGHT ' + it2.name + '!'; }
+        else { Sfx.deny(); G.shopMsg = Save.owned(it2) ? 'ALREADY YOURS' : 'NOT ENOUGH COIN'; }
+        G.shopMsgT = 100;
+      }, gtop)) return;
       if (Input.pressed('down')) { G.shopSel = (G.shopSel + 1) % list.length; Sfx.select(); }
       if (Input.pressed('up')) { G.shopSel = (G.shopSel + list.length - 1) % list.length; Sfx.select(); }
       if (Input.pressed('confirm') || Input.pressed('jump')) {
@@ -221,6 +321,12 @@ var UI = (function () {
        a short heavy cleaver stays useful next to a long thin whip. */
     blades: function (G) {
       var list = Art.BLADES;
+      if (shopTap(G, list.length, function () {
+        var b2 = list[G.shopSel];
+        if (Save.ownsBlade(b2.id)) { Save.equipBlade(b2.id); G.shopMsg = 'DRAWING ' + b2.name.toUpperCase(); Sfx.confirm(); }
+        else { G.shopMsg = 'BUY IT IN GEAR FIRST'; Sfx.deny(); }
+        G.shopMsgT = 100;
+      })) return;
       if (Input.pressed('down')) { G.shopSel = (G.shopSel + 1) % list.length; Sfx.select(); }
       if (Input.pressed('up')) { G.shopSel = (G.shopSel + list.length - 1) % list.length; Sfx.select(); }
       if (Input.pressed('confirm') || Input.pressed('jump')) {
@@ -292,13 +398,24 @@ var UI = (function () {
         Text.centerShadow(g, G.shopMsg, VIEW_W / 2, VIEW_H - 26, '#bcd6ff', 1);
         G.shopMsgT--;
       }
-      Text.draw(g, 'ENTER DRAW   < > TABS   X BACK', 10, VIEW_H - 12, '#7f72a0', 1);
+      tapBtn(g, shopBackRect(), 'BACK', false);
+      Text.draw(g, hint('ENTER DRAW   < > TABS', 'A DRAW   LB/RB TABS', 'TAP TO DRAW'),
+        78, VIEW_H - 18, '#7f72a0', 1);
     },
 
     /* Outfits are never locked away once owned - wear, swap or remove
        any of them here, as often as you like. */
     wardrobe: function (G) {
       var list = wardrobeList();
+      if (shopTap(G, Math.min(7, list.length), function () {
+        var o2 = list[G.shopSel];
+        if (Save.ownsOutfit(o2.id)) {
+          if (Save.worn() === o2.id && o2.id !== 'none') { Save.wear('none'); G.shopMsg = 'TAKEN OFF'; }
+          else { Save.wear(o2.id); G.shopMsg = o2.id === 'none' ? 'TAKEN OFF' : 'WEARING ' + o2.name.toUpperCase(); }
+          Sfx.confirm();
+        } else { G.shopMsg = 'LOCKED - FIND IT IN A CHEST'; Sfx.deny(); }
+        G.shopMsgT = 100;
+      }, Util.clamp(G.shopSel - 3, 0, Math.max(0, list.length - 7)))) return;
       if (Input.pressed('down')) { G.shopSel = (G.shopSel + 1) % list.length; Sfx.select(); }
       if (Input.pressed('up')) { G.shopSel = (G.shopSel + list.length - 1) % list.length; Sfx.select(); }
       if (Input.pressed('confirm') || Input.pressed('jump')) {
@@ -383,7 +500,9 @@ var UI = (function () {
         Text.centerShadow(g, G.shopMsg, VIEW_W / 2, VIEW_H - 22, '#ffd75e', 1);
         G.shopMsgT--;
       }
-      Text.draw(g, 'ENTER BUY    < > TABS    X BACK', 10, VIEW_H - 12, '#7f72a0', 1);
+      tapBtn(g, shopBackRect(), 'BACK', false);
+      Text.draw(g, hint('ENTER BUY   < > TABS', 'A BUY   LB/RB TABS', 'TAP TO BUY'),
+        78, VIEW_H - 18, '#7f72a0', 1);
     },
 
     drawWardrobe: function (g, G) {
@@ -432,7 +551,9 @@ var UI = (function () {
         Text.centerShadow(g, G.shopMsg, VIEW_W / 2, VIEW_H - 26, '#a8ffd0', 1);
         G.shopMsgT--;
       }
-      Text.draw(g, 'ENTER WEAR   < > TABS   X BACK', 10, VIEW_H - 12, '#7f72a0', 1);
+      tapBtn(g, shopBackRect(), 'BACK', false);
+      Text.draw(g, hint('ENTER WEAR   < > TABS', 'A WEAR   LB/RB TABS', 'TAP TO WEAR'),
+        78, VIEW_H - 18, '#7f72a0', 1);
     }
   };
 
@@ -453,10 +574,52 @@ var UI = (function () {
     return items;
   }
 
+  function set_value(G, it) {
+    if (it.k === 'sound') {
+      var d = Save.get();
+      d.sound = !Sfx.isEnabled();
+      Sfx.setEnabled(d.sound);
+      Save.flush();
+      if (d.sound && G.world) Sfx.playSong(G.world.def.boss ? 'boss' : G.world.theme);
+    } else if (it.k === 'touch') {
+      var d2 = Save.get();
+      d2.touchMode = (Input.touchMode() === 'always') ? 'auto' : 'always';
+      Input.setTouchMode(d2.touchMode);
+      Save.flush();
+    }
+    Sfx.select();
+  }
+  function activate(G, it) {
+    if (it.k === 'resume') { Sfx.select(); G.state = 'play'; }
+    else if (it.k === 'restart') { Sfx.confirm(); G.startStage(G.world.index); }
+    else if (it.k === 'quit') { Sfx.select(); G.go('map'); }
+    else if (it.value) set_value(G, it);
+    else Sfx.select();
+  }
+
   var pause = {
     update: function (G) {
       var items = pauseItems();
       if (G.pauseSel >= items.length) G.pauseSel = 0;
+
+      var w0 = 214, h0 = 48 + items.length * 18;
+      var bx0 = Math.round(VIEW_W / 2 - w0 / 2), by0 = Math.round(VIEW_H / 2 - h0 / 2);
+      var tap = Input.takeTap();
+      if (tap) {
+        for (var pi = 0; pi < items.length; pi++) {
+          var rr = { x: bx0 + 6, y: by0 + 27 + pi * 18, w: w0 - 12, h: 16 };
+          if (inRect(tap, rr)) {
+            if (G.pauseSel !== pi) { G.pauseSel = pi; Sfx.select(); }
+            else if (items[pi].value) {
+              /* tapping the right half nudges the value along */
+              set_value(G, items[pi]);
+            } else {
+              activate(G, items[pi]);
+            }
+            return;
+          }
+        }
+      }
 
       if (Input.pressed('down')) { G.pauseSel = (G.pauseSel + 1) % items.length; Sfx.select(); }
       if (Input.pressed('up')) { G.pauseSel = (G.pauseSel + items.length - 1) % items.length; Sfx.select(); }
@@ -479,12 +642,7 @@ var UI = (function () {
         Sfx.select();
       }
 
-      if (Input.pressed('confirm') || Input.pressed('jump')) {
-        if (it.k === 'resume') { Sfx.select(); G.state = 'play'; }
-        else if (it.k === 'restart') { Sfx.confirm(); G.startStage(G.world.index); }
-        else if (it.k === 'quit') { Sfx.select(); G.go('map'); }
-        else Sfx.select();
-      }
+      if (Input.pressed('confirm') || Input.pressed('jump')) activate(G, it);
       if (Input.pressed('pause')) { Sfx.select(); G.state = 'play'; }
       if (Input.pressed('restart')) { Sfx.confirm(); G.startStage(G.world.index); }
     },
@@ -513,7 +671,8 @@ var UI = (function () {
           Text.draw(g, '>', x + w - 14, iy, on ? '#ffd75e' : '#5d5478', 1);
         }
       }
-      Text.center(g, 'INPUT: ' + Input.schemeLabel(), VIEW_W / 2, y + h - 12, '#6d6488', 1);
+      Text.center(g, hint('INPUT: KEYBOARD', 'INPUT: CONTROLLER', 'TAP AN ITEM'),
+        VIEW_W / 2, y + h - 12, '#6d6488', 1);
     }
   };
 
@@ -548,7 +707,8 @@ var UI = (function () {
       Text.draw(g, 'PURSE', px0, 130, '#8d80ad', 1);
       Text.draw(g, String(Save.get().coins), pv, 130, '#ffe27a', 1);
       if (G.resultT <= 0 && Math.floor(G.t / 24) % 2 === 0) {
-        Text.center(g, 'PRESS ENTER', VIEW_W / 2, VIEW_H - 22, '#ffffff', 1);
+        Text.center(g, hint('PRESS ENTER', 'PRESS A', 'TAP TO CONTINUE'),
+          VIEW_W / 2, VIEW_H - 22, '#ffffff', 1);
       }
     }
   };
@@ -565,8 +725,10 @@ var UI = (function () {
       g.drawImage(Art.dog.right.sit, VIEW_W / 2 - 18, 96, 36, 28);
       Text.center(g, 'THE COIN YOU PICKED UP IS KEPT.', VIEW_W / 2, 140, '#b8a8d8', 1);
       if (G.resultT <= 0) {
-        Text.center(g, 'ENTER  TRY AGAIN', VIEW_W / 2, 164, '#ffffff', 1);
-        Text.center(g, 'X      BACK TO MAP', VIEW_W / 2, 178, '#8d80ad', 1);
+        Text.center(g, hint('ENTER  TRY AGAIN', 'A  TRY AGAIN', 'TAP TO TRY AGAIN'),
+          VIEW_W / 2, 164, '#ffffff', 1);
+        Text.center(g, hint('X  BACK TO MAP', 'X  BACK TO MAP', ''),
+          VIEW_W / 2, 178, '#8d80ad', 1);
       }
     }
   };
@@ -586,7 +748,8 @@ var UI = (function () {
         '     CHESTS  ' + Save.chestsFound(), VIEW_W / 2, 152, '#a8e0ff', 1);
       Text.center(g, 'COIN IN THE PURSE  ' + Save.get().coins, VIEW_W / 2, 166, '#ffe27a', 1);
       if (Math.floor(G.t / 26) % 2 === 0) {
-        Text.center(g, 'PRESS ENTER', VIEW_W / 2, VIEW_H - 16, '#ffffff', 1);
+        Text.center(g, hint('PRESS ENTER', 'PRESS A', 'TAP TO CONTINUE'),
+          VIEW_W / 2, VIEW_H - 16, '#ffffff', 1);
       }
     }
   };

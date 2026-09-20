@@ -61,6 +61,9 @@ var Game = (function () {
   function enter(state) {
     G.prevState = G.state;
     G.state = state;
+    /* a tap that advanced the last screen must not also press something
+       on the next one */
+    Input.clearTaps();
     if (state === 'map') { Sfx.stopSong(); }
     if (state === 'title') { Sfx.stopSong(); }
   }

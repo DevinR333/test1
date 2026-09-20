@@ -27,8 +27,10 @@ var Input = (function () {
   var lastTouch = 0;
   var IDLE_MS = 1100;
   var mode = 'keyboard';          /* keyboard | touch | controller */
-  var menuMode = false;           /* on menus the pad never fades away */
-  var tapConfirm = false;         /* and on result screens a tap anywhere advances */
+  var menuMode = false;           /* menus swap the pad for tappable UI */
+  var tapConfirm = false;         /* result screens advance on any tap    */
+  var taps = [];                  /* canvas taps waiting to be read       */
+  var lastTapAt = 0;
 
   function set(name, on) {
     if (!name) return;
@@ -58,7 +60,10 @@ var Input = (function () {
   }
   function apply() {
     if (!host) return;
-    if (!sawTouch || mode === 'controller') { host.classList.add('hidden'); return; }
+    if (!sawTouch || mode === 'controller' || menuMode) {
+      host.classList.add('hidden');
+      return;
+    }
     host.classList.remove('hidden');
     var idle = !menuMode && (touchMode === 'auto') &&
                (Date.now() - lastTouch > IDLE_MS) && stickId === null;
@@ -134,6 +139,7 @@ var Input = (function () {
     knobEl = document.getElementById('knob');
     var zone = document.getElementById('stickzone');
     if (zone) bindStick(zone);
+    bindTaps();
 
     var btns = host.querySelectorAll('.tbtn');
     for (var i = 0; i < btns.length; i++) {
@@ -156,6 +162,10 @@ var Input = (function () {
         b.addEventListener('pointerup', release);
         b.addEventListener('pointercancel', release);
         b.addEventListener('pointerleave', release);
+        /* belt and braces: some WebViews are unreliable with pointer events */
+        b.addEventListener('touchstart', function (e) { touched(); press(e); }, { passive: false });
+        b.addEventListener('touchend', release, { passive: false });
+        b.addEventListener('touchcancel', release, { passive: false });
       })(btns[i]);
     }
 
@@ -175,6 +185,37 @@ var Input = (function () {
     });
     setInterval(apply, 200);
     apply();
+  }
+
+  /* ---------------- canvas taps ----------------
+     Menus are driven by tapping what you can see. Pointer, touch and
+     click are all wired up because WebViews disagree about which of
+     them fire; a short guard stops one press counting twice. */
+  function registerTap(clientX, clientY) {
+    var now = Date.now();
+    if (now - lastTapAt < 250) return;
+    var cv = document.getElementById('screen');
+    if (!cv) return;
+    var r = cv.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) return;
+    lastTapAt = now;
+    taps.push({
+      x: (clientX - r.left) / r.width * cv.width,
+      y: (clientY - r.top) / r.height * cv.height
+    });
+    if (taps.length > 4) taps.shift();
+  }
+
+  function bindTaps() {
+    var cv = document.getElementById('screen');
+    if (!cv) return;
+    cv.addEventListener('click', function (e) { registerTap(e.clientX, e.clientY); });
+    cv.addEventListener('pointerdown', function (e) { registerTap(e.clientX, e.clientY); });
+    cv.addEventListener('touchstart', function (e) {
+      var t = e.changedTouches && e.changedTouches[0];
+      if (t) registerTap(t.clientX, t.clientY);
+    }, { passive: true });
   }
 
   /* ---------------- gamepad ---------------- */
@@ -224,6 +265,10 @@ var Input = (function () {
       tapConfirm = !!tap;
       apply();
     },
+    /* read and consume the next tap, in view coordinates */
+    takeTap: function () { return taps.length ? taps.shift() : null; },
+    peekTap: function () { return taps.length ? taps[0] : null; },
+    clearTaps: function () { taps.length = 0; },
     touchMode: function () { return touchMode; },
     mode: function () { return mode; },
     padName: function () { return padName; },
