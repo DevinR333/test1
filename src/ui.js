@@ -702,14 +702,9 @@ var UI = (function () {
     var w = 118, h = 22;
     return { x: Math.round(VIEW_W / 2 - w / 2), y: VIEW_H - 30, w: w, h: h };
   }
-  /* Anything at all gets you off a results screen, and if every input
-     path somehow fails it leaves by itself after a few seconds. */
-  function anyInput() {
-    return Input.pressed('confirm') || Input.pressed('jump') || Input.pressed('attack') ||
-           Input.pressed('pause') || Input.pressed('up') || Input.pressed('down') ||
-           Input.pressed('left') || Input.pressed('right') || Input.pressed('restart') ||
-           !!Input.takeTap();
-  }
+  /* The two buttons are the only way off a results screen. A stray tap
+     or a leftover button press must not skip it. */
+  function anyInput() { return false; }
 
   var clear = {
     update: function (G) {
@@ -753,13 +748,7 @@ var UI = (function () {
   var fail = {
     update: function (G) {
       if (G.resultT > 0) { G.resultT--; }
-      var tap = Input.takeTap();
-      if (tap) {
-        if (inRect(tap, quitRect())) { Sfx.select(); G.go('map'); return; }
-        Sfx.confirm(); G.startStage(G.lastStage); return;   /* anywhere else retries */
-      }
-      if (Input.pressed('confirm') || Input.pressed('jump')) { Sfx.confirm(); G.startStage(G.lastStage); }
-      if (Input.pressed('attack') || Input.pressed('pause')) { Sfx.select(); G.go('map'); }
+      Input.clearTaps();
     },
     draw: function (g, G) {
       backdrop(g, G.t, ['#1c1016', '#331823']);

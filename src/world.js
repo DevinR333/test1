@@ -247,6 +247,20 @@ World.prototype.moveActor = function (e, loose, flyer) {
     }
   }
   if (!e.grounded && e.vy >= 0 && this.onGround(e)) e.grounded = true;
+
+  /* Settle exactly on the surface. Gravity adds a fraction every frame and
+     the collision pass only snaps it back once it overlaps, so a standing
+     actor drifted up and down by half a pixel - enough to flip the camera
+     a pixel each frame and make the hero look like he was vibrating. */
+  if (e.grounded && e.vy > 0) {
+    var foot = e.y + e.h;
+    var surf = Math.round(foot / TILE) * TILE;
+    if (Math.abs(foot - surf) <= e.vy + 0.5 &&
+        this.solidFor(e, this.codeAtPx(e.x + e.w / 2, surf + 1))) {
+      e.y = surf - e.h;
+    }
+    e.vy = 0;
+  }
 };
 
 /* Is there footing directly under this actor? Checked separately from the
@@ -298,6 +312,33 @@ World.prototype.onGround = function (e) {
 };
 
 /* ---------------- spawning helpers ---------------- */
+/* A short panel explaining what just dropped, so a chest is not just
+   something flinging off the screen. */
+World.prototype.showPopup = function (title, lines, color) {
+  this.popup = { title: title, lines: lines || [], color: color || '#e8c45c', t: 200 };
+};
+
+World.prototype.drawPopup = function (g) {
+  var pu = this.popup;
+  if (!pu || pu.t <= 0) return;
+  var fade = pu.t > 30 ? 1 : pu.t / 30;
+  var w = 168, h = 30 + pu.lines.length * 11;
+  var x = Math.round(VIEW_W / 2 - w / 2), y = 30;
+  g.save();
+  g.globalAlpha = fade;
+  g.fillStyle = 'rgba(12,9,20,.92)';
+  g.fillRect(x, y, w, h);
+  g.fillStyle = pu.color;
+  g.fillRect(x, y, w, 1); g.fillRect(x, y + h - 1, w, 1);
+  g.fillRect(x, y, 1, h); g.fillRect(x + w - 1, y, 1, h);
+  Text.center(g, pu.title, VIEW_W / 2, y + 7, pu.color, 1);
+  for (var i = 0; i < pu.lines.length; i++) {
+    Text.center(g, pu.lines[i], VIEW_W / 2, y + 21 + i * 11, '#e6dcf7', 1);
+  }
+  g.restore();
+  pu.t--;
+};
+
 World.prototype.puff = function (x, y, color, n) {
   for (var i = 0; i < n; i++) {
     this.parts.push(new Particle(x, y, Util.rand(-1.5, 1.5), Util.rand(-1.8, 0.4),
@@ -617,9 +658,14 @@ World.prototype.update = function () {
         this.texts.push(new FloatText(pk.x - 4, pk.y - 8, '+' + val, col));
         this.puff(pk.x + 3, pk.y + 3, col, 14);
       } else if (pk.kind === 'orb') {
-        p.charges = 4;
+        p.maxCharges = 4;
+        p.charges = p.maxCharges;
         Sfx.buy();
-        this.texts.push(new FloatText(pk.x - 14, pk.y - 8, 'SPECIAL READY', '#b9a0ff'));
+        var sp = Art.SPECIALS[Save.blade().special];
+        this.showPopup('SPELL ORB', [
+          sp.name.toUpperCase() + '  x' + p.maxCharges,
+          sp.desc.toUpperCase()
+        ], '#b9a0ff');
         this.puff(pk.x + 3, pk.y + 3, '#b9a0ff', 16);
       } else if (pk.kind === 'vessel') {
         this.vesselGot++;
@@ -902,20 +948,26 @@ World.prototype.drawHud = function (g) {
   if (hp4) {
     for (i = 0; i < hp4; i++) g.drawImage(Art.HEART_PIECE, 8 + p.maxHp * 10 + i * 7, 6);
   }
-  /* special gauge, only while it has something in it */
+  /* Special gauge. It only exists while charged: it appears full when you
+     pick up an orb, drains a segment per swing, and vanishes at empty. */
   if (p.charges > 0) {
     var bl = Save.blade();
-    g.drawImage(Art.ORB, 6, 28, 7, 7);
-    for (i = 0; i < 4; i++) {
-      var px2 = 16 + i * 6;
+    var gy = 6 + 12;                      /* directly under the hearts */
+    var segW = 13, gap = 2, gx0 = 6;
+    for (i = 0; i < p.maxCharges; i++) {
+      var sx2 = gx0 + i * (segW + gap);
+      g.fillStyle = 'rgba(0,0,0,.55)';
+      g.fillRect(sx2 - 1, gy - 1, segW + 2, 8);
       if (i < p.charges) {
-        g.fillStyle = '#b9a0ff'; g.fillRect(px2, 29, 4, 5);
-        g.fillStyle = '#e8dcff'; g.fillRect(px2, 29, 4, 1);
+        g.fillStyle = '#7d5ad6'; g.fillRect(sx2, gy, segW, 6);
+        g.fillStyle = '#b9a0ff'; g.fillRect(sx2, gy, segW, 3);
+        g.fillStyle = '#e8dcff'; g.fillRect(sx2, gy, segW, 1);
       } else {
-        g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(px2, 29, 4, 5);
+        g.fillStyle = '#241c38'; g.fillRect(sx2, gy, segW, 6);
       }
     }
-    Text.shadow(g, Art.SPECIALS[bl.special].name, 44, 29, '#b9a0ff', 1);
+    Text.shadow(g, Art.SPECIALS[bl.special].name.toUpperCase(),
+      gx0 + p.maxCharges * (segW + gap) + 4, gy, '#b9a0ff', 1);
   }
 
   /* running gem total, top left under the hearts */
@@ -970,6 +1022,8 @@ World.prototype.drawHud = function (g) {
     if (this.def.hint) Text.centerShadow(g, this.def.hint, VIEW_W / 2, 42, '#c9c0e0', 1);
     g.restore();
   }
+
+  this.drawPopup(g);
 
   if (this.state === 'dying') {
     g.fillStyle = 'rgba(10,6,14,' + Math.min(0.75, (96 - this.stateTimer) / 96) + ')';

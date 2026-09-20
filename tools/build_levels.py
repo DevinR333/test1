@@ -50,6 +50,57 @@ class Stage:
             for c in range(max(0, c0), min(self.W, c1 + 1)):
                 self.g[r][c] = ch
 
+    def carve_rock(self, r0, r1, c0, c1):
+        """Turn solid rock into false wall. Anything that is not rock is
+        left alone, so a vault can never open into the room next door."""
+        cells = []
+        for r in range(max(0, r0), min(self.H, r1 + 1)):
+            for c in range(max(0, c0), min(self.W, c1 + 1)):
+                if self.g[r][c] == SOLID:
+                    self.g[r][c] = 'F'
+                    cells.append((r, c))
+        return cells
+
+    def burial_depth(self, cells):
+        """How far each pocket cell sits from open air, in tiles. The
+        entrance necessarily touches air; loot needs to be deeper than
+        that or it shows from outside."""
+        inside = set(cells)
+        depth = {}
+        frontier = []
+        for (r, c) in cells:
+            exposed = False
+            for (dr, dc) in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nr, nc = r + dr, c + dc
+                if (nr, nc) in inside:
+                    continue
+                if not (0 <= nr < self.H and 0 <= nc < self.W):
+                    continue
+                if self.g[nr][nc] not in (SOLID, 'F', 'B'):
+                    exposed = True
+                    break
+            if exposed:
+                depth[(r, c)] = 1
+                frontier.append((r, c))
+        if not frontier:                       # fully entombed
+            for cell in cells:
+                depth[cell] = 9
+            return depth
+        while frontier:
+            nxt = []
+            for (r, c) in frontier:
+                for (dr, dc) in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    n = (r + dr, c + dc)
+                    if n in inside and n not in depth:
+                        depth[n] = depth[(r, c)] + 1
+                        nxt.append(n)
+            frontier = nxt
+        return depth
+
+    def unseal(self, cells):
+        for (r, c) in cells:
+            self.g[r][c] = SOLID
+
     def put_free(self, r, c, ch):
         """Place only into empty space, so actors never replace geometry."""
         if self.inside(r, c) and self.g[r][c] == AIR:
@@ -274,48 +325,104 @@ def build(sid, world, name, theme, hint, rcols, seed, spec, flyers):
         else:
             st.door(ax, ay, bx, by)
 
-    # vaults in rooms OFF the route, reached only through false wall
+    # Vaults in rooms OFF the route. Where they sit, how deep they are
+    # and how you get in all vary, so no two stages hide them alike.
     onpath = set(path)
-    vaults = 0
+    candidates = []
     for (rx, ry) in path:
+        for nx in (rx + 1, rx - 1):
+            if 0 <= nx < rcols and (nx, ry) not in onpath:
+                candidates.append((nx, ry, rx))
+    rng.shuffle(candidates)
+
+    styles = ['under', 'deep', 'high', 'side']
+    rng.shuffle(styles)
+
+    def try_vault(nx, ry, rx, style, index):
+        """Cut one sealed pocket. Returns True if it took."""
+        r0, r1, c0, c1 = st.room_bounds(nx, ry)
+        floor = st.room_floor(nx, ry)
+        fromRight = nx > rx
+        cells, depth, vc0, vc1 = [], floor - 1, c0 + 2, c1 - 2
+
+        if style == 'under':
+            top, bot = floor + 1, min(st.H - 2, floor + 3)
+            cells = st.carve_rock(top, bot, vc0, vc1)
+            depth = bot
+            hole = rng.randint(vc0 + 1, vc1 - 1)
+            if st.get(floor, hole) == SOLID:
+                st.set(floor, hole, 'F')
+                cells.append((floor, hole))
+        elif style == 'high':
+            top, bot = max(r0 + 1, floor - 6), floor - 3
+            cells = st.carve_rock(top, bot, vc0, vc1)
+            depth = bot
+            climb = rng.randint(vc0, vc1)
+            for r in range(bot + 1, floor):
+                if st.get(r, climb) == SOLID:
+                    st.set(r, climb, 'F')
+                    cells.append((r, climb))
+        else:
+            inset = 3 if style == 'side' else rng.randint(5, 7)
+            top = floor - rng.choice([2, 3])
+            if fromRight:
+                vc0, vc1 = c0 + inset, c1 - 2
+                cells = st.carve_rock(top, floor - 1, vc0, vc1)
+                for c in range(c0 - 2, vc0):
+                    for r in range(floor - 2, floor):
+                        if st.get(r, c) == SOLID:
+                            st.set(r, c, 'F'); cells.append((r, c))
+            else:
+                vc0, vc1 = c0 + 2, c1 - inset
+                cells = st.carve_rock(top, floor - 1, vc0, vc1)
+                for c in range(vc1 + 1, c1 + 3):
+                    for r in range(floor - 2, floor):
+                        if st.get(r, c) == SOLID:
+                            st.set(r, c, 'F'); cells.append((r, c))
+            depth = floor - 1
+
+        if len(cells) < 6:
+            st.unseal(cells)
+            return False
+
+        # put the loot where the rock is thickest, never on the way in
+        dmap = st.burial_depth(cells)
+        buried = [cell for cell in cells if dmap.get(cell, 0) >= 2]
+        if len(buried) < 2:
+            st.unseal(cells)
+            return False
+        buried.sort(key=lambda cell: -dmap[cell])
+        pick = buried[:max(2, len(buried) // 2)]
+        rng.shuffle(pick)
+        (cr, cc) = pick[0]
+        (gr, gc) = pick[-1] if len(pick) > 1 else pick[0]
+        if (gr, gc) == (cr, cc) and len(buried) > 1:
+            (gr, gc) = buried[1]
+        st.set(cr, cc, 'C')
+        st.set(gr, gc, 'q' if index == 0 else 'j')
+
+        if index == 1 and style in ('side', 'deep'):
+            bx = (c0 - 3) if fromRight else (c1 + 3)
+            for r in range(floor - 2, floor):
+                if st.get(r, bx) in (SOLID, 'F'):
+                    st.set(r, bx, 'B')
+
+        st.floors.append((vc0, vc1, depth + 1))
+        return True
+
+    vaults = 0
+    for (nx, ry, rx) in candidates:
         if vaults >= 2:
             break
-        for nx in (rx + 1, rx - 1):
-            if vaults >= 2:
-                break
-            if 0 <= nx < rcols and (nx, ry) not in onpath:
-                r0, r1, c0, c1 = st.room_bounds(nx, ry)
-                floor = st.room_floor(nx, ry)
-                top = floor - 3
-                # The whole chamber is packed with false wall, not left
-                # hollow: from outside it is indistinguishable from solid
-                # rock, and it only opens up as you push into it.
-                if nx > rx:
-                    vc0, vc1 = c0 + 3, c1 - 2
-                    st.carve(top, floor - 1, vc0, vc1, 'F')
-                    for c in range(c0 - 2, vc0):
-                        for r in range(floor - 2, floor):
-                            st.set(r, c, 'F')
-                else:
-                    vc0, vc1 = c0 + 2, c1 - 3
-                    st.carve(top, floor - 1, vc0, vc1, 'F')
-                    for c in range(vc1 + 1, c1 + 3):
-                        for r in range(floor - 2, floor):
-                            st.set(r, c, 'F')
-                st.set(floor - 1, vc0 + 2, 'C')
-                # the deeper vault is sealed behind reinforced stone, so it
-                # stays shut until the Emberblade is bought - a reason to
-                # come back to an early stage later
-                if vaults == 1:
-                    bx = (c0 - 3) if nx > rx else (c1 + 3)
-                    for r in range(floor - 2, floor):
-                        st.set(r, bx, 'B')
-                    st.set(floor - 1, vc1 - 1, 'q')     # buried crown gem
-                else:
-                    st.set(floor - 1, vc1 - 1, 'j')     # buried jewel
-                st.floors.append((vc0, vc1, floor))
+        if (nx, ry) in onpath:
+            continue
+        # try the interesting shape first, then fall back to a plain one
+        # so a stage never ends up with no secrets at all
+        for style in (styles[vaults % len(styles)], 'side', 'deep'):
+            if try_vault(nx, ry, rx, style, vaults):
                 onpath.add((nx, ry))
                 vaults += 1
+                break
 
     # spawn and exit
     sx, sy = path[0]

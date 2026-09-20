@@ -147,11 +147,17 @@ Chest.prototype.pop = function (w) {
   var prize = (this.loot === 'outfit') ? Save.lockedOutfit() : null;
   if (prize) {
     Save.unlockOutfit(prize);
-    w.texts.push(new FloatText(this.x - 18, this.y - 16,
-      Art.OUTFITS[prize].name.toUpperCase() + '!', '#a8ffd0'));
-    w.texts.push(new FloatText(this.x - 6, this.y - 8, 'TREASURE!', '#e8c45c'));
+    w.showPopup('CHEST OPENED', [
+      Art.OUTFITS[prize].name.toUpperCase(),
+      'AN OUTFIT - WEAR IT IN THE WARDROBE'
+    ], '#a8ffd0');
+  } else if (this.loot === 'gems') {
+    w.showPopup('CHEST OPENED', [
+      'A HOARD OF GEMS',
+      'CROWN 10  JEWEL 5  SHARD 1'
+    ], '#ffc8f4');
   } else {
-    w.texts.push(new FloatText(this.x - 6, this.y - 8, 'TREASURE!', '#e8c45c'));
+    w.showPopup('CHEST OPENED', ['16 COINS', 'SPEND THEM AT THE TRADING POST'], '#e8c45c');
   }
 };
 Chest.prototype.update = function (w) {
@@ -620,6 +626,7 @@ function Player(x, y) {
   this.landSquash = 0;
   this.lift = 0;
   this.charges = 0;        /* special uses left, from orbs */
+  this.maxCharges = 4;
   this.special = false;    /* is this swing a special? */
 }
 Player.prototype.damage = function () { return Save.bladeDamage(); };
@@ -704,6 +711,7 @@ Player.prototype.update = function (w) {
   } else {
     this.lift = 0;
   this.charges = 0;        /* special uses left, from orbs */
+  this.maxCharges = 4;
   this.special = false;    /* is this swing a special? */
   }
 
