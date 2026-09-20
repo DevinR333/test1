@@ -420,6 +420,7 @@ ROM_SIZE="$(wc -c < "$ROM" | tr -d ' ')"
     frontend/win32.c \
     runtime/alu.c runtime/memory.c runtime/ppu.c runtime/machine.c \
     runtime/interp.c runtime/interp_gen.c runtime/present.c runtime/io_masks.c \
+    runtime/display.c \
     runtime/diag.c $WORLD_SRC \
     "$OUT_DIR"/obj/*.o \
     -lgdi32 -luser32 -lm -static -mwindows

@@ -15,6 +15,7 @@
 #include "gb.h"
 #include "present.h"
 #include "worldmap.h"
+#include "display.h"
 
 /* Stamped in by the build so any report names the build that produced it.
  * Identical numbers from what should have been different code means a stale
@@ -66,6 +67,8 @@ static struct {
     volatile LONG seamless;    /* pace room crossings by Link, not by the clock */
     int           burst, shown_x, shown_y, settling;
     gb_fit_mode_t fit;
+    gb_view_mode_t view_mode;
+    int           menu_open, menu_sel;
     int           integer_scale;
     float         zoom;
     float         pan_x, pan_y;
@@ -492,6 +495,46 @@ static void paint(HWND hwnd)
     float by = (float)ch / GB_SCREEN_H;
     if (by < base) base = by;
 
+    if (app.map_w != cw || app.map_h != ch) {
+        free(app.map_pixels);
+        app.map_pixels = malloc((size_t)cw * ch * sizeof(uint32_t));
+        app.map_w = cw;
+        app.map_h = ch;
+        app.map_bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        app.map_bmi.bmiHeader.biWidth = cw;
+        app.map_bmi.bmiHeader.biHeight = -ch;
+        app.map_bmi.bmiHeader.biPlanes = 1;
+        app.map_bmi.bmiHeader.biBitCount = 32;
+        app.map_bmi.bmiHeader.biCompression = BI_RGB;
+    }
+    if (!app.map_pixels) { EndPaint(hwnd, &ps); return; }
+
+    /* The two fixed shapes show the hardware's screen and nothing else, in
+     * the largest 16:9 or 4:3 rectangle the window will hold, with the screen
+     * centred in it at a whole multiple so no row is doubled while its
+     * neighbour is not. */
+    if (app.view_mode != GB_VIEW_WORLD) {
+        gb_rect_t r = gb_view_screen(app.view_mode, cw, ch);
+        memset(app.map_pixels, 0, (size_t)cw * ch * sizeof(uint32_t));
+        for (int y = 0; y < r.h; y++) {
+            int dy = r.y + y;
+            if (dy < 0 || dy >= ch) continue;
+            const uint32_t *src = app.pixels + (y * GB_SCREEN_H / r.h) * GB_SCREEN_W;
+            uint32_t *row = app.map_pixels + (size_t)dy * cw;
+            for (int x = 0; x < r.w; x++) {
+                int dx = r.x + x;
+                if (dx >= 0 && dx < cw)
+                    row[dx] = src[x * GB_SCREEN_W / r.w];
+            }
+        }
+        if (app.menu_open)
+            gb_menu_draw(app.map_pixels, cw, ch, app.menu_sel);
+        StretchDIBits(dc, 0, 0, cw, ch, 0, 0, cw, ch,
+                      app.map_pixels, &app.map_bmi, DIB_RGB_COLORS, SRCCOPY);
+        EndPaint(hwnd, &ps);
+        return;
+    }
+
     /* Above natural size there is no world to put around the screen. Nor is
      * there anywhere the world data does not describe - menus, cutscenes and
      * the opening - where surrounding the screen with overworld scenery would
@@ -554,19 +597,6 @@ static void paint(HWND hwnd)
     app.cam_y = cam_y;
     app.cam_valid = 1;
 
-    if (app.map_w != cw || app.map_h != ch) {
-        free(app.map_pixels);
-        app.map_pixels = malloc((size_t)cw * ch * sizeof(uint32_t));
-        app.map_w = cw;
-        app.map_h = ch;
-        app.map_bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-        app.map_bmi.bmiHeader.biWidth = cw;
-        app.map_bmi.bmiHeader.biHeight = -ch;
-        app.map_bmi.bmiHeader.biPlanes = 1;
-        app.map_bmi.bmiHeader.biBitCount = 32;
-        app.map_bmi.bmiHeader.biCompression = BI_RGB;
-    }
-    if (!app.map_pixels) { EndPaint(hwnd, &ps); return; }
 
     /* World, then the live screen into it, then the status bar over the top -
      * all into one image, which then goes to the window in a single blit.
@@ -643,6 +673,9 @@ static void paint(HWND hwnd)
      * however far out the view is pulled. */
     gb_world_draw_status(view, app.map_pixels, cw, ch, base);
 
+    if (app.menu_open)
+        gb_menu_draw(app.map_pixels, cw, ch, app.menu_sel);
+
     StretchDIBits(dc, 0, 0, cw, ch, 0, 0, cw, ch,
                   app.map_pixels, &app.map_bmi, DIB_RGB_COLORS, SRCCOPY);
 
@@ -662,8 +695,41 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_KEYDOWN:
     case WM_KEYUP: {
         if (msg == WM_KEYDOWN && wp == VK_ESCAPE) {
+            if (app.menu_open) {             /* back out of the chooser */
+                app.menu_open = 0;
+                InvalidateRect(hwnd, NULL, TRUE);
+                return 0;
+            }
             PostMessage(hwnd, WM_CLOSE, 0, 0);
             return 0;
+        }
+
+        /* The chooser. It opens on the title screen, and F10 brings it back
+         * at any point, so a display that turns out wrong is one key away
+         * from being right rather than a rebuild away. */
+        if (msg == WM_KEYDOWN && wp == VK_F10) {
+            app.menu_open = !app.menu_open;
+            app.menu_sel = app.view_mode;
+            InvalidateRect(hwnd, NULL, TRUE);
+            return 0;
+        }
+        if (app.menu_open && msg == WM_KEYDOWN) {
+            switch (wp) {
+            case VK_UP:
+                app.menu_sel = (app.menu_sel + GB_VIEW_MODES - 1) % GB_VIEW_MODES;
+                break;
+            case VK_DOWN:
+                app.menu_sel = (app.menu_sel + 1) % GB_VIEW_MODES;
+                break;
+            case VK_RETURN: case VK_SPACE: case 'X': case 'Z':
+                app.view_mode = (gb_view_mode_t)app.menu_sel;
+                app.menu_open = 0;
+                break;
+            default:
+                break;
+            }
+            InvalidateRect(hwnd, NULL, TRUE);
+            return 0;                        /* the game hears none of this */
         }
         /* Tab jumps between playing at normal size and pulled right back. */
         if (msg == WM_KEYDOWN && wp == VK_TAB) {
@@ -855,6 +921,9 @@ int main(int argc, char **argv)
     app.fit = GB_FIT_INTEGER;
     app.seamless = 1;
     app.best_pct = 1e9;
+    app.view_mode = GB_VIEW_WORLD;
+    app.menu_open = 1;              /* offered once, up front */
+    app.menu_sel = GB_VIEW_WORLD;
     app.zoom = 1.0f;
     app.running = 1;
     InitializeCriticalSection(&app.lock);
