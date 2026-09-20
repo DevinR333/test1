@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="54"
+                android:endY="108"
+                android:startX="54"
+                android:startY="0"
+                android:type="linear">
+                <item android:color="#FF9FDDF7" android:offset="0" />
+                <item android:color="#FF6FC0EA" android:offset="0.55" />
+                <item android:color="#FF4FA6DC" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- soft cloud bank, mostly under the adaptive-icon mask -->
+    <path
+        android:fillColor="#33FFFFFF"
+        android:pathData="M8,88 C18,74 34,76 40,84 C48,70 70,70 78,84 C92,80 102,88 104,98 L104,108 L4,108 Z" />
+    <path
+        android:fillColor="#26FFFFFF"
+        android:pathData="M-4,26 C6,14 22,16 28,24 C36,14 54,16 58,26 C44,30 14,32 -4,30 Z" />
+</vector>
