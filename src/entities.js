@@ -194,8 +194,10 @@ function Shot(x, y, vx, vy, kind, friendly) {
   this.dmg = 1;
   this.pierce = false;
   this.hits = [];
-  this.w = (kind === 'shock' || kind === 'flame') ? 10 : (kind === 'bolt' ? 14 : 4);
-  this.h = (kind === 'shock' || kind === 'flame') ? 10 : (kind === 'bolt' ? 8 : 4);
+  this.w = (kind === 'shock' || kind === 'flame') ? 10
+         : (kind === 'bolt' ? 14 : (kind === 'crossw' ? 16 : 4));
+  this.h = (kind === 'shock' || kind === 'flame') ? 10
+         : (kind === 'bolt' ? 8 : (kind === 'crossw' ? 22 : 4));
   this.life = kind === 'shock' ? 150 : 260;
   this.dead = false;
   this.t = 0;
@@ -236,6 +238,23 @@ Shot.prototype.draw = function (g, cam) {
     g.fillStyle = 'rgba(180,230,255,.9)'; g.fillRect(sx, sy + 2, 14, 4);
     g.fillStyle = '#eafdff'; g.fillRect(sx, sy + 3, 14, 1);
     g.fillStyle = 'rgba(140,200,255,.5)'; g.fillRect(sx - 4, sy + 1, 6, 6);
+  } else if (this.kind === 'crossw') {
+    /* the thrown cross: two bright strokes, thinning as it goes */
+    var cf2 = Math.max(0, Math.min(1, this.life / 24));
+    g.save();
+    g.translate(sx + this.w / 2, sy + this.h / 2);
+    g.globalAlpha = cf2;
+    g.strokeStyle = '#eef4fa';
+    g.lineWidth = 3;
+    var a2 = this.w / 2 + 3;
+    g.beginPath();
+    g.moveTo(-a2, -a2); g.lineTo(a2, a2);
+    g.moveTo(a2, -a2); g.lineTo(-a2, a2);
+    g.stroke();
+    g.globalAlpha = cf2 * 0.45;
+    g.strokeStyle = '#9fd0ff'; g.lineWidth = 6;
+    g.stroke();
+    g.restore();
   } else if (this.kind === 'splinter') {
     g.fillStyle = '#c9a273'; g.fillRect(sx, sy + 1, 5, 2);
     g.fillStyle = '#efe7d2'; g.fillRect(sx + 3, sy + 1, 2, 1);
@@ -641,6 +660,8 @@ function Player(x, y) {
   this.crossHit = false;   /* iron: the arc lands a second time */
   this.crossAgain = false;
   this.lashHit = false;    /* whip: the arc reaches far further */
+  this.fxCross = 0;        /* frames of the drawn X slash */
+  this.fxLash = 0;         /* frames of the drawn whip crack */
 }
 Player.prototype.damage = function () { return Save.bladeDamage(); };
 Player.prototype.reach = function () { return Save.bladeReach(); };
@@ -729,6 +750,7 @@ Player.prototype.update = function (w) {
     this.attack = ATTACK_FRAMES;
     this.attackHit = [];
     this.crossHit = false; this.lashHit = false; this.crossAgain = false;
+    this.fxCross = 0; this.fxLash = 0;
     /* with the gauge charged, every swing is the blade's special until
        it runs dry */
     this.special = this.charges > 0;
@@ -742,6 +764,8 @@ Player.prototype.update = function (w) {
     }
   }
   if (this.attack > 0) this.attack--;
+  if (this.fxCross > 0) this.fxCross--;
+  if (this.fxLash > 0) this.fxLash--;
 
   this.vy = Math.min(this.vy + GRAV, MAXFALL);
   var wasAir = !this.grounded;
@@ -811,7 +835,7 @@ Player.prototype.draw = function (g, cam) {
     var a1 = this.bladeAngleAt(prog);
     var a0 = this.bladeAngleAt(Math.max(0, prog - 0.34));
     if (a1 - a0 > 0.03) {
-      var reach = this.reach();
+      var reach = this.reach() * (this.lashHit ? 2.8 : (this.special ? 1.4 : 1));
       var bl = Save.blade();
       var col = this.special ? '200,170,255'
         : (bl.id === 'storm' ? '210,250,255'
@@ -833,5 +857,44 @@ Player.prototype.draw = function (g, cam) {
       }
       g.restore();
     }
+  }
+
+  /* Iron's cross and the whip's crack land no projectile, so without a
+     mark of their own they looked like an ordinary swing. */
+  if (this.fxCross > 0) {
+    var cf = this.fxCross / 16;
+    var ccx = bx + this.facing * 12, ccy = by;
+    g.save();
+    g.translate(ccx, ccy);
+    g.globalAlpha = cf;
+    g.strokeStyle = '#eef4fa';
+    g.lineWidth = 3 - 2 * (1 - cf);
+    var arm = 16 + 10 * (1 - cf);
+    g.beginPath();
+    g.moveTo(-arm, -arm); g.lineTo(arm, arm);
+    g.moveTo(arm, -arm); g.lineTo(-arm, arm);
+    g.stroke();
+    g.globalAlpha = cf * 0.5;
+    g.strokeStyle = '#9fd0ff';
+    g.lineWidth = 1;
+    g.stroke();
+    g.restore();
+  }
+  if (this.fxLash > 0) {
+    var lf = this.fxLash / 14;
+    g.save();
+    g.globalAlpha = lf;
+    g.strokeStyle = '#d8ffe8';
+    g.lineWidth = 2;
+    g.beginPath();
+    var lx0 = bx, ly0 = by;
+    for (var li = 0; li <= 12; li++) {
+      var tt = li / 12;
+      var px2 = lx0 + this.facing * tt * this.reach() * 2.8;
+      var py2 = ly0 + Math.sin(tt * 6.0 + (1 - lf) * 5) * 6 * tt;
+      if (li === 0) g.moveTo(px2, py2); else g.lineTo(px2, py2);
+    }
+    g.stroke();
+    g.restore();
   }
 };

@@ -22,7 +22,7 @@ var Save = (function () {
       worn: 'none',
       sound: true,
       touchMode: 'auto',  /* 'auto' fades when idle, 'always' stays put */
-      zoom: 0,            /* 0 = fit the screen, 1-4 = fixed pixel size */
+      zoom: 1,            /* 1 = fit the screen, higher crops in closer */
       seenIntro: false,
       seenOrbTip: false
     };

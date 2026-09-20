@@ -51,9 +51,9 @@ var UI = (function () {
   };
   var GRASS = {
     day:  { far: '#6b9e52', mid: '#4f8a3e', near: '#3d7331',
-            lip: '#8fd455', dark: '#2c5624', hill: '#7fb06a', haze: '#a8cf9a' },
+            lit: '#5f9a48', dark: '#2c5624', hill: '#7fb06a', haze: '#a8cf9a' },
     dusk: { far: '#4d6b48', mid: '#3a5738', near: '#2d442c',
-            lip: '#6d9a58', dark: '#1e2f1f', hill: '#5c7a5c', haze: '#8b9a8c' }
+            lit: '#44643f', dark: '#1e2f1f', hill: '#5c7a5c', haze: '#8b9a8c' }
   };
   /* fields are fractions of the view, so nothing is pinned to 400x224 */
   var clouds = [];
@@ -134,9 +134,10 @@ var UI = (function () {
       var ny = nearY + Math.round(2.5 * Math.sin(x3 * 0.035) + 1.5 * Math.sin(x3 * 0.09 + 1.3));
       g.fillRect(x3, ny, 1, VIEW_H - ny);
     }
-    /* light catching the crest of the far field */
-    g.fillStyle = gr.lip;
-    for (var x2 = 0; x2 < VIEW_W; x2 += 3) g.fillRect(x2, top, 2, 1);
+    /* a soft band of lighter green where the far field catches the
+       light - a dotted rule across the whole screen read as an outline */
+    g.fillStyle = gr.lit;
+    g.fillRect(0, top, VIEW_W, 2);
 
     /* grass blades and flowers, still but for a slow sway */
     var fieldH = VIEW_H - top;
@@ -716,8 +717,8 @@ var UI = (function () {
     }
     items.push({ k: 'sound', label: 'SOUND',
       value: function () { return Sfx.isEnabled() ? 'ON' : 'OFF'; } });
-    items.push({ k: 'zoom', label: 'ZOOM',
-      value: function () { return Game.zoomLabel(Save.get().zoom || 0); } });
+    items.push({ k: 'zoom', label: 'ZOOM IN LEVELS',
+      value: function () { return Game.zoomLabel(Save.get().zoom || 1); } });
     /* only worth offering once the screen has actually been touched */
     if (Input.mode() === 'touch') {
       items.push({ k: 'touch', label: 'TOUCH PAD',
@@ -744,7 +745,7 @@ var UI = (function () {
     } else if (it.k === 'zoom') {
       var d3 = Save.get();
       var list = Game.ZOOMS;
-      var at = list.indexOf(d3.zoom || 0);
+      var at = list.indexOf(d3.zoom || 1);
       if (at < 0) at = 0;
       at = (at + (dir < 0 ? list.length - 1 : 1)) % list.length;
       d3.zoom = list[at];

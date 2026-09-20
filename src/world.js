@@ -319,6 +319,13 @@ World.prototype.showPopup = function (title, lines, color, blocking) {
     title: title, lines: lines || [], color: color || '#e8c45c',
     t: 200, blocking: blocking !== false
   };
+  if (this.popup.blocking) {
+    /* Nothing updates while a blocking popup is up, so a shake started by
+       whatever dropped this loot would otherwise judder the picture for
+       as long as the panel is on screen. */
+    this.shakeAmt = 0;
+    this.hitStop = 0;
+  }
 };
 World.prototype.dismissPopup = function () { this.popup = null; };
 World.prototype.popupBlocking = function () {
@@ -398,25 +405,32 @@ World.prototype.fireSpecial = function (p) {
   var sh;
 
   if (kind === 'splinter') {
+    /* a shallow fan: a steeper spread buried the outer two in the floor */
     for (var i = -1; i <= 1; i++) {
-      sh = new Shot(cx, cy + 2, f * 3.4, i * 0.8, 'splinter', true);
-      sh.dmg = dmg; sh.life = 60;
+      sh = new Shot(cx, cy - 1, f * 3.4, i * 0.35, 'splinter', true);
+      sh.dmg = dmg; sh.life = 70;
       this.shots.push(sh);
     }
   } else if (kind === 'cross') {
-    /* no projectile: the swing itself is wider and lands twice */
+    /* the swing lands twice AND throws the slash a short way forward, so
+       the special reads as one even when nothing is in arm's reach */
     p.crossHit = true;
+    p.fxCross = 16;
+    sh = new Shot(cx, cy - 5, f * 3.0, 0, 'crossw', true);
+    sh.dmg = dmg * 2; sh.life = 24; sh.pierce = true;
+    this.shots.push(sh);
     this.puff(cx, cy + 4, '#eef4fa', 10);
   } else if (kind === 'quake') {
     this.shots.push(quake(this, p, -1, dmg));
     this.shots.push(quake(this, p, 1, dmg));
     this.shake(7);
   } else if (kind === 'flame') {
-    sh = new Shot(cx, p.y + p.h - 10, f * 1.9, 0, 'flame', true);
+    sh = new Shot(cx, p.y + p.h - 12, f * 1.9, 0, 'flame', true);
     sh.dmg = dmg; sh.life = 120;
     this.shots.push(sh);
   } else if (kind === 'lash') {
     p.lashHit = true;
+    p.fxLash = 14;
     for (var li = 0; li < 5; li++) {
       this.puff(cx + f * (10 + li * 9), cy + 4 + (li % 2 ? 2 : -2), '#e8fff0', 4);
     }
@@ -471,7 +485,13 @@ World.prototype.update = function () {
   this.t++;
   var p = this.player, i, e;
 
-  if (this.popupBlocking()) return;      /* loot popup holds the action */
+  if (this.popupBlocking()) {
+    /* the loot popup holds the action - and the picture, which kept
+       juddering because the shake decays further down this function */
+    this.shakeAmt = 0;
+    this.hitStop = 0;
+    return;
+  }
   if (this.hitStop > 0) { this.hitStop--; return; }
   if (this.bannerTimer > 0) this.bannerTimer--;
 
@@ -611,10 +631,11 @@ World.prototype.update = function () {
           }
         }
       }
-      /* deflect incoming shots */
+      /* deflect incoming shots - never your own, which spawn inside the
+         very swing that fired them and were being cancelled on frame one */
       for (i = 0; i < this.shots.length; i++) {
         var s = this.shots[i];
-        if (s.kind !== 'shock' && Util.aabb(hb, s)) {
+        if (!s.friendly && s.kind !== 'shock' && Util.aabb(hb, s)) {
           s.dead = true;
           this.puff(s.x, s.y, '#ffe27a', 5);
         }
@@ -1008,13 +1029,14 @@ World.prototype.drawHud = function (g) {
       gx0 + p.maxCharges * (segW + gap) + 4, gy, '#b9a0ff', 1);
   }
 
-  /* running gem total, top left under the hearts */
-  g.drawImage(Art.GEMS.jewel, 6, 17);
-  Text.shadow(g, String(Save.gemScore()), 16, 18, '#a8ffd0', 1);
-
-  /* coins */
+  /* Purse and gem total live on the right, clear of the gauge: they used
+     to be printed under the hearts, which is exactly where it draws. */
   g.drawImage(Art.COIN, VIEW_W - 52, 5);
   Text.shadow(g, String(Save.get().coins), VIEW_W - 42, 6, '#ffe27a', 1);
+  var gemTxt = String(Save.gemScore());
+  var gemX = VIEW_W - 62 - Text.width(gemTxt, 1);
+  g.drawImage(Art.GEMS.jewel, gemX - 9, 5);
+  Text.shadow(g, gemTxt, gemX, 6, '#a8ffd0', 1);
   /* What this stage still owes you: three gems and two chests, filled
      in as you find them. */
   var slotY = 18, sx0 = VIEW_W - 96;

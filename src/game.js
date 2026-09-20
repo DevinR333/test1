@@ -33,30 +33,50 @@ var Game = (function () {
      stay square in every case, and the picture fills the display. */
   var BASE_W = 400, BASE_H = 224;
 
-  /* FIT picks the scale that makes the reference fit; a fixed zoom pins
-     the pixel size instead, so you can trade world for legibility. */
-  G.ZOOMS = [0, 1, 2, 3, 4];
-  G.zoomLabel = function (z) { return z ? 'X' + z : 'FIT'; };
+  /* FIT is the baseline: the scale at which the 400x224 reference just
+     fits the screen. Every zoom step multiplies that scale, so the
+     picture only ever gets BIGGER and the aspect ratio never changes -
+     zooming out, and the squashed views that came with it, are gone. */
+  G.ZOOMS = [1, 1.25, 1.5, 1.75, 2];
+  G.zoomLabel = function (z) {
+    if (!z || z <= 1) return 'FIT';
+    return 'X' + (Math.round(z * 100) % 100 ? z.toFixed(2).replace(/0$/, '') : z);
+  };
+
+  var zoomed = false;            /* is the canvas currently cropped in? */
+  var zoomAt = 1;                /* the factor the canvas was last sized at */
 
   function fitCanvas() {
-    var vw = window.innerWidth, vh = window.innerHeight;
+    /* measure the padded wrapper, not the window: on a phone the notch
+       and the navigation bar sit inside innerWidth/innerHeight and were
+       clipping the bottom row off the screen */
+    var host = document.getElementById('wrap');
+    var vw = host ? host.clientWidth : window.innerWidth;
+    var vh = host ? host.clientHeight : window.innerHeight;
     if (!vw || !vh) return;
 
     var fit = Math.min(vw / BASE_W, vh / BASE_H);
-    var z = 0;
-    try { z = Save.get().zoom || 0; } catch (e) { z = 0; }
-    var scale = z > 0 ? z : fit;
-    var w = Math.round(vw / scale / 2) * 2;
-    var h = Math.round(vh / scale / 2) * 2;
-    if (z > 0) {
-      /* a forced zoom may show less than the reference - that is the
-         point - but never so little that the HUD has nowhere to sit */
-      VIEW_W = Util.clamp(w, 320, 760);
-      VIEW_H = Util.clamp(h, 180, 440);
-    } else {
-      VIEW_W = Math.max(BASE_W, Math.min(760, w));
-      VIEW_H = Math.max(BASE_H, Math.min(440, h));
+
+    /* the view at FIT, which is the most world anyone ever sees */
+    var fitW = Math.max(BASE_W, Math.min(760, Math.round(vw / fit / 2) * 2));
+    var fitH = Math.max(BASE_H, Math.min(440, Math.round(vh / fit / 2) * 2));
+
+    /* Zoom applies in levels only. The menus are laid out for a screen at
+       least this big, and cropping them would push their own furniture
+       off the edge - exactly the bottom-cut-off complaint. */
+    var z = 1;
+    if (zoomed) {
+      try { z = Save.get().zoom || 1; } catch (e) { z = 1; }
+      if (!(z >= 1)) z = 1;                  /* old saves stored 0 for FIT */
     }
+    /* One factor drives BOTH axes, including when the floor caps it, so
+       the shape of the picture is identical at every step. */
+    var MINW = 200, MINH = 112;
+    var zEff = Math.min(z, fitW / MINW, fitH / MINH);
+    if (!(zEff >= 1)) zEff = 1;
+
+    VIEW_W = Math.round(fitW / zEff / 2) * 2;
+    VIEW_H = Math.round(fitH / zEff / 2) * 2;
 
     if (cv.width !== VIEW_W || cv.height !== VIEW_H) {
       cv.width = VIEW_W;
@@ -210,6 +230,14 @@ var Game = (function () {
   }
 
   function draw() {
+    /* levels are drawn at the player's zoom, menus always at FIT; catching
+       it here means no state transition can forget to resize */
+    var wantZoom = (G.state === 'play' || G.state === 'pause');
+    var wantZ = 1;
+    if (wantZoom) { try { wantZ = Save.get().zoom || 1; } catch (e) { wantZ = 1; } }
+    if (wantZoom !== zoomed || wantZ !== zoomAt) {
+      zoomed = wantZoom; zoomAt = wantZ; fitCanvas();
+    }
     g.imageSmoothingEnabled = false;
     if (G.state === 'play' && G.world) G.world.draw(g);
     else {

@@ -5,7 +5,13 @@ html, body {
   -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent;
   overscroll-behavior:none; touch-action:none;
 }
-#wrap { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
+/* The safe-area insets keep the picture clear of a phone's notch and its
+   navigation bar, which were clipping the bottom row of the screen. */
+#wrap {
+  position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
 #screen {
   image-rendering: pixelated; image-rendering: crisp-edges;
   background:#0b0a12; display:block;
