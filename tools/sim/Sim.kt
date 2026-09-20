@@ -79,7 +79,7 @@ object Sim {
                 target = null
                 var frames = 0
                 while (!w.deathSettled && frames < 60 * 240) {
-                    w.update(1f / 60f, botSteer(w), true)
+                    w.update(1f / 60f, botSteer(w), true, 0f, false)
                     frames++
                     maxPlatforms = maxOf(maxPlatforms, w.platforms.items.size)
                     maxParticles = maxOf(maxParticles, w.pickups.items.size + w.enemies.items.size)

@@ -85,6 +85,19 @@ class BiomePalette(
 )
 
 /**
+ * Which set of creatures a scene is populated with. A hazard's *role* never changes - the
+ * drifter drifts, the patroller patrols, the two static ones sit there and hurt - but what it
+ * looks like belongs to the world you are climbing. Bees over a lawn; pufferfish underwater.
+ */
+object Fauna {
+    const val YARD = 0
+    const val OCEAN = 1
+    const val NEON = 2
+    const val FROST = 3
+    const val EMBER = 4
+}
+
+/**
  * A scene is a full set of altitude bands - a whole look for a run. The yard is the default;
  * the rest are the rarest thing the prize machine can hand out.
  */
@@ -94,6 +107,7 @@ class Scene(
     val blurb: String,
     val groundStyle: Int,
     val cardTint: Int,
+    val fauna: Int,
     val bands: List<BiomePalette>
 )
 
@@ -106,7 +120,7 @@ object Scenes {
     private val YARD = Scene(
         DEFAULT_ID, "Backyard Skies",
         "Where every good dog starts: the lawn, the treetops, and everything above them.",
-        GroundStyle.YARD, 0xFF7FC25C.toInt(),
+        GroundStyle.YARD, 0xFF7FC25C.toInt(), Fauna.YARD,
         listOf(
             BiomePalette(
                 "Backyard", BandStyle.HILLS,
@@ -151,7 +165,7 @@ object Scenes {
     private val OCEAN = Scene(
         "ocean", "Deep Blue",
         "Down on the seabed and all the way up through the reef to open sky.",
-        GroundStyle.SEABED, 0xFF2A9BC4.toInt(),
+        GroundStyle.SEABED, 0xFF2A9BC4.toInt(), Fauna.OCEAN,
         listOf(
             BiomePalette(
                 "Seabed", BandStyle.REEF,
@@ -196,7 +210,7 @@ object Scenes {
     private val NEON = Scene(
         "neon", "Neon City",
         "Alleyways, rooftops and a skyline that never switches the lights off.",
-        GroundStyle.STREET, 0xFFFF3CAC.toInt(),
+        GroundStyle.STREET, 0xFFFF3CAC.toInt(), Fauna.NEON,
         listOf(
             BiomePalette(
                 "Back Alley", BandStyle.CITY,
@@ -241,7 +255,7 @@ object Scenes {
     private val FROST = Scene(
         "frost", "Frozen Peaks",
         "Snowfields, pines and ice cliffs, with the northern lights at the top.",
-        GroundStyle.SNOW, 0xFF9FE0F5.toInt(),
+        GroundStyle.SNOW, 0xFF9FE0F5.toInt(), Fauna.FROST,
         listOf(
             BiomePalette(
                 "Snowfield", BandStyle.PEAKS,
@@ -286,7 +300,7 @@ object Scenes {
     private val EMBER = Scene(
         "ember", "Emberfall",
         "Up out of the magma vents, past the obsidian spires, into the cinder void.",
-        GroundStyle.ASH, 0xFFFF7A3C.toInt(),
+        GroundStyle.ASH, 0xFFFF7A3C.toInt(), Fauna.EMBER,
         listOf(
             BiomePalette(
                 "Magma Vents", BandStyle.LAVA,

@@ -78,12 +78,32 @@ grass rather than killing you; the floor is culled as soon as the camera leaves 
   are never yanked onto something you were leaving.
 * **Nothing is drawn for the controls.** No track, no knob, no gauge: touch works anywhere on
   the screen, so there is nothing to look at, find, or cover the action with.
-* **Touch is relative, not a fixed control.** Wherever a finger goes down becomes the centre;
-  sliding either side of that point steers that way, in proportion to the distance, out to a
-  full-lock range of 22 % of the screen width. It works anywhere on the screen, so there is
-  nothing to find and nothing to cover the action. Push past full lock and the anchor drags
-  along with the finger, so flicking back the other way responds immediately instead of having
-  to unwind. Releasing recentres.
+* **Touch is a positional drag, not a rate control.** This is the single biggest feel change in
+  the game and it is worth understanding why.
+
+  Touch used to set a *speed*: the further the finger sat from where it went down, the faster
+  Buddy went. That has a nasty property — to move him a distance you have to hold the finger out
+  there for a length of time. A quick slide and release barely moved him at all, and the hard
+  braking that makes a correction land also meant stopping the finger stopped him on the spot.
+  Reaching the far side of the screen meant swiping the whole screen and *keeping* the thumb
+  there.
+
+  Now the finger drags a target position. Every pixel of finger travel moves that target by
+  `DRAG_GAIN` × the same distance in world units (2.35×, so a thumb-flick crosses real ground),
+  and Buddy servos to it at `err × DRAG_STIFFNESS` clamped to 1.45 × his top speed. Distance
+  swiped maps to distance travelled, roughly 1:1 for any swipe he could physically follow, and
+  when the finger stops he stops — inside 160–300 ms, without overshooting.
+
+  The one guard rail is a lead cap: the target may never get further ahead of him than
+  `DRAG_LEAD_SECONDS` (0.30 s) of travel at his top speed. That is expressed as *time*, not
+  distance, on purpose — a fixed distance that felt right in portrait threw away most of a swipe
+  in landscape, where the playfield is three times wider and he moves twice as fast. As a time
+  it means the same thing on every device: "he may be up to a third of a second behind your
+  finger." Only a flick faster than he can physically follow gets clipped, which is correct.
+
+  No expo curve is applied on this path. Expo exists to make small *rate* inputs finer; on a
+  positional control it would just make the dog not go where the finger went. Tilt and the pad
+  keep both the expo and the velocity easing, because they are inherently rate controls.
 * Tilt input: raw accelerometer, remapped through the display rotation (so it works identically
   in portrait and landscape), minus a calibration offset captured on demand, with a 0.6 m/s²
   dead zone, divided by a 4.5 m/s² full-scale (≈ 27° of tilt), then clamped to [-1, 1] and
@@ -174,14 +194,33 @@ UFOs kill regardless of approach. Base game lets you shoot upward by tapping.
 **Buddy Bounce** — the brief specifies left/right steering only, so there is no shooting; every
 hazard is solvable by routing or by stomping:
 
-| Hazard | Bounceable from above? | Intro | Movement |
+| Role | Bounceable from above? | Intro | Movement |
 |---|---|---|---|
-| Bee | yes (+120 pts, small bounce) | 4 screens | sine drift |
-| Crow | yes (+150 pts) | 11 screens | patrols horizontally, wraps |
-| Storm cloud | **no** — kills on any contact | 20 screens | static, telegraphed by arcing sparks |
-| Void rift | **no** | 30 screens | static, slow swirl, faint pull |
+| Drifter | yes (+120 pts, small bounce) | 4 screens | sine drift |
+| Patroller | yes (+150 pts) | 11 screens | patrols horizontally, wraps |
+| Static | **no** — kills on any contact | 20 screens | still, telegraphed by its own animation |
+| Big static | **no** | 30 screens | still, slow swirl, faint pull |
 
 A shield converts any lethal contact into a pop + brief invulnerability instead of a death.
+
+### Hazards belong to their world
+
+The simulation only knows those four *roles*, and they never change — every collision, stomp
+and score rule is written against the role, not the creature. What the role *looks like* is a
+property of the scene you are climbing, so a run through the Deep Blue meets fish rather than
+bees. Twenty designs, five sets of four, dispatched in `render/EnemyArt.kt` on the current
+scene's `fauna`:
+
+| World | Drifter | Patroller | Static | Big static |
+|---|---|---|---|---|
+| Backyard Skies | bee | crow | thundercloud | void rift |
+| Deep Blue | pufferfish | angler fish | jellyfish | whirlpool |
+| Neon City | camera drone | glitch bird | spark turret | data vortex |
+| Frozen Peaks | frost moth | ice bat | blizzard cloud | frozen rift |
+| Emberfall | ember moth | flame imp | molten rock | obsidian rift |
+
+Splitting role from art this way is what makes the set cheap to extend: a new world needs four
+drawings and one line in its `Scene`, and not a single line of gameplay code.
 
 ---
 
@@ -249,17 +288,35 @@ with the run's pick-ups underneath and a note that they bank at the end.
 
 ### The prize machine
 
-One pull is 100 coins and returns one of three things:
+One pull is 100 coins and returns one of four things:
 
 | Prize | Chance | Notes |
 |---|---|---|
-| Consumable power-up | 89 % | the bread — a pull is never a total loss |
+| Consumable power-up | 74 % | the bread — a pull is never a total loss |
+| **Trail** | **15 %** | rarity weighted; prefers one you don't own; duplicates refund 35 coins |
 | Outfit | 10 % | rarity weighted; a duplicate refunds 35 coins |
 | **A whole world** | **1 %** | only while any remain locked |
 
 Outfit rarity runs Common 60 / Rare 27 / Epic 10 / Legendary 3, and a rarity you have completed
-rolls down into one you haven't, so late pulls keep feeling like progress. 39 outfits are
+rolls down into one you haven't, so late pulls keep feeling like progress. 41 outfits are
 collectable; every one you own can be swapped freely in the wardrobe, any time, for free.
+
+### Trails
+
+40 of them, on the second tab of the wardrobe. A trail is the ribbon of particles Buddy leaves
+behind him, built from 14 draw *styles* (ember, bubble, petal, star, ribbon, smoke, flake, bolt,
+paw print, note, heart, pixel, orb, teardrop) crossed with colour pairs, so each reads
+differently in motion rather than being the same puff in a new tint. Every particle is born at
+the trail's *hot* colour and fades to its *cool* one, which is what makes one pair read as fire
+and another as surf out of the very same shapes.
+
+Two rules keep them from becoming clutter, which was the explicit brief:
+
+* **Short.** Nothing lives much past 0.45 s, most styles 0.25–0.40 s. The ribbon reads as a tail
+  behind a moving dog and is gone before it can sit on top of a platform you are aiming for.
+* **Metered by distance, not by time.** One particle roughly every 58 wu *travelled*. Standing
+  still lays down nothing, and a rocket climb gets the same spacing as a slow bounce instead of
+  a dense wall. A per-frame budget caps it so one long frame cannot dump a burst.
 
 ### Worlds (scenes)
 
@@ -280,7 +337,10 @@ machine hands out, and are picked from a menu of their own:
 Pressing PLAY does not start the run. It lays out the world, then offers whatever consumables
 you own — one per run, spent whether you finish or not — and counts **3 · 2 · 1 · GO** over a
 slightly dimmed view of the ground you are about to launch from. That pause is the point: it
-gives you a moment to read the layout before anything moves.
+gives you a moment to read the layout before anything moves — and holding a finger anywhere on
+the screen runs the count down 4.5× faster, so a player who is already ready is never made to
+wait for a beat they did not need. A finger still held when it reaches GO carries straight into
+steering rather than going dead until it is lifted and put back down.
 
 | Power-up | Effect |
 |---|---|
@@ -301,7 +361,7 @@ what you are jumping into; anything that is pure velocity fires on "GO".
 ### Testing back door
 
 Entering **`u7d%4>`** as the player name (on first launch, or via Settings → Change Name)
-unlocks every outfit and world, stocks five of every power-up and adds 1 000 coins. It is
+unlocks every outfit, trail and world, stocks five of every power-up and adds 1 000 coins. It is
 checked against the raw text before the name sanitiser runs, since that strips the punctuation.
 
 ### Other differences
@@ -313,20 +373,6 @@ checked against the raw text before the name sanitiser runs, since that strips t
 
 ---
 
-## Sources consulted for reference behaviour
-
-* Doodle Jump Wiki — [Classic](https://doodle-jump.fandom.com/wiki/Classic),
-  [Movable Platforms](https://doodle-jump.fandom.com/wiki/Movable_Platforms),
-  [Propeller Hat](https://doodle-jump.fandom.com/wiki/Propeller_Hat)
-* [Doodle Jump — Wikipedia](https://en.wikipedia.org/wiki/Doodle_Jump)
-* [Doodle Jump high score & power-up guide](https://doodlejump.io/doodle-jump-high-score-secrets-guide)
-* [Doodle Jump gameplay guide](https://www.playdoodlejumpgame.com/doodle_jump_gameplay/),
-  [levels guide](https://www.playdoodlejumpgame.com/doodle_jump_levels/)
-* [How to Make Doodle Jump with Felgo](https://felgo.com/doc/howto-doodle-jump-game-basic-tutorial/)
-  (physics scaffolding reference)
-
----
-
 ## 9. Balance check
 
 The simulation has no Android dependencies, so it can be played headless. `tools/sim/Sim.kt`
@@ -335,12 +381,12 @@ eight runs in six aspect ratios, which is how the numbers above were tuned. Curr
 
 | Playfield | avg screens | best run | coins/run |
 |---|---|---|---|
-| portrait 21:9 (1080 wu) | 19.7 | 6 402 pts | 11.6 |
-| portrait 16:9 (1440 wu) | 23.9 | 6 552 pts | 14.4 |
-| portrait 3:4 (1707 wu) | 24.8 | 5 736 pts | 15.0 |
-| landscape 4:3 (3413 wu) | 25.3 | 7 158 pts | 13.8 |
-| landscape 16:9 (4551 wu) | 23.2 | 6 770 pts | 13.3 |
-| landscape 21:9 (5973 wu) | 20.7 | 6 094 pts | 11.1 |
+| portrait 3:4 (1080 wu) | 21.6 | 5 062 pts | 14.1 |
+| portrait 9:16 (1440 wu) | 21.9 | 5 876 pts | 12.5 |
+| portrait 20:9 (1707 wu) | 24.4 | 7 810 pts | 14.6 |
+| landscape 4:3 (3413 wu) | 18.2 | 5 884 pts | 10.8 |
+| landscape 16:9 (4551 wu) | 20.4 | 5 753 pts | 10.5 |
+| landscape 21:9 (5973 wu) | 20.7 | 6 536 pts | 10.6 |
 
 Every configuration is climbable, every run ends in a death rather than a stall, and the coin
 rate puts a prize pull four to seven runs apart. The bot ignores coins entirely, so a player
@@ -364,32 +410,3 @@ java -jar sim.jar
   [levels guide](https://www.playdoodlejumpgame.com/doodle_jump_levels/)
 * [How to Make Doodle Jump with Felgo](https://felgo.com/doc/howto-doodle-jump-game-basic-tutorial/)
   (physics scaffolding reference)
-
----
-
-## 9. Balance check
-
-The simulation has no Android dependencies, so it can be played headless. `tools/sim/Sim.kt`
-runs a bot - it locks a reachable target platform at each bounce and steers toward it - through
-eight runs in six aspect ratios, which is how the numbers above were tuned. Current results:
-
-| Playfield | avg screens | best run | coins/run |
-|---|---|---|---|
-| portrait 21:9 (675 wu) | 22.2 | 5 899 pts | ~27 |
-| portrait 16:9 (900 wu) | 22.6 | 4 235 pts | ~22 |
-| portrait 3:4 (1067 wu) | 19.3 | 4 750 pts | ~16 |
-| landscape 4:3 (2133 wu) | 29.0 | 7 426 pts | ~19 |
-| landscape 16:9 (2844 wu) | 31.6 | 7 606 pts | ~18 |
-| landscape 21:9 (3733 wu) | 34.2 | 7 899 pts | ~20 |
-
-Wide playfields are the easier ones - there is simply more room to line up a landing - and the
-gap is small enough to be a matter of taste rather than a reason to pick an orientation. A
-human who detours for coins will beat the bot's coin rate comfortably, which puts a prize pull
-every three or four runs.
-
-To re-run it after changing anything in `Tuning.kt`:
-
-```bash
-kotlinc app/src/main/java/com/blacklab/buddybounce/game/*.kt tools/sim/Sim.kt -include-runtime -d sim.jar
-java -jar sim.jar
-```

@@ -1,44 +1,83 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    Buddy in profile, the same way he is drawn in the game: rounded skull, short square muzzle,
+    soft drop ear, and a big friendly eye. Kept well inside the adaptive-icon safe zone (the
+    middle 72 of 108) so nothing important is clipped by a round or squircle mask.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <group android:translateY="2">
-        <!-- ears -->
+    <group android:translateX="-2" android:translateY="3">
+
+        <!-- head and muzzle, one silhouette, facing right -->
         <path
-            android:fillColor="#FF16171D"
-            android:pathData="M37,33 C26,36 20,48 21,62 C22,74 29,80 36,77 C32,64 32,47 37,33 Z" />
+            android:fillColor="#FF23252C"
+            android:pathData="M25,50 C25,34 35,24 49,24 C59,24 67,29 71,37 C80,39 88,45 88,52 C88,59 82,63 75,63 C72,63 70,62 68,61 C64,69 57,74 49,74 C35,74 25,66 25,50 Z" />
+
+        <!-- light along the top of the skull, where the sun would catch it -->
         <path
-            android:fillColor="#FF16171D"
-            android:pathData="M71,33 C82,36 88,48 87,62 C86,74 79,80 72,77 C76,64 76,47 71,33 Z" />
-        <!-- head -->
+            android:fillColor="#FF34383F"
+            android:pathData="M49,27 C60,27 67,32 70,39 C61,33 39,34 31,42 C33,33 40,27 49,27 Z" />
+
+        <!-- muzzle, a shade warmer than the skull -->
         <path
-            android:fillColor="#FF212329"
-            android:pathData="M54,25 C69,25 79,36 79,52 C79,69 68,81 54,81 C40,81 29,69 29,52 C29,36 39,25 54,25 Z" />
-        <!-- top-of-head sheen -->
+            android:fillColor="#FF2E3139"
+            android:pathData="M64,46 C72,44 82,46 85,51 C86,57 81,61 74,61 C68,61 63,57 62,52 C62,49 63,47 64,46 Z" />
+
+        <!-- cheek fluff -->
         <path
-            android:fillColor="#FF343742"
-            android:pathData="M54,28 C64,28 72,34 75,43 C66,37 42,37 33,43 C36,34 44,28 54,28 Z" />
-        <!-- muzzle -->
+            android:fillColor="#FF2B2E36"
+            android:pathData="M40,60 C46,66 56,68 63,64 C58,71 47,73 40,60 Z" />
+
+        <!-- a happy open mouth, curving up at the corner -->
         <path
-            android:fillColor="#FF2C2F38"
-            android:pathData="M54,56 C64,56 70,62 70,68 C70,75 63,80 54,80 C45,80 38,75 38,68 C38,62 44,56 54,56 Z" />
-        <!-- tongue -->
+            android:fillColor="#FF14151A"
+            android:pathData="M64,58 C68,60 71,60 74,59 C72,65 66,69 59,68 C55,67 53,64 53,61 C56,61 61,60 64,58 Z" />
+        <!-- tongue, just the tip -->
         <path
             android:fillColor="#FFE8707F"
-            android:pathData="M54,74 C58,74 60,76 60,80 C60,85 57,88 54,88 C51,88 48,85 48,80 C48,76 50,74 54,74 Z" />
+            android:pathData="M60,64 C64,64 67,66 67,69 C67,73 63,75 60,74 C57,73 56,70 56,68 C56,65 58,64 60,64 Z" />
+
         <!-- nose -->
         <path
-            android:fillColor="#FF0D0E12"
-            android:pathData="M54,58 C59,58 63,60 63,64 C63,67 59,69 54,69 C49,69 45,67 45,64 C45,60 49,58 54,58 Z" />
-        <path android:fillColor="#FF4A4D58" android:pathData="M50,60 C52,59 54,59 55,60 C53,61 51,61 50,60 Z" />
-        <!-- eyes -->
-        <path android:fillColor="#FFD9963A" android:pathData="M43,48 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" />
-        <path android:fillColor="#FFD9963A" android:pathData="M65,48 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" />
-        <path android:fillColor="#FF17181D" android:pathData="M43,49 m-2.6,0 a2.6,2.6 0 1,0 5.2,0 a2.6,2.6 0 1,0 -5.2,0" />
-        <path android:fillColor="#FF17181D" android:pathData="M65,49 m-2.6,0 a2.6,2.6 0 1,0 5.2,0 a2.6,2.6 0 1,0 -5.2,0" />
-        <path android:fillColor="#FFFFFFFF" android:pathData="M41.4,46.4 m-1.4,0 a1.4,1.4 0 1,0 2.8,0 a1.4,1.4 0 1,0 -2.8,0" />
-        <path android:fillColor="#FFFFFFFF" android:pathData="M63.4,46.4 m-1.4,0 a1.4,1.4 0 1,0 2.8,0 a1.4,1.4 0 1,0 -2.8,0" />
+            android:fillColor="#FF0E0F13"
+            android:pathData="M78,45 C84,45 88,48 88,52 C88,56 84,58 79,57 C75,56 73,53 74,49 C75,47 76,45 78,45 Z" />
+        <path
+            android:fillColor="#FF53565F"
+            android:pathData="M78,48 C80,47 82,48 83,49 C81,50 79,50 78,48 Z" />
+
+        <!-- drop ear, hanging on the near side -->
+        <path
+            android:fillColor="#FF16171D"
+            android:pathData="M40,28 C30,31 24,43 26,56 C28,67 37,71 43,66 C38,55 37,40 42,30 Z" />
+        <path
+            android:fillColor="#FF212329"
+            android:pathData="M39,33 C33,38 30,47 31,56 C33,62 37,64 40,62 C37,53 36,42 39,33 Z" />
+
+        <!-- eye: amber, wide and soft, with a highlight so it reads friendly -->
+        <path
+            android:fillColor="#FFE0A544"
+            android:pathData="M60,44 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0" />
+        <path
+            android:fillColor="#FF17181D"
+            android:pathData="M60.5,45 m-3.1,0 a3.1,3.1 0 1,0 6.2,0 a3.1,3.1 0 1,0 -6.2,0" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M58.2,41.8 m-1.8,0 a1.8,1.8 0 1,0 3.6,0 a1.8,1.8 0 1,0 -3.6,0" />
+
+        <!-- raised brow, the thing that makes a dog look hopeful rather than cross -->
+        <path
+            android:fillColor="#FF3A3E47"
+            android:pathData="M54,36 C58,34 63,34 67,36 C63,36 58,37 54,38 Z" />
+
+        <!-- the red collar, just peeking in at the bottom -->
+        <path
+            android:fillColor="#FFC7413C"
+            android:pathData="M33,70 C41,77 55,79 64,74 L67,80 C55,87 38,84 30,75 Z" />
+        <path
+            android:fillColor="#FFD8DEE9"
+            android:pathData="M47,78 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
     </group>
 </vector>

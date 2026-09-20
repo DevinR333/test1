@@ -55,6 +55,8 @@ object Outfits {
         Outfit("vet", "Lab Coat", Rarity.RARE, "He is, technically, a lab."),
         Outfit("racer", "Race Driver", Rarity.RARE, "Fastest paws in the paddock."),
         Outfit("pirate", "Pirate", Rarity.RARE, "Arrr. Where's the biscuit."),
+        Outfit("french", "French Buddy", Rarity.RARE, "Beret, ascot, baguette. Formidable."),
+        Outfit("mike", "Mike's Outfit", Rarity.RARE, "A black tee with a very familiar mouth on it."),
 
         // ---- epic ----
         Outfit("cape", "Super Buddy", Rarity.EPIC, "Faster than a thrown ball."),

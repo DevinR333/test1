@@ -44,6 +44,32 @@ object Tuning {
     /** Small inputs get finer control; full deflection is still full speed. */
     const val STEER_EXPO = 1.25f
 
+    // ---- positional drag (touch) -----------------------------------------------------------
+    // Touch used to be a *rate* control: finger offset set a speed you had to HOLD. That is why
+    // moving him any distance meant swiping the whole screen and then keeping the finger out
+    // there - and why a mid-fall correction never landed, because letting go stopped him dead.
+    // Now the finger drags a target position and Buddy servos to it, so distance swiped maps
+    // directly to distance travelled and releasing leaves him where you put him.
+
+    /** World units Buddy moves per world unit of finger travel. >1 so a thumb-flick crosses. */
+    const val DRAG_GAIN = 2.35f
+    /** How hard he chases the drag target, in 1/s. High = he tracks the finger almost exactly. */
+    const val DRAG_STIFFNESS = 11.0f
+    /**
+     * How far ahead of Buddy the drag target is allowed to get, expressed as SECONDS of travel
+     * at his top speed rather than a fixed distance. A fixed distance was wrong on landscape,
+     * where the playfield is three times wider and he moves twice as fast: the same 560 wu that
+     * felt right in portrait threw away most of a long swipe. As a time it means the same thing
+     * everywhere - "he may be up to a third of a second behind your finger" - which caps the
+     * coast after you let go without ever clipping a swipe he could actually have followed.
+     */
+    const val DRAG_LEAD_SECONDS = 0.30f
+    /** Closing a big gap is allowed to exceed the steady-state speed cap by this much. */
+    const val DRAG_OVERSPEED = 1.45f
+    /** Velocity easing while dragging: stiff both ways, because the finger *is* the position. */
+    const val STEER_ACCEL_DRAG = 42f
+    const val STEER_BRAKE_DRAG = 70f
+
     const val TILT_DEADZONE = 0.45f       // m/s^2
     const val TILT_FULLSCALE = 4.2f       // m/s^2 (~25 degrees) for full deflection
 

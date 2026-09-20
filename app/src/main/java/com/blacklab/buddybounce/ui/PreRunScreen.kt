@@ -153,9 +153,13 @@ class PreRunScreen(private val g: Game) {
                 ColorX.withAlpha(pu.tint, alpha), ui.title
             )
         }
+        // Holding a finger fast-forwards the count (see Game.updatePreRun), so say so - and say
+        // it differently while they are actually holding, as the feedback that it is working.
+        val hint = if (g.holdingToSkip) "skipping ahead..." else "get ready - hold to skip"
         ui.text(
-            c, "get ready", cx, cy + 148f, 30f,
-            ColorX.withAlpha(Theme.TEXT_DIM, alpha * 0.9f), ui.body, false
+            c, hint, cx, cy + 148f, 30f,
+            ColorX.withAlpha(if (g.holdingToSkip) Theme.ACCENT else Theme.TEXT_DIM, alpha * 0.9f),
+            ui.body, false
         )
     }
 }

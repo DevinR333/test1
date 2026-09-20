@@ -5,6 +5,7 @@ import com.blacklab.buddybounce.audio.Audio
 import com.blacklab.buddybounce.data.Outfits
 import com.blacklab.buddybounce.data.Powerups
 import com.blacklab.buddybounce.data.Save
+import com.blacklab.buddybounce.data.Trails
 import com.blacklab.buddybounce.game.Buddy
 import com.blacklab.buddybounce.game.DeathCause
 import com.blacklab.buddybounce.game.Enemy
@@ -26,6 +27,7 @@ import com.blacklab.buddybounce.render.GameRenderer
 import com.blacklab.buddybounce.render.Palettes
 import com.blacklab.buddybounce.render.Pose
 import com.blacklab.buddybounce.render.Scenes
+import com.blacklab.buddybounce.render.TrailArt
 import com.blacklab.buddybounce.ui.GachaScreen
 import com.blacklab.buddybounce.ui.GameOverScreen
 import com.blacklab.buddybounce.ui.Hud
@@ -115,6 +117,9 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         private set
     var countdown = 0f
         private set
+    /** True while a finger is on the glass during the countdown, which fast-forwards it. */
+    var holdingToSkip = false
+        private set
     var chosenPowerup: String? = null
         private set
     private var pendingPowerup: String? = null
@@ -164,7 +169,6 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         scale = newScale
         worldW = wPx / newScale
         playW = worldW / zoom
-        controls.touchRange = (worldW * 0.22f).coerceIn(200f, 460f)
 
         if (scaleChanged) {
             art.dispose()
@@ -250,6 +254,8 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         }
         preRunPhase = PreRun.COUNTDOWN
         countdown = COUNTDOWN_SECONDS
+        holdingToSkip = false
+        cosmeticAccum = 0f
         lastCountdownTick = -1
     }
 
@@ -285,6 +291,7 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
     fun applyUnlockCode() {
         for (o in Outfits.ALL) save.unlock(o.id)
         for (sc in Scenes.ALL) save.unlockScene(sc.id)
+        for (tr in Trails.ALL) save.unlockTrail(tr.id)
         for (pu in Powerups.ALL) save.grantPowerup(pu.id, 5)
         save.grantCoins(1000)
         if (!save.hasName) save.playerName = "TESTER"
@@ -340,9 +347,13 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
 
     private fun updatePlay(dt: Float) {
         val steer = controls.steer()
-        world.update(dt, steer, controls.lastInputDigital)
+        // Finger travel arrives in UI units; /zoom puts it in world units, and the gain is what
+        // makes a short thumb-slide cover real ground instead of needing the whole screen.
+        val dragDx = controls.consumeDragDx() / zoom * Tuning.DRAG_GAIN
+        world.update(dt, steer, controls.lastInputDigital, dragDx, controls.dragging)
         fx.update(dt)
         emitFlightTrail(dt)
+        emitCosmeticTrail(dt)
         if (world.deathSettled) finishRun()
     }
 
@@ -350,7 +361,8 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         fx.update(dt)
         world.buddy.updateAnim(dt, world.metrics.maxVx)
         if (preRunPhase != PreRun.COUNTDOWN) return
-        countdown -= dt
+        // Hold a finger anywhere and the count runs down fast - if you are ready, you are ready.
+        countdown -= dt * (if (holdingToSkip) COUNTDOWN_SKIP_RATE else 1f)
         val tick = countdown.toInt()
         if (tick != lastCountdownTick && countdown > 0f) {
             lastCountdownTick = tick
@@ -359,6 +371,12 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         if (countdown <= 0f) {
             applyPowerupOnGo()
             goto(Screen.PLAY)
+            // A finger held to skip the count should carry straight into steering, rather than
+            // going dead until they lift it and put it back down.
+            if (holdingToSkip) {
+                holdingToSkip = false
+                beginTouchSteer(holdX, holdY)
+            }
         }
     }
 
@@ -375,6 +393,32 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
     }
 
     private var trailAccum = 0f
+    private var cosmeticAccum = 0f
+    private var holdX = 0f
+    private var holdY = 0f
+
+    /**
+     * The equipped cosmetic trail, metered by DISTANCE rather than by time: standing still lays
+     * down nothing, and a rocket climb lays down the same spacing as a slow bounce instead of a
+     * dense wall of particles. Combined with the short lifetimes in [Fx.cosmetic] that keeps the
+     * ribbon readable without ever covering the platforms.
+     */
+    private fun emitCosmeticTrail(dt: Float) {
+        val trail = Trails.of(save.equippedTrail) ?: return
+        val b = world.buddy
+        if (b.dying) return
+        val speed = MathX.sqrtf(b.vx * b.vx + b.vy * b.vy)
+        cosmeticAccum += speed * dt
+        // One particle roughly every 58 world units travelled, capped so a single long frame
+        // cannot dump a burst all at once.
+        var budget = 6
+        while (cosmeticAccum > 58f && budget > 0) {
+            cosmeticAccum -= 58f
+            budget--
+            fx.cosmetic(b.x, b.y + 24f, trail.style, trail.hot, trail.cool, b.vx, b.vy)
+        }
+        if (budget == 0) cosmeticAccum = 0f
+    }
 
     private fun emitFlightTrail(dt: Float) {
         val b = world.buddy
@@ -548,6 +592,42 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         buddyArt.draw(c, cx, pawY, scaleFactor, pose, outfit, 0xFFFFE6A8.toInt())
     }
 
+    // ---- trail previews ---------------------------------------------------------------------
+
+    // Rebuilt whenever the Art cache is (i.e. on a resize), same as everything else that caches
+    // bitmaps off it.
+    private var trailArt: TrailArt? = null
+    private var trailArtFor: Art? = null
+
+    /**
+     * A still sample of a trail: a short arc of particles, oldest and coolest at the left, newest
+     * and hottest at the right, exactly the way it reads behind Buddy in a run. Used by the
+     * wardrobe cards and by the prize machine's reveal.
+     */
+    fun drawTrailSample(c: Canvas, cx: Float, cy: Float, w: Float, h: Float, trailId: String, phase: Float) {
+        val trail = Trails.of(trailId) ?: return
+        if (trailArtFor !== art) {
+            trailArt = TrailArt(art)
+            trailArtFor = art
+        }
+        val ta = trailArt ?: return
+        val n = 11
+        for (i in 0 until n) {
+            val k = i / (n - 1f)                 // 0 at the tail, 1 at the head
+            val life = 0.18f + 0.82f * k          // head is freshest
+            val px = cx - w * 0.5f + w * k
+            val py = cy + sin(k * 3.4f - phase * 1.8f) * h * 0.42f
+            val col = ColorX.lerp(trail.cool, trail.hot, life)
+            ta.draw(c, trail.style, px, py, h * 0.42f * (0.55f + 0.45f * life),
+                k * 5.1f + phase, col, life)
+        }
+    }
+
+    /** Same sample, sized to fill a prize card. */
+    fun drawTrailPreview(c: Canvas, cx: Float, cy: Float, w: Float, h: Float, trailId: String, phase: Float) {
+        drawTrailSample(c, cx, cy, w, h, trailId, phase)
+    }
+
     private fun drawMenuBackdrop(c: Canvas) {
         val bands = Palettes.current.bands.size
         val biome = if (screen == Screen.GACHA) 0 else save.highestBiome.coerceIn(0, bands - 1)
@@ -568,6 +648,10 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         val y = yPx / scale
         ui.onDown(x, y)
         if (screen == Screen.PLAY) beginTouchSteer(x, y)
+        if (screen == Screen.PRERUN && preRunPhase == PreRun.COUNTDOWN) {
+            holdingToSkip = true
+            holdX = x; holdY = y
+        }
     }
 
     fun onPointerMove(xPx: Float, yPx: Float) {
@@ -582,6 +666,7 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         val y = yPx / scale
         ui.onUp(x, y)
         controls.touchUp()
+        holdingToSkip = false
     }
 
     /** Touching anywhere but the pause button starts steering, relative to that point. */
@@ -743,6 +828,8 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
 
     companion object {
         const val COUNTDOWN_SECONDS = 3.9f
+        /** How much faster the 3-2-1-GO count runs while a finger is held down. */
+        const val COUNTDOWN_SKIP_RATE = 4.5f
         /** Testing back door - enter as the player name to unlock every collectable. */
         const val UNLOCK_CODE = "u7d%4>"
     }

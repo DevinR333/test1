@@ -182,6 +182,40 @@ class Save(ctx: Context) {
             if (ownsScene(value)) editSync { it.putString(KEY_SCENE_PICK, value) }
         }
 
+    // ---- trails -----------------------------------------------------------------------------
+
+    fun ownedTrails(): MutableSet<String> {
+        val stored = prefs.getStringSet(KEY_TRAILS, null)
+        val set = HashSet<String>()
+        if (stored != null) set.addAll(stored)
+        set.add(Trails.NONE_ID)
+        return set
+    }
+
+    fun ownsTrail(id: String): Boolean = id == Trails.NONE_ID || ownedTrails().contains(id)
+
+    /** How many real trails are unlocked - "none" is not a collectable. */
+    fun trailCount(): Int {
+        var n = 0
+        for (t in Trails.ALL) if (ownedTrails().contains(t.id)) n++
+        return n
+    }
+
+    fun unlockTrail(id: String) {
+        val set = ownedTrails()
+        set.add(id)
+        editSync { it.putStringSet(KEY_TRAILS, set) }
+    }
+
+    var equippedTrail: String
+        get() {
+            val id = prefs.getString(KEY_TRAIL_PICK, Trails.NONE_ID) ?: Trails.NONE_ID
+            return if (ownsTrail(id)) id else Trails.NONE_ID
+        }
+        set(value) {
+            if (ownsTrail(value)) editAsync { it.putString(KEY_TRAIL_PICK, value) }
+        }
+
     // ---- consumable power-ups ---------------------------------------------------------------
 
     fun powerupCount(id: String): Int = prefs.getInt(KEY_POWERUP_PREFIX + id, 0)
@@ -261,6 +295,8 @@ class Save(ctx: Context) {
         private const val KEY_EQUIPPED = "equipped"
         private const val KEY_SCENES = "scenesOwned"
         private const val KEY_SCENE_PICK = "scenePick"
+        private const val KEY_TRAILS = "trailsOwned"
+        private const val KEY_TRAIL_PICK = "trailPick"
         private const val KEY_POWERUP_PREFIX = "pu_"
         private const val KEY_LANDSCAPE = "landscape"
         private const val KEY_CONTROL = "control"

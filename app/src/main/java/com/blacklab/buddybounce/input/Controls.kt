@@ -7,12 +7,16 @@ import com.blacklab.buddybounce.game.Tuning
 import kotlin.math.abs
 
 /**
- * Turns the three input routes - phone tilt, touch, and a physical controller - into a single
- * steering value in [-1, 1].
+ * Turns the three input routes - phone tilt, touch, and a physical controller - into steering.
  *
- * Touch is *relative*: wherever you put your finger down becomes the centre, and sliding either
- * side of that point steers. It works anywhere on the screen, so you never have to look for a
- * control, and the anchor drags along if you push past full lock so a reversal responds at once.
+ * Tilt and the pad are *rate* controls: they produce a steering value in [-1, 1] that maps to a
+ * speed. Touch is not. Touch is a **positional drag**: the finger carries Buddy, so however far
+ * you slide is however far he goes, and he stays there when you stop. That means this class
+ * reports touch as a *delta* ([consumeDragDx]) rather than as a steer value, and the world
+ * servos him to the dragged target.
+ *
+ * It works anywhere on the screen, so you never have to look for a control, and nothing is drawn
+ * for it.
  *
  * The tilt route is remapped through the display rotation by the activity, otherwise landscape
  * steers the wrong way.
@@ -24,21 +28,15 @@ class Controls(private val save: Save) {
         private set
     var tiltAvailable = false
 
-    // ---- relative touch ----
+    // ---- positional drag ----
     var touchActive = false
-        private set
-    var touchAnchorX = 0f
-        private set
-    var touchAnchorY = 0f
         private set
     var touchX = 0f
         private set
     var touchY = 0f
         private set
-    private var touchSteer = 0f
-
-    /** Distance, in UI units, from the anchor to full lock. Set by the game on resize. */
-    var touchRange = 300f
+    /** Finger travel, in UI units, accumulated since the simulation last consumed it. */
+    private var dragDx = 0f
 
     var keyLeft = false
     var keyRight = false
@@ -72,11 +70,9 @@ class Controls(private val save: Save) {
 
     fun touchDown(x: Float, y: Float) {
         touchActive = true
-        touchAnchorX = x
-        touchAnchorY = y
         touchX = x
         touchY = y
-        touchSteer = 0f
+        dragDx = 0f
     }
 
     fun touchMove(x: Float, y: Float) {
@@ -84,28 +80,35 @@ class Controls(private val save: Save) {
             touchDown(x, y)
             return
         }
+        // Pure delta. No anchor, no range, no dead zone: every pixel of finger travel counts,
+        // and it keeps counting however far across the screen you go.
+        dragDx += x - touchX
         touchX = x
         touchY = y
-        var dx = x - touchAnchorX
-        // Push past full lock and the anchor follows, so flicking the other way is instant.
-        if (dx > touchRange) {
-            touchAnchorX = x - touchRange
-            dx = touchRange
-        } else if (dx < -touchRange) {
-            touchAnchorX = x + touchRange
-            dx = -touchRange
-        }
-        touchSteer = clamp(dx / touchRange, -1f, 1f)
     }
 
     fun touchUp() {
         touchActive = false
-        touchSteer = 0f
+        dragDx = 0f
     }
 
     fun clearTouch() {
         touchActive = false
-        touchSteer = 0f
+        dragDx = 0f
+    }
+
+    /** True when a finger is down and touch steering is turned on. */
+    val dragging: Boolean
+        get() = touchActive && touchEnabled
+
+    /**
+     * Hands the simulation the finger travel since the last call and resets it, so a frame can
+     * never apply the same movement twice or silently drop part of a fast swipe.
+     */
+    fun consumeDragDx(): Float {
+        val d = dragDx
+        dragDx = 0f
+        return d
     }
 
     val tiltEnabled: Boolean
@@ -130,15 +133,19 @@ class Controls(private val save: Save) {
         return shape(clamp(v, -1f, 1f))
     }
 
-    /** The value the simulation should use this frame. */
+    /**
+     * The rate-control steering for this frame. Touch is deliberately absent - it is positional
+     * and goes through [consumeDragDx] instead - so a finger on the glass simply means the tilt
+     * and pad routes stop fighting it.
+     */
     fun steer(): Float {
+        if (dragging) {
+            lastInputDigital = true
+            return 0f
+        }
         val pad = clamp(padAxis, -1f, 1f)
         val keys = (if (keyRight) 1f else 0f) - (if (keyLeft) 1f else 0f)
 
-        if (touchActive && touchEnabled) {
-            lastInputDigital = true
-            return shape(touchSteer)
-        }
         if (abs(keys) > 0.01f) {
             lastInputDigital = true
             return keys

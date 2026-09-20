@@ -117,7 +117,7 @@ class MenuScreen(private val g: Game) {
 
         val halfW = (w - 24f) * 0.5f
         if (ui.button(c, Id.WARDROBE, x, cy, halfW, 100f, "WARDROBE", Ui.ButtonStyle.SECONDARY,
-                sublabel = "${g.ownedCount()}/${Outfits.collectableCount} outfits")) {
+                sublabel = "${g.ownedCount()} fits \u00b7 ${g.save.trailCount()} trails")) {
             g.tap(); g.goto(Game.Screen.WARDROBE)
         }
         val machineReady = g.save.coins >= Tuning.GACHA_COST

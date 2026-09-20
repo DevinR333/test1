@@ -4,15 +4,19 @@ An endless vertical tilt-jumper for Android, in the mould of Doodle Jump — exc
 is **Buddy**, a black lab, and the higher he gets the better your score.
 
 * Auto-jumping, infinite upward generation, up-only camera, screen wrap.
-* **Tilt** to steer, or just **slide a finger anywhere on the screen** — wherever you touch
-  down becomes the centre and sliding either side of it steers that way. Gamepads work too.
+* **Tilt** to steer, or just **drag a finger anywhere on the screen** — the finger carries
+  Buddy, so however far you slide is however far he goes, and he stays put when you stop.
+  Gamepads work too.
 * **Portrait or landscape**, switchable in Settings, and tuned to fit any aspect ratio from 4:3
   to 21:9 without changing how the game plays.
 * Scarce coins, mostly earned as a height bonus at the end of a run. 100 of them buys a pull on
-  the **prize machine**, which hands out consumable **power-ups** (89%), **outfits** (10%) and,
-  at 1%, a **whole new world** to climb.
-* **39 outfits** and **5 worlds**, all swappable freely, any time, for free.
-* Testing: enter **`u7d%4>`** as your name to unlock everything.
+  the **prize machine**, which hands out consumable **power-ups** (74%), **trails** (15%),
+  **outfits** (10%) and, at 1%, a **whole new world** to climb.
+* **41 outfits**, **40 trails** and **5 worlds**, all swappable freely, any time, for free.
+* Hazards are **themed to the world you're in** — bees over the lawn, pufferfish and angler fish
+  underwater, flame imps and molten rock in Emberfall.
+* Testing: enter **`u7d%4>`** as your name to unlock everything — every outfit, trail and world,
+  five of each power-up and 1 000 coins.
 * A **local leaderboard** under the name you enter on first launch.
 
 The reverse-engineering notes the whole thing is built from — platform taxonomy, the power-up
@@ -72,23 +76,25 @@ java -version          # check what you're on
 
 | | |
 |---|---|
-| Steer | Tilt the phone, slide a finger anywhere on screen, or push left/right on a pad |
+| Steer | Tilt the phone, drag a finger anywhere on screen, or push left/right on a pad |
 | Jump | Never — Buddy bounces on his own the instant he lands. That's the whole game |
 | Pause | Top-right button, or Back |
 | Score | Height climbed. Only your highest point counts |
 | Coins | Rare pickups plus a height bonus at the end. Banked when the run ends |
 
-Touch steering is **relative**: wherever your finger goes down is the centre, and how far you
-slide either side of it is how hard Buddy leans. It works anywhere on the screen, and **nothing
-is drawn for it** — no track, no knob, nothing covering the action. Tilt has a dead zone, an
-adjustable sensitivity and a "set neutral tilt" button so you can play lying down.
+Touch steering is a **positional drag**, not a speed control: your finger drags a target and
+Buddy chases it, so the distance you swipe is the distance he covers — about 2.3× your finger
+travel — and he stops where you stop instead of coasting. Aiming a landing mid-fall is a short
+slide, not a swipe across the whole screen and back. It works anywhere on the screen, and
+**nothing is drawn for it** — no track, no knob, nothing covering the action.
 
-Steering brakes far harder than it accelerates, and small inputs are scaled down by a mild expo
-curve, so a mid-fall correction stops where you put it instead of drifting past. Landing is
-deliberately forgiving: clipping the corner of a ledge you were steering toward catches.
+Tilt and gamepads stay rate controls, with a dead zone, adjustable sensitivity, a mild expo
+curve and a "set neutral tilt" button so you can play lying down. Landing is deliberately
+forgiving either way: clipping the corner of a ledge you were steering toward catches.
 
 Pressing PLAY lays the world out, lets you spend one power-up if you have any, and counts
-3 · 2 · 1 · GO so you can read the ground before it starts moving.
+3 · 2 · 1 · GO so you can read the ground before it starts moving — **hold a finger anywhere to
+skip the count** when you're already ready.
 
 ## What's in the world
 
@@ -97,7 +103,10 @@ trampoline), re-skinned across each world's five altitude bands, which then loop
 A fragile platform gives no bounce at all, so the generator never makes one a row's only
 platform — it is always a trap set beside a real route. The boost ladder runs spring →
 trampoline → propeller cap → jetpack → rocket bone, plus a bubble shield and a coin magnet.
-Bees and crows can be stomped from above; storm clouds and void rifts have to be routed around.
+Hazards come in four roles — a drifter and a patroller you can stomp from above, and two static
+ones you have to route around — and each world dresses them in its own creatures: bees and crows
+over the lawn, pufferfish and angler fish in the Deep Blue, drones and glitch birds in Neon
+City, frost moths and ice bats on the Frozen Peaks, ember moths and flame imps in Emberfall.
 
 Buddy himself is drawn in profile — blocky skull, square muzzle, drop ear, deep chest, otter
 tail — and the whole rig mirrors so he always faces the way he is going.
@@ -117,16 +126,19 @@ app/src/main/java/com/blacklab/buddybounce/
 │   └── MathX.kt/Hash.kt   allocation-free float and noise helpers
 ├── render/                everything visual, drawn as vectors on a Canvas
 │   ├── BuddyArt.kt        the dog rig: squash, stretch, lean, ear flap, tail wag
-│   ├── OutfitArt.kt       20 outfits composed onto that same rig
+│   ├── OutfitArt.kt       41 outfits composed onto that same rig
+│   ├── EnemyArt.kt        20 hazard designs: four roles × five worlds
+│   ├── TrailArt.kt        the 14 trail draw styles
 │   ├── GameRenderer.kt    platforms, coins, power-ups, hazards
 │   ├── Backdrop.kt        parallax sky, biomes, cross-fades
 │   ├── Art.kt             the few things worth baking to bitmaps (shadows, glows, clouds)
-│   └── Fx.kt              pooled particles and score pops
+│   └── Fx.kt              pooled particles, cosmetic trails and score pops
 ├── ui/                    an immediate-mode UI kit + every screen
 │   ├── PreRunScreen.kt    power-up picker and the 3-2-1-GO countdown
 │   ├── GachaScreen.kt     the prize machine and its three prize types
+│   ├── WardrobeScreen.kt  outfits and trails, on two tabs
 │   └── ScenesScreen.kt    the worlds you have unlocked
-├── input/Controls.kt      tilt (display-rotation aware), gauge and gamepad → one steer value
+├── input/Controls.kt      tilt (display-rotation aware), gamepad, and the positional drag
 ├── audio/Audio.kt         all sound effects synthesised at first launch, no audio assets
 └── data/                  SharedPreferences save, outfit catalogue
 ```

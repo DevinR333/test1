@@ -10,6 +10,7 @@ import com.blacklab.buddybounce.Game
 import com.blacklab.buddybounce.audio.Audio
 import com.blacklab.buddybounce.data.Outfits
 import com.blacklab.buddybounce.data.Powerups
+import com.blacklab.buddybounce.data.Trails
 import com.blacklab.buddybounce.game.Hash
 import com.blacklab.buddybounce.game.MathX.clamp01
 import com.blacklab.buddybounce.game.MathX.smoothstep
@@ -47,12 +48,17 @@ class GachaScreen(private val g: Game) {
         const val OUTFIT = 0
         const val POWERUP = 1
         const val SCENE = 2
+        const val TRAIL = 3
     }
 
     private enum class State { IDLE, CRANK, DROP, REVEAL }
 
     private companion object {
+        // The machine's split. Scenes are the jackpot, trails are the regular treat, outfits
+        // sit between them, and everything else is a power-up so most pulls still give you
+        // something to spend next run.
         const val SCENE_CHANCE = 0.01f
+        const val TRAIL_CHANCE = 0.15f
         const val OUTFIT_CHANCE = 0.10f
     }
 
@@ -93,6 +99,7 @@ class GachaScreen(private val g: Game) {
 
     private fun isBigPrize(): Boolean = when (prizeKind) {
         Kind.SCENE -> true
+        Kind.TRAIL -> !duplicate && (Trails.of(prizeId)?.rarity ?: 0) >= Trails.Rarity.EPIC
         Kind.OUTFIT -> !duplicate && (Outfits.of(prizeId).rarity == Outfits.Rarity.EPIC ||
             Outfits.of(prizeId).rarity == Outfits.Rarity.LEGENDARY)
         else -> false
@@ -100,18 +107,21 @@ class GachaScreen(private val g: Game) {
 
     private fun prizeTint(): Int = when (prizeKind) {
         Kind.SCENE -> Scenes.of(prizeId).cardTint
+        Kind.TRAIL -> Trails.of(prizeId)?.hot ?: Theme.ACCENT
         Kind.POWERUP -> Powerups.of(prizeId).tint
         else -> Outfits.of(prizeId).rarity.tint
     }
 
     private fun prizeName(): String = when (prizeKind) {
         Kind.SCENE -> Scenes.of(prizeId).name
+        Kind.TRAIL -> Trails.of(prizeId)?.name ?: "Trail"
         Kind.POWERUP -> Powerups.of(prizeId).name
         else -> Outfits.of(prizeId).name
     }
 
     private fun prizeBlurb(): String = when (prizeKind) {
         Kind.SCENE -> Scenes.of(prizeId).blurb
+        Kind.TRAIL -> Trails.of(prizeId)?.blurb ?: ""
         Kind.POWERUP -> Powerups.of(prizeId).blurb
         else -> Outfits.of(prizeId).blurb
     }
@@ -119,12 +129,14 @@ class GachaScreen(private val g: Game) {
     private fun prizeBanner(): String = when {
         prizeKind == Kind.SCENE -> "A WHOLE NEW WORLD!"
         prizeKind == Kind.POWERUP -> "POWER-UP!"
+        prizeKind == Kind.TRAIL -> if (duplicate) "ALREADY HAD IT" else "NEW TRAIL!"
         duplicate -> "ALREADY HAD IT"
         else -> "NEW OUTFIT!"
     }
 
     private fun prizeRarityLabel(): String = when (prizeKind) {
         Kind.SCENE -> "WORLD"
+        Kind.TRAIL -> Trails.of(prizeId)?.let { Trails.rarityName(it.rarity) + " TRAIL" } ?: "TRAIL"
         Kind.POWERUP -> "POWER-UP"
         else -> Outfits.of(prizeId).rarity.label.uppercase()
     }
@@ -215,8 +227,15 @@ class GachaScreen(private val g: Game) {
             return
         }
 
+        if (roll < SCENE_CHANCE + TRAIL_CHANCE) {
+            prizeKind = Kind.TRAIL
+            prizeId = rollTrail()
+            duplicate = g.save.ownsTrail(prizeId)
+            return
+        }
+
         val anyOutfitLeft = Outfits.ALL.any { it.id != Outfits.DEFAULT_ID && !g.save.owns(it.id) }
-        if (roll < SCENE_CHANCE + OUTFIT_CHANCE && anyOutfitLeft) {
+        if (roll < SCENE_CHANCE + TRAIL_CHANCE + OUTFIT_CHANCE && anyOutfitLeft) {
             prizeKind = Kind.OUTFIT
             prizeId = rollOutfit()
             duplicate = g.save.owns(prizeId)
@@ -225,6 +244,21 @@ class GachaScreen(private val g: Game) {
 
         prizeKind = Kind.POWERUP
         prizeId = rollPowerup()
+    }
+
+    /** Rarity weighted, and it prefers one you do not own yet so the set actually fills up. */
+    private fun rollTrail(): String {
+        val locked = Trails.ALL.filter { !g.save.ownsTrail(it.id) }
+        val pool = if (locked.isEmpty()) Trails.ALL else locked
+        var total = 0
+        for (t in pool) total += Trails.weightOf(t)
+        if (total <= 0) return pool[0].id
+        var roll = rng.nextInt(total)
+        for (t in pool) {
+            roll -= Trails.weightOf(t)
+            if (roll < 0) return t.id
+        }
+        return pool[0].id
     }
 
     private fun rollPowerup(): String {
@@ -263,6 +297,8 @@ class GachaScreen(private val g: Game) {
         when (prizeKind) {
             Kind.SCENE -> g.save.unlockScene(prizeId)
             Kind.POWERUP -> g.save.grantPowerup(prizeId, 1)
+            Kind.TRAIL ->
+                if (duplicate) g.save.grantCoins(Tuning.DUPLICATE_REFUND) else g.save.unlockTrail(prizeId)
             else -> if (duplicate) g.save.grantCoins(Tuning.DUPLICATE_REFUND) else g.save.unlock(prizeId)
         }
     }
@@ -428,7 +464,7 @@ class GachaScreen(private val g: Game) {
 
         ui.text(
             c, prizeBanner(), g.worldW * 0.5f, y + 96f, 52f,
-            if (duplicate && prizeKind == Kind.OUTFIT) Theme.TEXT_DIM else Theme.ACCENT, ui.title
+            if (duplicate && prizeKind != Kind.SCENE) Theme.TEXT_DIM else Theme.ACCENT, ui.title
         )
         ui.pill(c, g.worldW * 0.5f - 110f, y + 122f, 220f, 52f, ColorX.withAlpha(tint, 0.25f))
         ui.text(c, prizeRarityLabel(), g.worldW * 0.5f, y + 158f, 28f, tint, ui.title, false)
@@ -438,11 +474,12 @@ class GachaScreen(private val g: Game) {
                 c, g.worldW * 0.5f, y + h * 0.72f, min(w / 300f, h / 620f) * 1.05f, prizeId, ui.time
             )
             Kind.POWERUP -> icons.draw(c, g.art, prizeId, g.worldW * 0.5f, y + h * 0.46f, h * 0.13f, tint)
+            Kind.TRAIL -> g.drawTrailPreview(c, g.worldW * 0.5f, y + h * 0.46f, w * 0.52f, h * 0.22f, prizeId, ui.time)
             else -> drawScenePreview(c, g.worldW * 0.5f, y + h * 0.46f, w * 0.52f, h * 0.30f)
         }
 
         ui.text(c, prizeName().uppercase(), g.worldW * 0.5f, y + h - 168f, 48f, Theme.TEXT, ui.title)
-        val blurb = if (duplicate && prizeKind == Kind.OUTFIT) {
+        val blurb = if (duplicate && prizeKind != Kind.SCENE) {
             "+${Tuning.DUPLICATE_REFUND} coins back"
         } else {
             prizeBlurb()
@@ -451,7 +488,7 @@ class GachaScreen(private val g: Game) {
         while (ui.measure(blurb, blurbSize, ui.body) > w - 60f && blurbSize > 18f) blurbSize -= 1f
         ui.text(
             c, blurb, g.worldW * 0.5f, y + h - 124f, blurbSize,
-            if (duplicate && prizeKind == Kind.OUTFIT) Theme.ACCENT else Theme.TEXT_DIM, ui.body, false
+            if (duplicate && prizeKind != Kind.SCENE) Theme.ACCENT else Theme.TEXT_DIM, ui.body, false
         )
 
         val bw = (w - 120f) * 0.5f
@@ -465,6 +502,7 @@ class GachaScreen(private val g: Game) {
             prizeKind == Kind.SCENE -> "PLAY IT"
             prizeKind == Kind.POWERUP -> "NICE"
             duplicate -> "OK"
+            prizeKind == Kind.TRAIL -> "WEAR IT"
             else -> "WEAR IT"
         }
         if (ui.button(c, Id.DONE, x + 80f + bw, by, bw, 78f, doneLabel)) {
@@ -475,6 +513,7 @@ class GachaScreen(private val g: Game) {
                     g.applyScene()
                 }
                 prizeKind == Kind.OUTFIT && !duplicate -> g.save.equippedOutfit = prizeId
+                prizeKind == Kind.TRAIL && !duplicate -> g.save.equippedTrail = prizeId
             }
             reset()
         }

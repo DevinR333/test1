@@ -6,7 +6,6 @@ import android.graphics.Path
 import android.graphics.RectF
 import com.blacklab.buddybounce.game.Boost
 import com.blacklab.buddybounce.game.Enemy
-import com.blacklab.buddybounce.game.EnemyKind
 import com.blacklab.buddybounce.game.Hash
 import com.blacklab.buddybounce.game.MathX.clamp01
 import com.blacklab.buddybounce.game.PickupKind
@@ -20,6 +19,8 @@ import kotlin.math.sin
 
 /** Draws the things in the world: platforms, pick-ups and hazards. */
 class GameRenderer(private val art: Art) {
+
+    private val enemyArt = EnemyArt(art)
 
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val ink = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -585,139 +586,8 @@ class GameRenderer(private val art: Art) {
             c.rotate(e.dieT * 400f)
             c.scale(1f + e.dieT, 1f - e.dieT * 0.4f)
         }
-        when (e.kind) {
-            EnemyKind.BEE -> bee(c, e, time, fade)
-            EnemyKind.CROW -> crow(c, e, time, fade)
-            EnemyKind.STORM -> storm(c, e, time, fade)
-            else -> rift(c, e, time, fade)
-        }
+        // The role is fixed by the simulation; the creature wearing it belongs to the scene.
+        enemyArt.draw(c, e.kind, Palettes.current.fauna, time, e.phase, e.facing, fade)
         c.restore()
-    }
-
-    private fun bee(c: Canvas, e: Enemy, t: Float, a: Float) {
-        val flap = sin(t * 40f + e.phase)
-        p.reset(); p.isAntiAlias = true
-        p.color = ColorX.withAlpha(0xFFE8F4FF.toInt(), a * 0.6f)
-        c.save(); c.scale(1f, 0.4f + 0.6f * abs(flap))
-        r.set(-46f, -58f, -4f, -20f); c.drawOval(r, p)
-        r.set(4f, -58f, 46f, -20f); c.drawOval(r, p)
-        c.restore()
-
-        p.color = ColorX.withAlpha(0xFFF2C14E.toInt(), a)
-        r.set(-40f, -28f, 40f, 30f)
-        c.drawRoundRect(r, 28f, 28f, p)
-        p.color = ColorX.withAlpha(0xFF2A2B32.toInt(), a)
-        for (i in 0 until 2) {
-            r.set(-2f + i * 20f, -27f, 12f + i * 20f, 29f)
-            c.drawRect(r, p)
-        }
-        p.color = ColorX.withAlpha(0xFF2A2B32.toInt(), a)
-        path.reset()
-        path.moveTo(40f, 0f); path.lineTo(58f, 4f); path.lineTo(40f, 10f); path.close()
-        c.drawPath(path, p)
-        // face
-        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), a)
-        c.drawCircle(-22f, -8f, 9f, p)
-        c.drawCircle(-2f, -8f, 9f, p)
-        p.color = ColorX.withAlpha(0xFF15161C.toInt(), a)
-        c.drawCircle(-20f, -7f, 4.5f, p)
-        c.drawCircle(0f, -7f, 4.5f, p)
-        p.style = Paint.Style.STROKE
-        p.strokeWidth = 3.5f
-        c.drawLine(-32f, -20f, -16f, -15f, p)
-        c.drawLine(8f, -15f, -8f, -20f, p)
-        p.style = Paint.Style.FILL
-    }
-
-    private fun crow(c: Canvas, e: Enemy, t: Float, a: Float) {
-        val flap = sin(t * 14f + e.phase)
-        val dir = if (e.facing >= 0f) 1f else -1f
-        c.scale(dir, 1f)
-        p.reset(); p.isAntiAlias = true
-        p.color = ColorX.withAlpha(0xFF23252D.toInt(), a)
-        r.set(-52f, -22f, 44f, 30f)
-        c.drawOval(r, p)
-        c.drawCircle(34f, -10f, 26f, p)
-        // wings
-        p.color = ColorX.withAlpha(0xFF15161B.toInt(), a)
-        path.reset()
-        path.moveTo(-8f, -6f)
-        path.quadTo(-30f, -30f - flap * 34f, -66f, -10f - flap * 16f)
-        path.quadTo(-34f, 10f, -8f, 14f)
-        path.close()
-        c.drawPath(path, p)
-        // tail
-        path.reset()
-        path.moveTo(-44f, 2f); path.lineTo(-76f, 18f); path.lineTo(-44f, 22f); path.close()
-        c.drawPath(path, p)
-        // beak + eye
-        p.color = ColorX.withAlpha(0xFFF2A03C.toInt(), a)
-        path.reset()
-        path.moveTo(52f, -14f); path.lineTo(80f, -6f); path.lineTo(52f, 2f); path.close()
-        c.drawPath(path, p)
-        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), a)
-        c.drawCircle(40f, -18f, 8f, p)
-        p.color = ColorX.withAlpha(0xFF0D0E12.toInt(), a)
-        c.drawCircle(42f, -17f, 4f, p)
-    }
-
-    private fun storm(c: Canvas, e: Enemy, t: Float, a: Float) {
-        art.drawGlow(c, 0f, 0f, 150f, 0xFF6C7BD6.toInt(), 0.3f * a)
-        p.reset(); p.isAntiAlias = true
-        p.color = ColorX.withAlpha(0xFF4A5170.toInt(), a)
-        c.drawCircle(-44f, 4f, 36f, p)
-        c.drawCircle(0f, -16f, 46f, p)
-        c.drawCircle(44f, 4f, 34f, p)
-        r.set(-60f, -8f, 60f, 34f)
-        c.drawRoundRect(r, 24f, 24f, p)
-        p.color = ColorX.withAlpha(0xFF2F3550.toInt(), a)
-        r.set(-58f, 14f, 58f, 36f)
-        c.drawRoundRect(r, 18f, 18f, p)
-        // angry eyes
-        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), a)
-        c.drawCircle(-18f, 0f, 9f, p)
-        c.drawCircle(18f, 0f, 9f, p)
-        p.color = ColorX.withAlpha(0xFF15161C.toInt(), a)
-        c.drawCircle(-17f, 1f, 4.5f, p)
-        c.drawCircle(19f, 1f, 4.5f, p)
-        // lightning
-        val zap = ((t * 3f).toInt() % 3) == 0
-        if (zap) {
-            p.color = ColorX.withAlpha(0xFFFFE07A.toInt(), a * (0.6f + 0.4f * sin(t * 40f)))
-            path.reset()
-            path.moveTo(-8f, 32f)
-            path.lineTo(-22f, 62f)
-            path.lineTo(-4f, 58f)
-            path.lineTo(-14f, 92f)
-            path.lineTo(20f, 52f)
-            path.lineTo(2f, 54f)
-            path.lineTo(14f, 32f)
-            path.close()
-            c.drawPath(path, p)
-        }
-    }
-
-    private fun rift(c: Canvas, e: Enemy, t: Float, a: Float) {
-        art.drawGlow(c, 0f, 0f, 220f, 0xFF7B4BD8.toInt(), 0.45f * a)
-        p.reset(); p.isAntiAlias = true
-        for (i in 0 until 4) {
-            val k = 1f - i * 0.22f
-            p.color = ColorX.withAlpha(ColorX.lerp(0xFF7B4BD8.toInt(), 0xFF07040F.toInt(), i / 3f), a)
-            c.save()
-            c.rotate(t * (28f + i * 22f))
-            r.set(-92f * k, -70f * k, 92f * k, 70f * k)
-            c.drawOval(r, p)
-            c.restore()
-        }
-        p.color = ColorX.withAlpha(0xFF000000.toInt(), a)
-        c.drawCircle(0f, 0f, 30f, p)
-        p.style = Paint.Style.STROKE
-        p.strokeWidth = 4f
-        p.color = ColorX.withAlpha(0xFFCBB7FF.toInt(), a * 0.7f)
-        c.save(); c.rotate(-t * 60f)
-        r.set(-70f, -52f, 70f, 52f)
-        c.drawArc(r, 20f, 200f, false, p)
-        c.restore()
-        p.style = Paint.Style.FILL
     }
 }

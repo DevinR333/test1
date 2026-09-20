@@ -75,6 +75,10 @@ class World(worldWidth: Float, private val events: Events) {
     private var lastWasHazard = false
     private var lastPlatX = 0f
     private var accumulator = 0f
+
+    /** Where the finger has dragged Buddy to. Only meaningful while a finger is down. */
+    private var dragTargetX = 0f
+    private var wasDragging = false
     private var nextCoinY = 0f
     private var coinsPlaced = 0
 
@@ -107,6 +111,8 @@ class World(worldWidth: Float, private val events: Events) {
         rowsSinceSolid = 0
         lastWasHazard = false
         accumulator = 0f
+        dragTargetX = buddy.x
+        wasDragging = false
         coinMultiplier = 1
         safetyNets = 0
         magnetForever = false
@@ -219,8 +225,31 @@ class World(worldWidth: Float, private val events: Events) {
     // update
     // -------------------------------------------------------------------------------------
 
-    fun update(frameDt: Float, steer: Float, digitalInput: Boolean) {
+    /**
+     * @param steer   rate steering in [-1, 1] from tilt / pad / keys.
+     * @param dragDx  world units of finger travel since the last frame, already gained up.
+     * @param dragging true while a finger is on the glass; drag overrides the rate routes.
+     */
+    fun update(frameDt: Float, steer: Float, digitalInput: Boolean, dragDx: Float, dragging: Boolean) {
         val dt = min(frameDt, 0.05f)
+
+        // --- carry the drag target -----------------------------------------------------------
+        // The finger moves a target position, not a speed. Buddy chases it, so the distance you
+        // swipe is the distance he covers and he holds station the moment you stop.
+        if (dragging) {
+            if (!wasDragging) dragTargetX = buddy.x
+            dragTargetX = wrapX(dragTargetX + dragDx, worldW)
+            // Never let the target run away from him: a lead he cannot close in a beat would
+            // mean releasing the finger leaves him coasting, which is exactly what we removed.
+            val maxLead = metrics.maxVx * Tuning.DRAG_LEAD_SECONDS
+            val lead = MathX.wrapDelta(dragTargetX, buddy.x, worldW)
+            if (lead > maxLead) {
+                dragTargetX = wrapX(buddy.x + maxLead, worldW)
+            } else if (lead < -maxLead) {
+                dragTargetX = wrapX(buddy.x - maxLead, worldW)
+            }
+        }
+        wasDragging = dragging
 
         updatePlatforms(dt)
         updateEnemies(dt)
@@ -229,7 +258,7 @@ class World(worldWidth: Float, private val events: Events) {
         accumulator += dt
         var steps = 0
         while (accumulator >= Tuning.PHYSICS_STEP && steps < Tuning.MAX_SUBSTEPS) {
-            stepPhysics(Tuning.PHYSICS_STEP, steer, digitalInput)
+            stepPhysics(Tuning.PHYSICS_STEP, steer, digitalInput, dragging)
             accumulator -= Tuning.PHYSICS_STEP
             steps++
         }
@@ -257,7 +286,7 @@ class World(worldWidth: Float, private val events: Events) {
         platforms.sweep(); pickups.sweep(); enemies.sweep()
     }
 
-    private fun stepPhysics(dt: Float, steer: Float, digital: Boolean) {
+    private fun stepPhysics(dt: Float, steer: Float, digital: Boolean, dragging: Boolean) {
         val b = buddy
 
         // --- horizontal ---
@@ -267,14 +296,24 @@ class World(worldWidth: Float, private val events: Events) {
             b.flight != Flight.NONE -> 0.85f
             else -> 1f
         }
-        val targetVx = steer * metrics.maxVx * control
+        val maxVx = metrics.maxVx * control
+        val targetVx: Float
+        if (dragging && !b.dying) {
+            // Positional: aim at the speed that closes the remaining gap to the finger's target
+            // this beat, capped a little above cruising speed so long swipes still feel snappy.
+            val err = MathX.wrapDelta(dragTargetX, b.x, worldW)
+            val cap = maxVx * Tuning.DRAG_OVERSPEED
+            targetVx = MathX.clamp(err * Tuning.DRAG_STIFFNESS, -cap, cap)
+        } else {
+            targetVx = steer * maxVx
+        }
         // Braking (heading back toward zero, or reversing) is far snappier than accelerating,
         // which is what makes a mid-fall correction actually land where you aimed it.
         val braking = abs(targetVx) < abs(b.vx) || targetVx * b.vx < 0f
-        val rate = if (digital) {
-            if (braking) Tuning.STEER_BRAKE_DIGITAL else Tuning.STEER_ACCEL_DIGITAL
-        } else {
-            if (braking) Tuning.STEER_BRAKE_TILT else Tuning.STEER_ACCEL_TILT
+        val rate = when {
+            dragging -> if (braking) Tuning.STEER_BRAKE_DRAG else Tuning.STEER_ACCEL_DRAG
+            digital -> if (braking) Tuning.STEER_BRAKE_DIGITAL else Tuning.STEER_ACCEL_DIGITAL
+            else -> if (braking) Tuning.STEER_BRAKE_TILT else Tuning.STEER_ACCEL_TILT
         }
         b.vx = MathX.approach(b.vx, targetVx, rate, dt)
         b.x = wrapX(b.x + b.vx * dt, worldW)

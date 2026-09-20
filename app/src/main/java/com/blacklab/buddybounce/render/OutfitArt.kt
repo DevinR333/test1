@@ -68,6 +68,7 @@ object OutfitArt {
             "detective" -> coatTail(c, pose, 0xFFB08A5A.toInt())
             "mafia" -> coatTail(c, pose, 0xFF3A3F55.toInt())
             "ninja" -> ninjaScarf(c, pose)
+            "french" -> onionString(c)
         }
     }
 
@@ -83,6 +84,8 @@ object OutfitArt {
             "vet" -> { torso(c, 0xFFF7F9FC.toInt(), 0xFFD9DFE8.toInt()); pocket(c, 0xFFBFC8D4.toInt()) }
             "racer" -> { torso(c, 0xFFE8433C.toInt(), 0xFFB32C28.toInt()); racingStripe(c) }
             "pirate" -> torso(c, 0xFF2F4A6E.toInt(), 0xFF1E3350.toInt())
+            "french" -> { torso(c, 0xFFF4F6FA.toInt(), 0xFFDDE3EC.toInt()); bretonStripes(c) }
+            "mike" -> { torso(c, 0xFF17181C.toInt(), 0xFF0D0E11.toInt()); tongueLogo(c) }
             "cape" -> torso(c, 0xFF2F6FD6.toInt(), 0xFF1F4C99.toInt())
             "knight" -> plate(c)
             "dino" -> torso(c, 0xFF57B96B.toInt(), 0xFF3F9152.toInt())
@@ -128,6 +131,8 @@ object OutfitArt {
             "vet" -> { collar(c, 0xFF4F9FD6.toInt()); glasses(c) }
             "racer" -> racingHelmet(c)
             "pirate" -> { tricorn(c); eyePatch(c) }
+            "french" -> { beret(c); ascot(c); baguette(c); pencilMoustache(c) }
+            "mike" -> collar(c, 0xFF8E1F2E.toInt())
             "cape" -> { collar(c, 0xFFD23A4A.toInt()); mask(c) }
             "knight" -> knightHelm(c)
             "dino" -> dinoHood(c)
@@ -1115,5 +1120,205 @@ object OutfitArt {
         p.color = 0xFFF2C14E.toInt()
         r.set(BuddyGeom.BODY_CX - 12f, BELLY - 26f, BuddyGeom.BODY_CX + 12f, BELLY - 4f)
         c.drawRoundRect(r, 5f, 5f, p)
+    }
+
+    // -------------------------------------------------------------------------------------
+    // French Buddy
+    // -------------------------------------------------------------------------------------
+
+    /** The Breton shirt: even black bands across a white torso, clipped to the body shape. */
+    private fun bretonStripes(c: Canvas) {
+        c.save()
+        // reuse the torso silhouette as a clip so the bands stop at the edges of the shirt
+        path.reset()
+        path.moveTo(BX1 - 2f, BACK + 10f)
+        path.cubicTo(20f, BACK - 2f, -40f, BACK + 1f, BX0 - 2f, BACK + 20f)
+        path.cubicTo(BX0 - 16f, BACK + 40f, BX0 - 12f, BELLY - 4f, BX0 + 12f, BELLY + 4f)
+        path.cubicTo(-20f, BELLY + 14f, 16f, BELLY + 12f, BX1 - 8f, BELLY + 2f)
+        path.cubicTo(BX1 + 14f, BELLY - 10f, BX1 + 16f, BACK + 40f, BX1 - 2f, BACK + 10f)
+        path.close()
+        c.clipPath(path)
+        p.color = 0xFF23262F.toInt()
+        var y = BACK + 6f
+        while (y < BELLY + 18f) {
+            r.set(BX0 - 20f, y, BX1 + 18f, y + 9f)
+            c.drawRect(r, p)
+            y += 18f
+        }
+        c.restore()
+    }
+
+    /** Black beret, tipped over one ear, with the little stalk on top. */
+    private fun beret(c: Canvas) {
+        c.save()
+        c.translate(HX - 4f, TOP + 10f)
+        c.rotate(-11f)
+        // the flop hangs out past the far side of the skull
+        path.reset()
+        path.moveTo(-52f, 4f)
+        path.cubicTo(-58f, -34f, -14f, -48f, 14f, -42f)
+        path.cubicTo(48f, -36f, 62f, -14f, 52f, 6f)
+        path.cubicTo(24f, 18f, -24f, 18f, -52f, 4f)
+        path.close()
+        fillInk(c, 0xFF1B1D24.toInt())
+        // headband
+        p.color = 0xFF101218.toInt()
+        r.set(-50f, -2f, 52f, 14f)
+        c.drawRoundRect(r, 8f, 8f, p)
+        // sheen along the crown
+        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.14f)
+        r.set(-30f, -36f, 18f, -20f)
+        c.drawOval(r, p)
+        // stalk
+        p.color = 0xFF1B1D24.toInt()
+        c.drawCircle(4f, -46f, 6.5f, p)
+        c.restore()
+    }
+
+    /** A red silk ascot, puffed at the throat and tucked under the shirt. */
+    private fun ascot(c: Canvas) {
+        c.save()
+        c.translate(34f, -92f)
+        c.rotate(18f)
+        // the knot's body
+        path.reset()
+        path.moveTo(-34f, -10f)
+        path.cubicTo(-10f, -24f, 26f, -22f, 40f, -6f)
+        path.cubicTo(34f, 14f, -4f, 22f, -32f, 12f)
+        path.close()
+        fillInk(c, 0xFFC23B3B.toInt())
+        // folds
+        p.color = ColorX.shade(0xFFC23B3B.toInt(), 0.72f)
+        path.reset()
+        path.moveTo(-26f, -4f)
+        path.cubicTo(-6f, 4f, 16f, 4f, 34f, -2f)
+        path.cubicTo(18f, 12f, -10f, 14f, -26f, -4f)
+        path.close()
+        c.drawPath(path, p)
+        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.2f)
+        r.set(-16f, -16f, 14f, -8f)
+        c.drawOval(r, p)
+        // the tail hanging down the chest
+        p.color = 0xFFA82F2F.toInt()
+        path.reset()
+        path.moveTo(2f, 14f)
+        path.lineTo(20f, 16f)
+        path.lineTo(14f, 44f)
+        path.lineTo(-2f, 38f)
+        path.close()
+        c.drawPath(path, p)
+        c.restore()
+    }
+
+    /** A baguette clamped in his jaw, crust scored and all. */
+    private fun baguette(c: Canvas) {
+        c.save()
+        c.translate(NOSE_X - 22f, MUZ_Y + 12f)
+        c.rotate(-16f)
+        path.reset()
+        r.set(-16f, -13f, 96f, 13f)
+        path.addRoundRect(r, 13f, 13f, Path.Direction.CW)
+        fillInk(c, 0xFFD9A96A.toInt())
+        // baked top, lighter than the underside
+        p.color = 0xFFE8C289.toInt()
+        r.set(-12f, -11f, 92f, 1f)
+        c.drawRoundRect(r, 8f, 8f, p)
+        // the diagonal scores across the crust
+        p.color = ColorX.shade(0xFFD9A96A.toInt(), 0.62f)
+        for (i in 0 until 4) {
+            c.save()
+            c.translate(2f + i * 22f, -2f)
+            c.rotate(-34f)
+            r.set(-3f, -9f, 3f, 9f)
+            c.drawRoundRect(r, 3f, 3f, p)
+            c.restore()
+        }
+        c.restore()
+    }
+
+    /** A thin moustache, because of course. */
+    private fun pencilMoustache(c: Canvas) {
+        p.color = 0xFF15161C.toInt()
+        c.save()
+        c.translate(NOSE_X - 30f, MUZ_Y - 4f)
+        path.reset()
+        path.moveTo(-18f, 0f)
+        path.cubicTo(-10f, -8f, 10f, -8f, 20f, -1f)
+        path.cubicTo(10f, 4f, -8f, 5f, -18f, 0f)
+        path.close()
+        c.drawPath(path, p)
+        c.restore()
+    }
+
+    /** Strung onions over the shoulder - the whole postcard. */
+    private fun onionString(c: Canvas) {
+        ink.strokeWidth = 4f
+        ink.color = 0xFF6B5130.toInt()
+        c.drawLine(BX0 + 4f, BACK + 2f, BX1 - 16f, BACK + 26f, ink)
+        ink.color = BuddyGeom.INK
+        ink.strokeWidth = 5f
+        for (i in 0 until 4) {
+            val t = i / 3f
+            val x = BX0 + 4f + (BX1 - 20f - BX0) * t
+            val y = BACK + 6f + 24f * t + 14f
+            p.color = 0xFFC87C4A.toInt()
+            r.set(x - 11f, y - 12f, x + 11f, y + 12f)
+            c.drawOval(r, p)
+            p.color = ColorX.shade(0xFFC87C4A.toInt(), 0.75f)
+            r.set(x - 3f, y - 12f, x + 3f, y + 12f)
+            c.drawOval(r, p)
+            p.color = 0xFF7FA05A.toInt()
+            r.set(x - 2.5f, y - 20f, x + 2.5f, y - 10f)
+            c.drawRect(r, p)
+        }
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Mike's Outfit
+    // -------------------------------------------------------------------------------------
+
+    /**
+     * The band tee. Not the real logo - a knock-off: lips with a tongue out, but the mouth is a
+     * paw-friendly shape and the proportions are its own.
+     */
+    private fun tongueLogo(c: Canvas) {
+        c.save()
+        c.translate(-6f, BACK + 40f)
+        c.scale(0.92f, 0.92f)
+
+        // lips
+        p.color = 0xFF15161C.toInt()
+        path.reset()
+        path.moveTo(-34f, 0f)
+        path.cubicTo(-30f, -20f, -10f, -26f, 0f, -14f)
+        path.cubicTo(10f, -26f, 30f, -20f, 34f, 0f)
+        path.cubicTo(28f, 20f, -28f, 20f, -34f, 0f)
+        path.close()
+        c.drawPath(path, p)
+        p.color = 0xFFD8323C.toInt()
+        path.reset()
+        path.moveTo(-29f, 0f)
+        path.cubicTo(-25f, -16f, -9f, -21f, 0f, -10f)
+        path.cubicTo(9f, -21f, 25f, -16f, 29f, 0f)
+        path.cubicTo(23f, 16f, -23f, 16f, -29f, 0f)
+        path.close()
+        c.drawPath(path, p)
+
+        // teeth
+        p.color = 0xFFF4F6FA.toInt()
+        r.set(-22f, -5f, 22f, 3f)
+        c.drawRoundRect(r, 3f, 3f, p)
+
+        // tongue, lolling out to one side the way a dog's does
+        p.color = 0xFFE0566A.toInt()
+        path.reset()
+        path.moveTo(-8f, 2f)
+        path.cubicTo(-12f, 24f, 10f, 32f, 16f, 18f)
+        path.cubicTo(20f, 8f, 8f, 2f, -8f, 2f)
+        path.close()
+        c.drawPath(path, p)
+        p.color = ColorX.shade(0xFFE0566A.toInt(), 0.78f)
+        c.drawLine(0f, 8f, 10f, 20f, ink)
+        c.restore()
     }
 }
