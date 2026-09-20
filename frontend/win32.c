@@ -114,13 +114,20 @@ static void beside_exe(char *out, size_t n, const char *name);
 
 /* Hold the machine to the speed the cartridge ran at.
  *
- * The deadline moves on by exactly one frame every time this is called, and
- * it is called once per frame of the hardware whether or not that frame was
- * drawn - so a frame skipped during a room crossing still costs its own
- * sixteen and three quarter milliseconds, and the game cannot outrun itself.
- * The period is counted in the performance counter's own ticks rather than
- * whole milliseconds, which a frame is not: rounding it to sixteen ran the
- * game four and a half percent fast, every second of the way.
+ * The deadline moves on by one frame for every frame that is shown, and a
+ * shown frame is what walking at the game's own pace produces - so ordinary
+ * play runs at exactly the rate the cartridge did. The period is counted in
+ * the performance counter's own ticks rather than whole milliseconds, which a
+ * frame is not: rounding it to sixteen ran the game four and a half percent
+ * fast, every second of the way.
+ *
+ * Frames that are not shown are not paced, and that is the point. Crossing
+ * between rooms the game moves Link three eighths of a pixel a frame, so two
+ * frames in three have nothing new to show; running those without waiting is
+ * what makes a boundary take as long as walking across it instead of nearly a
+ * second of sliding. It cannot run away on that: only a crossing lets a frame
+ * go unshown, a burst of them is capped at thirty-two, and an episode at a
+ * hundred and twenty.
  *
  * Time lost is not repaid. If the machine falls behind - a slow paint, the
  * window being dragged - those frames are gone, because catching up means
@@ -312,7 +319,7 @@ static void on_frame(gb_t *gb, void *user)
         if (step_x == app.shown_x && step_y == app.shown_y && app.burst < 32) {
             app.burst++;
             app.hurried++;
-            goto paced;                 /* not moved yet: no repaint */
+            return;                     /* not moved yet: no repaint, no wait */
         }
         /* Arriving in the new room wraps his coordinates by a whole room
          * width, which is not him moving - counting it as movement ends the
@@ -332,7 +339,6 @@ static void on_frame(gb_t *gb, void *user)
     if (app.hwnd)
         InvalidateRect(app.hwnd, NULL, FALSE);
 
-paced:
     pace_frame();
 }
 

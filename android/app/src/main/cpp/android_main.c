@@ -70,6 +70,7 @@ static struct {
 
     /* Pacing a crossing by how far Link moves, as the desktop build does. */
     int shown_x, shown_y, burst, settling;
+    int hurried;              /* frames run unshown in this crossing */
 
     pthread_t thread;
     uint8_t  *rom;
@@ -86,9 +87,17 @@ static struct {
  * This used to say the display paced it, which was wrong: the display paces
  * the thread that draws, and the game runs on its own thread, so nothing
  * held it back at all and it ran as fast as the processor could carry it.
- * The deadline below moves on by exactly one frame each time, whatever the
- * frame did, so a frame that was not drawn still costs its own sixteen and a
- * half milliseconds and the game cannot run ahead of itself.
+ * The deadline below moves on by one frame for every frame that is shown,
+ * and ordinary play shows every frame, so ordinary play runs at exactly the
+ * rate the cartridge did.
+ *
+ * Crossing between rooms is the one place frames go unshown, and those are
+ * deliberately not paced: the game moves Link three eighths of a pixel a
+ * frame there, so most frames have nothing new in them, and running those
+ * without waiting is what makes a boundary take as long as walking across it
+ * rather than nearly a second of sliding. It is bounded - only a crossing of
+ * the overworld qualifies, a burst is capped at thirty-two frames and an
+ * episode at a hundred and twenty - so it cannot become the runaway above.
  *
  * Falling behind is not repaid. If the machine stalls - the app is in the
  * background, the phone throttles - the lost frames are simply lost, because
@@ -115,16 +124,17 @@ static void pace(void)
     clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &due, NULL);
 }
 
-static void frame_body(gb_t *gb);
+static int frame_body(gb_t *gb);
 
 static void on_frame(gb_t *gb, void *user)
 {
     (void)user;
-    frame_body(gb);
-    pace();
+    if (frame_body(gb))
+        pace();
 }
 
-static void frame_body(gb_t *gb)
+/* Returns whether this frame is one the window will show. */
+static int frame_body(gb_t *gb)
 {
 
     gb_world_track(&ORA.track, gb);
@@ -138,20 +148,29 @@ static void frame_body(gb_t *gb)
     gb->joypad = (uint8_t)(ORA.buttons | __atomic_exchange_n(&ORA.latched, 0,
                                                            __ATOMIC_SEQ_CST));
 
-    if (!ORA.running) { gb->stopped = 1; return; }
+    if (!ORA.running) { gb->stopped = 1; return 1; }
 
     /* Crossing between rooms, show a frame for each whole pixel Link moves
      * and run the rest as fast as they compute - one frame per pixel being
      * exactly his walking rate, so a boundary takes as long as walking it. */
     int step_x, step_y;
-    int crossing = gb_world_scrolling(gb);
+
+    /* Only a crossing of the overworld. The flag is set for every screen
+     * change the game makes - a door, a warp, a scene - and in those Link
+     * does not move at all, which would look to the rule below like a
+     * crossing that never advances. */
+    int crossing = gb_world_scrolling(gb) && ORA.track.in_world;
+
     if (crossing) ORA.settling = 12;
     else if (ORA.settling > 0) ORA.settling--;
+    if (!crossing && ORA.settling == 0) ORA.hurried = 0;
 
-    if ((crossing || ORA.settling > 0) && gb_world_link_step(gb, &step_x, &step_y)) {
+    if ((crossing || ORA.settling > 0) && ORA.hurried < 120
+        && gb_world_link_step(gb, &step_x, &step_y)) {
         if (step_x == ORA.shown_x && step_y == ORA.shown_y && ORA.burst < 32) {
             ORA.burst++;
-            return;                        /* straight on to the next frame */
+            ORA.hurried++;
+            return 0;                      /* nothing new to show: no wait */
         }
         int wrapped = abs(step_x - ORA.shown_x) > 8 || abs(step_y - ORA.shown_y) > 8;
         ORA.shown_x = step_x; ORA.shown_y = step_y; ORA.burst = 0;
@@ -160,6 +179,7 @@ static void frame_body(gb_t *gb)
         ORA.shown_x = step_x; ORA.shown_y = step_y; ORA.burst = 0;
     }
 
+    return 1;
 }
 
 static void *game_thread(void *unused)
