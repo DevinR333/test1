@@ -22,8 +22,11 @@ ladder, camera rules, scoring, the difficulty curve, and the exact numbers used 
 
 ## Building
 
-Requirements: JDK 17, Android SDK with **API 35** installed. Nothing else — the app has
-**no third-party dependencies at all**, just the Android framework and the Kotlin stdlib.
+Requirements: **JDK 17 or 21**, Android SDK with **API 35** installed. Nothing else — the app
+has **no third-party dependencies at all**, just the Android framework and the Kotlin stdlib.
+
+Toolchain: Gradle 8.14.3 (wrapper), Android Gradle Plugin 8.7.3, Kotlin 2.0.21, compiled to
+Java 17 bytecode.
 
 ```bash
 ./gradlew assembleDebug          # app/build/outputs/apk/debug/app-debug.apk
@@ -33,6 +36,36 @@ Requirements: JDK 17, Android SDK with **API 35** installed. Nothing else — th
 Or open the folder in Android Studio and hit Run.
 
 `minSdk` is 26 (Android 8.0), `targetSdk`/`compileSdk` 35.
+
+### Troubleshooting: "incompatible Gradle JVM version"
+
+This is always a mismatch between the JDK Android Studio runs Gradle with and what Gradle or
+the Android plugin accept. It is an IDE setting, not a code problem. Fix it once:
+
+> **Settings / Preferences → Build, Execution, Deployment → Build Tools → Gradle → Gradle JDK**
+
+Pick the **JetBrains Runtime bundled with Android Studio** (listed as `jbr-17` or `jbr-21`), or
+any installed JDK **17 or 21**. Then **File → Sync Project with Gradle Files**. If it still
+complains, **File → Invalidate Caches… → Invalidate and Restart**.
+
+Which way the mismatch goes tells you what the message means:
+
+| Message | Cause | Fix |
+|---|---|---|
+| "Android Gradle plugin requires Java 17… you are using Java 11/8" | Gradle JDK too **old** | set Gradle JDK to 17 or 21 |
+| "Unsupported class file major version 67/68/69" | Gradle JDK too **new** for Gradle | set Gradle JDK to 17 or 21 |
+| "Your build is currently configured to use incompatible Java NN and Gradle N.N" | either | set Gradle JDK to 17 or 21 |
+
+Gradle 8.14.3 (what the wrapper pulls) runs on Java 8 through 24. If your Studio ships a JDK 25
+or newer and you would rather not switch it, the project needs a newer Gradle + AGP pairing
+instead — say the word and it's a two-line change.
+
+From the command line the same rule applies: `JAVA_HOME` must point at a JDK 17–21.
+
+```bash
+java -version          # check what you're on
+./gradlew --version    # shows the "Launcher JVM" Gradle is actually using
+```
 
 ## Playing
 
