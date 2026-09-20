@@ -115,6 +115,36 @@ function World(stageIndex) {
     this.depth.push(drow);
   }
 
+  /* Label each connected pocket of false wall. A secret is one whole
+     region, so stepping inside opens all of it at once instead of
+     dissolving a circle around the hero. */
+  this.fakeRegion = [];
+  for (y = 0; y < this.rows; y++) {
+    this.fakeRegion.push(new Array(this.cols).fill(-1));
+  }
+  this.regionCount = 0;
+  for (y = 0; y < this.rows; y++) {
+    for (x = 0; x < this.cols; x++) {
+      if (this.tiles[y][x] !== T_FAKE || this.fakeRegion[y][x] !== -1) continue;
+      var id = this.regionCount++;
+      var stack = [[x, y]];
+      this.fakeRegion[y][x] = id;
+      while (stack.length) {
+        var cur = stack.pop();
+        var steps = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+        for (var si = 0; si < steps.length; si++) {
+          var nx2 = cur[0] + steps[si][0], ny2 = cur[1] + steps[si][1];
+          if (nx2 < 0 || ny2 < 0 || nx2 >= this.cols || ny2 >= this.rows) continue;
+          if (this.tiles[ny2][nx2] !== T_FAKE || this.fakeRegion[ny2][nx2] !== -1) continue;
+          this.fakeRegion[ny2][nx2] = id;
+          stack.push([nx2, ny2]);
+        }
+      }
+    }
+  }
+  this.regionOpen = new Array(this.regionCount).fill(0);
+  this.activeRegion = -1;
+
   this.decor = this.buildDecor();
 
   this.cam = { x: 0, y: 0 };
@@ -223,25 +253,35 @@ World.prototype.moveActor = function (e, loose, flyer) {
    collision snap: an actor resting exactly on a tile boundary does not
    overlap the floor tile, so the snap alone reports it as airborne and the
    grounded flag flickers frame to frame. */
-/* How see-through a false wall is right now: it opens around the hero as
-   he steps in and closes again behind him, rather than being broken open
-   for good. 0 = looks like solid rock, 1 = fully open. */
-World.prototype.fakeOpen = function (tx, ty) {
+/* Which pocket of false wall the hero is standing in, or -1. He has to
+   actually be inside it - nothing opens on approach. */
+World.prototype.regionUnder = function () {
   var p = this.player;
-  var dx = (tx * TILE + TILE / 2) - (p.x + p.w / 2);
-  var dy = (ty * TILE + TILE / 2) - (p.y + p.h / 2);
-  var d = Math.sqrt(dx * dx + dy * dy);
-  var near = 22, far = 44;
-  if (d <= near) return 1;
-  if (d >= far) return 0;
-  return 1 - (d - near) / (far - near);
+  var x1 = Math.floor((p.x + 2) / TILE), x2 = Math.floor((p.x + p.w - 3) / TILE);
+  var y1 = Math.floor((p.y + 2) / TILE), y2 = Math.floor((p.y + p.h - 3) / TILE);
+  for (var ty = y1; ty <= y2; ty++) {
+    for (var tx = x1; tx <= x2; tx++) {
+      if (tx < 0 || ty < 0 || tx >= this.cols || ty >= this.rows) continue;
+      if (this.tiles[ty][tx] === T_FAKE) return this.fakeRegion[ty][tx];
+    }
+  }
+  return -1;
+};
+
+/* 0 = looks like solid rock, 1 = fully open. The whole pocket shares one
+   value, so a secret chamber opens and closes as a single room. */
+World.prototype.fakeOpen = function (tx, ty) {
+  var id = this.fakeRegion[ty] ? this.fakeRegion[ty][tx] : -1;
+  if (id < 0) return 0;
+  return this.regionOpen[id];
 };
 
 /* Buried treasure shows only while the wall around it is open. */
 World.prototype.uncovered = function (e) {
   if (!e.buried) return true;
   if (e.open) return true;                 /* an opened chest stays put */
-  return this.fakeOpen(e.tx, e.ty) > 0.45;
+  var id = this.fakeRegion[e.ty] ? this.fakeRegion[e.ty][e.tx] : -1;
+  return id >= 0 && id === this.activeRegion;
 };
 
 World.prototype.onGround = function (e) {
@@ -379,6 +419,15 @@ World.prototype.update = function () {
 
   if (this.hitStop > 0) { this.hitStop--; return; }
   if (this.bannerTimer > 0) this.bannerTimer--;
+
+  /* open the pocket he is standing in, close every other */
+  this.activeRegion = p.dead ? -1 : this.regionUnder();
+  for (var ri = 0; ri < this.regionCount; ri++) {
+    var target = (ri === this.activeRegion) ? 1 : 0;
+    var cur2 = this.regionOpen[ri];
+    this.regionOpen[ri] = cur2 + (target - cur2) * 0.34;
+    if (Math.abs(this.regionOpen[ri] - target) < 0.02) this.regionOpen[ri] = target;
+  }
   if (this.shakeAmt > 0) this.shakeAmt = Math.max(0, this.shakeAmt - 0.6);
 
   /* moving platforms carry whatever stands on them */
