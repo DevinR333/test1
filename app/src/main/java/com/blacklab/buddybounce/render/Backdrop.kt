@@ -50,6 +50,50 @@ class Backdrop(private val art: Art) {
         if (blend > 0.004f) drawFlourish(c, worldW, camY, time, next, blend)
 
         drawClouds(c, worldW, camY, time, lerpF(pal.cloudAlpha, next.cloudAlpha, blend), pal, next, blend)
+        drawLightShafts(c, worldW, camY, pal, next, blend)
+        drawHaze(c, worldW, pal, next, blend)
+    }
+
+    /**
+     * God rays. Only in the daylight bands - a few slanted translucent wedges from off the top
+     * of the screen, drifting with the camera. Almost free, and it gives the sky real depth.
+     */
+    private fun drawLightShafts(
+        c: Canvas, worldW: Float, camY: Float,
+        pal: BiomePalette, next: BiomePalette, blend: Float
+    ) {
+        val daylight = 1f - lerpF(pal.starAlpha, next.starAlpha, blend)
+        if (daylight <= 0.25f) return
+        val col = ColorX.lerp(pal.sunColor, next.sunColor, blend)
+        val drift = (camY * 0.04f) % (worldW + 900f)
+        paint.reset(); paint.isAntiAlias = true
+        for (i in 0 until 4) {
+            val baseX = (Hash.f(i, 331) * (worldW + 900f) + drift) % (worldW + 900f) - 450f
+            val wdt = 150f + Hash.f(i, 337) * 260f
+            val lean = 320f + Hash.f(i, 341) * 240f
+            paint.color = ColorX.withAlpha(col, 0.055f * daylight * (0.6f + Hash.f(i, 347) * 0.8f))
+            path.reset()
+            path.moveTo(baseX, -60f)
+            path.lineTo(baseX + wdt, -60f)
+            path.lineTo(baseX + wdt + lean, Tuning.VIEW_H + 60f)
+            path.lineTo(baseX + lean, Tuning.VIEW_H + 60f)
+            path.close()
+            c.drawPath(path, paint)
+        }
+    }
+
+    /** A band of atmosphere along the bottom, so the world reads as receding into distance. */
+    private fun drawHaze(c: Canvas, worldW: Float, pal: BiomePalette, next: BiomePalette, blend: Float) {
+        val col = ColorX.lerp(pal.haze, next.haze, blend)
+        paint.reset()
+        paint.isAntiAlias = true
+        paint.shader = LinearGradient(
+            0f, Tuning.VIEW_H * 0.72f, 0f, Tuning.VIEW_H,
+            intArrayOf(ColorX.withAlpha(col, 0f), ColorX.withAlpha(col, 0.28f)),
+            null, Shader.TileMode.CLAMP
+        )
+        c.drawRect(0f, Tuning.VIEW_H * 0.72f, worldW, Tuning.VIEW_H, paint)
+        paint.shader = null
     }
 
     /** A soft darkening at the edges - cheap, and it stops the screen looking like flat paper. */

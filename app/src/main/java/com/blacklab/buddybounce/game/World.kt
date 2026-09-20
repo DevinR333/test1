@@ -261,7 +261,6 @@ class World(worldWidth: Float, private val events: Events) {
         val b = buddy
 
         // --- horizontal ---
-        val ease = if (digital) Tuning.STEER_EASE_DIGITAL else Tuning.STEER_EASE_TILT
         val control = when {
             b.dying -> 0f
             b.flight == Flight.ROCKET -> 0.55f   // a rocket is hard to steer
@@ -269,7 +268,15 @@ class World(worldWidth: Float, private val events: Events) {
             else -> 1f
         }
         val targetVx = steer * metrics.maxVx * control
-        b.vx = MathX.approach(b.vx, targetVx, ease, dt)
+        // Braking (heading back toward zero, or reversing) is far snappier than accelerating,
+        // which is what makes a mid-fall correction actually land where you aimed it.
+        val braking = abs(targetVx) < abs(b.vx) || targetVx * b.vx < 0f
+        val rate = if (digital) {
+            if (braking) Tuning.STEER_BRAKE_DIGITAL else Tuning.STEER_ACCEL_DIGITAL
+        } else {
+            if (braking) Tuning.STEER_BRAKE_TILT else Tuning.STEER_ACCEL_TILT
+        }
+        b.vx = MathX.approach(b.vx, targetVx, rate, dt)
         b.x = wrapX(b.x + b.vx * dt, worldW)
 
         // --- vertical ---
@@ -340,7 +347,14 @@ class World(worldWidth: Float, private val events: Events) {
             if (!p.alive || p.state != 0) continue
             if (prevFoot < p.y - 2f || b.y > p.y) continue
             val dx = wrapDelta(b.x, p.x, worldW)
-            if (abs(dx) > p.w * 0.5f + Tuning.BUDDY_FOOT_HALF) continue
+            val span = p.w * 0.5f + Tuning.BUDDY_FOOT_HALF
+            if (abs(dx) > span) {
+                // Clipping the very edge of a ledge you were clearly steering toward catches
+                // instead of dropping you. Only while still moving inward, so it never feels
+                // like being yanked onto something you were leaving.
+                val movingIn = (dx > 0f && b.vx < -40f) || (dx < 0f && b.vx > 40f)
+                if (!movingIn || abs(dx) > span + Tuning.LAND_GRAB) continue
+            }
             if (p.y > bestY) { bestY = p.y; best = p }
         }
         val p = best ?: return

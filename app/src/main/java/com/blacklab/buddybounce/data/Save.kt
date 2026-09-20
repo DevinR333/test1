@@ -237,10 +237,6 @@ class Save(ctx: Context) {
         get() = prefs.getBoolean(KEY_HAPTICS, true)
         set(value) = editAsync { it.putBoolean(KEY_HAPTICS, value) }
 
-    var showGaugeAlways: Boolean
-        get() = prefs.getBoolean(KEY_GAUGE, true)
-        set(value) = editAsync { it.putBoolean(KEY_GAUGE, value) }
-
     /** Called when the app is going away, so nothing is left in flight. */
     fun flush() {
         editSync { it.putLong(KEY_LAST_SEEN, System.currentTimeMillis()) }
@@ -273,7 +269,6 @@ class Save(ctx: Context) {
         private const val KEY_TILT_INVERT = "tiltInvert"
         private const val KEY_SOUND = "sound"
         private const val KEY_HAPTICS = "haptics"
-        private const val KEY_GAUGE = "gauge"
         private const val KEY_LAST_SEEN = "lastSeen"
 
         fun sanitizeName(raw: String): String {

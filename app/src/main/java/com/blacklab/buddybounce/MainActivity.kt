@@ -237,6 +237,12 @@ class MainActivity : Activity(), SensorEventListener, Game.Host {
 
     private fun confirmName() {
         val entered = nameInput?.text?.toString().orEmpty()
+        // Checked against the RAW text: the sanitiser strips the punctuation the code uses.
+        if (game.isUnlockCode(entered)) {
+            game.applyUnlockCode()
+            hideNamePrompt()
+            return
+        }
         val clean = Save.sanitizeName(entered)
         if (clean.isEmpty() && !save.hasName) return   // first launch needs a name
         if (clean.isNotEmpty()) game.onNameEntered(clean)

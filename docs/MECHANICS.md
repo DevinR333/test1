@@ -61,11 +61,23 @@ grass rather than killing you; the floor is culled as soon as the camera leaves 
 
 **Buddy Bounce**
 
-* `targetVx = steer * maxVx`, and `vx` eases toward it: `vx += (targetVx - vx) * (1 - e^(-k·dt))`
-  with **k = 9** for tilt (weighty, slight overshoot) and **k = 16** for touch and gamepad
-  (crisper, because those inputs are already absolute).
-* `maxVx = 1700 * (worldW / 1440)^0.6` — sub-linear so that a very wide landscape playfield does
+* `targetVx = steer * maxVx`, and `vx` eases toward it: `vx += (targetVx - vx) * (1 - e^(-k·dt))`.
+* **The rate is asymmetric, and this is the single most important feel decision in the game.**
+  Accelerating is soft (k = 15 tilt / 26 touch); *braking* — heading back toward zero, or
+  reversing — is hard (k = 38 / 55). With one symmetric rate the velocity lagged the input both
+  on the way in and on the way out, so a mid-fall correction overshot and Buddy sailed past the
+  ledge: the game felt imprecise in exactly the moment precision matters. Braking hard means
+  "stop" is immediate and a correction lands where it was aimed.
+* A mild **expo curve** (`|steer|^1.25`) on tilt and touch: a small movement is a small, precise
+  nudge, while full deflection is still full speed.
+* `maxVx = 1900 * (worldW / 1440)^0.6` — sub-linear so that a very wide landscape playfield does
   not turn into a twitch-fest.
+* **Landing is forgiving on purpose.** The foot box is 56 wu either side of centre (narrower
+  than the art), and clipping the corner of a ledge grants another 26 wu of grab *while he is
+  still travelling toward it* — so a near-miss you were obviously aiming for catches, but you
+  are never yanked onto something you were leaving.
+* **Nothing is drawn for the controls.** No track, no knob, no gauge: touch works anywhere on
+  the screen, so there is nothing to look at, find, or cover the action with.
 * **Touch is relative, not a fixed control.** Wherever a finger goes down becomes the centre;
   sliding either side of that point steers that way, in proportion to the distance, out to a
   full-lock range of 22 % of the screen width. It works anywhere on the screen, so there is
@@ -122,9 +134,9 @@ Generation safety rules (these are what stop a run from ending unfairly):
 * A fragile platform is never a row's only platform (see above).
 * Never two hazard platforms in consecutive rows.
 * Every 4th row is guaranteed plain `SOLID`.
-* A row may spawn a second platform beside the first (5 % chance, rising to 14 %) to widen the
-  route. Rows are deliberately sparse — roughly 4–5 platforms are on screen at a time in
-  portrait, not a ladder.
+* A row may spawn a second platform beside the first. That chance runs **38 % down in the yard
+  falling to 5 % by 26 screens**, and the row gap grows from 300–380 wu to 575–640 wu over the
+  same climb: busy and forgiving at the bottom, genuinely sparse at the top.
 
 ---
 
@@ -201,7 +213,8 @@ Everything is a function of `s` = screens climbed (`height / 1600`):
 
 | Parameter | s = 0 | s = 6 | s = 16 | s = 32 | s ≥ 55 |
 |---|---|---|---|---|---|
-| Row gap (wu) | 384–470 | 404–493 | 440–535 | 490–580 | 545–620 |
+| Row gap (wu) | 300–380 | 330–410 | 400–480 | 480–560 | 560–630 |
+| Second platform in a row | 38 % | 29 % | 14 % | 5 % | 5 % |
 | Platform width (wu, base 9:16) | 190 | 184 | 172 | 158 | 143 |
 | Crumbling main platform | 0 % | 12 % | 23 % | 30 % | 34 % |
 | Fragile trap beside it | 0 % | 0 % | 15 % | 25 % | 30 % |
@@ -240,8 +253,8 @@ One pull is 100 coins and returns one of three things:
 
 | Prize | Chance | Notes |
 |---|---|---|
-| Consumable power-up | 55 % | the bread — a pull is never a total loss |
-| Outfit | 44 % | rarity weighted; a duplicate refunds 35 coins |
+| Consumable power-up | 89 % | the bread — a pull is never a total loss |
+| Outfit | 10 % | rarity weighted; a duplicate refunds 35 coins |
 | **A whole world** | **1 %** | only while any remain locked |
 
 Outfit rarity runs Common 60 / Rare 27 / Epic 10 / Legendary 3, and a rarity you have completed
@@ -285,6 +298,12 @@ gives you a moment to read the layout before anything moves.
 Anything that changes the layout (Head Start) is applied *before* the countdown so you can see
 what you are jumping into; anything that is pure velocity fires on "GO".
 
+### Testing back door
+
+Entering **`u7d%4>`** as the player name (on first launch, or via Settings → Change Name)
+unlocks every outfit and world, stocks five of every power-up and adds 1 000 coins. It is
+checked against the raw text before the name sanitiser runs, since that strips the punctuation.
+
 ### Other differences
 
 * **No shooting.** The reference game's tap-to-shoot is dropped, per the brief: steering is the
@@ -316,12 +335,12 @@ eight runs in six aspect ratios, which is how the numbers above were tuned. Curr
 
 | Playfield | avg screens | best run | coins/run |
 |---|---|---|---|
-| portrait 21:9 (1080 wu) | 21.0 | 5 299 pts | 12.5 |
-| portrait 16:9 (1440 wu) | 24.7 | 6 345 pts | 16.5 |
-| portrait 3:4 (1707 wu) | 21.5 | 5 909 pts | 12.8 |
-| landscape 4:3 (3413 wu) | 21.5 | 5 415 pts | 12.8 |
-| landscape 16:9 (4551 wu) | 17.4 | 5 778 pts | 10.4 |
-| landscape 21:9 (5973 wu) | 20.8 | 4 908 pts | 11.9 |
+| portrait 21:9 (1080 wu) | 19.7 | 6 402 pts | 11.6 |
+| portrait 16:9 (1440 wu) | 23.9 | 6 552 pts | 14.4 |
+| portrait 3:4 (1707 wu) | 24.8 | 5 736 pts | 15.0 |
+| landscape 4:3 (3413 wu) | 25.3 | 7 158 pts | 13.8 |
+| landscape 16:9 (4551 wu) | 23.2 | 6 770 pts | 13.3 |
+| landscape 21:9 (5973 wu) | 20.7 | 6 094 pts | 11.1 |
 
 Every configuration is climbable, every run ends in a death rather than a stall, and the coin
 rate puts a prize pull four to seven runs apart. The bot ignores coins entirely, so a player

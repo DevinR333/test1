@@ -24,8 +24,8 @@ import kotlin.random.Random
 /**
  * The prize machine. One pull costs [Tuning.GACHA_COST] coins and dispenses one of three things:
  *
- *  - a **power-up** (55%) - the bread, so a pull is never a total loss
- *  - an **outfit** (44%) - rarity weighted, duplicates refund part of the cost
+ *  - a **power-up** (89%) - the bread, so a pull is never a total loss
+ *  - an **outfit** (10%) - rarity weighted, duplicates refund part of the cost
  *  - a **world** (1%) - the rare one, a whole new set of biomes to climb
  */
 class GachaScreen(private val g: Game) {
@@ -53,7 +53,7 @@ class GachaScreen(private val g: Game) {
 
     private companion object {
         const val SCENE_CHANCE = 0.01f
-        const val POWERUP_CHANCE = 0.55f
+        const val OUTFIT_CHANCE = 0.10f
     }
 
     private var state = State.IDLE
@@ -216,15 +216,15 @@ class GachaScreen(private val g: Game) {
         }
 
         val anyOutfitLeft = Outfits.ALL.any { it.id != Outfits.DEFAULT_ID && !g.save.owns(it.id) }
-        if (roll < SCENE_CHANCE + POWERUP_CHANCE || !anyOutfitLeft) {
-            prizeKind = Kind.POWERUP
-            prizeId = rollPowerup()
+        if (roll < SCENE_CHANCE + OUTFIT_CHANCE && anyOutfitLeft) {
+            prizeKind = Kind.OUTFIT
+            prizeId = rollOutfit()
+            duplicate = g.save.owns(prizeId)
             return
         }
 
-        prizeKind = Kind.OUTFIT
-        prizeId = rollOutfit()
-        duplicate = g.save.owns(prizeId)
+        prizeKind = Kind.POWERUP
+        prizeId = rollPowerup()
     }
 
     private fun rollPowerup(): String {

@@ -234,19 +234,54 @@ object OutfitArt {
         }
     }
 
+    /**
+     * The neck runs diagonally from the chest up to the jaw, so the collar is a band drawn
+     * across that axis rather than a flat bar - otherwise it reads as a floating rectangle.
+     * The tag hangs from the throat under gravity, not off the side.
+     */
     private fun collar(c: Canvas, color: Int) {
-        path.reset()
-        path.moveTo(NECK_X - 20f, NECK_Y - 4f)
-        path.lineTo(NECK_X + 22f, NECK_Y - 16f)
-        path.lineTo(NECK_X + 28f, NECK_Y + 2f)
-        path.lineTo(NECK_X - 14f, NECK_Y + 14f)
-        path.close()
-        fillInk(c, color)
+        c.save()
+        c.translate(36f, -96f)
+        c.rotate(21f)
+
+        r.set(-40f, -11f, 40f, 11f)
+        c.drawRoundRect(r, 8f, 8f, ink)
+        p.color = color
+        c.drawRoundRect(r, 8f, 8f, p)
+
+        // lower half in shadow, a stitched highlight along the top edge
+        p.color = ColorX.shade(color, 0.7f)
+        r.set(-40f, 2f, 40f, 11f)
+        c.drawRoundRect(r, 7f, 7f, p)
+        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.22f)
+        r.set(-33f, -8f, 33f, -4f)
+        c.drawRoundRect(r, 2f, 2f, p)
+
+        // buckle
+        p.color = 0xFFD8DEE9.toInt()
+        r.set(-7f, -13f, 9f, 13f)
+        c.drawRoundRect(r, 3f, 3f, p)
+        p.color = 0xFF9AA4B4.toInt()
+        r.set(-3f, -9f, 2f, 9f)
+        c.drawRect(r, p)
+        c.restore()
+
+        // a little bone tag on a ring, hanging under the throat
+        val tx = 52f
+        val ty = -72f
+        ink.strokeWidth = 3.2f
+        c.drawLine(tx - 4f, ty - 12f, tx, ty - 5f, ink)
         p.color = 0xFFF2C14E.toInt()
-        c.drawCircle(NECK_X + 4f, NECK_Y + 16f, 9f, p)
-        c.drawCircle(NECK_X + 4f, NECK_Y + 16f, 9f, ink)
-        p.color = 0xFFB98F25.toInt()
-        c.drawCircle(NECK_X + 4f, NECK_Y + 16f, 4f, p)
+        r.set(tx - 9f, ty - 4f, tx + 9f, ty + 3f)
+        c.drawRoundRect(r, 3.5f, 3.5f, p)
+        c.drawCircle(tx - 9f, ty - 4f, 4.5f, p)
+        c.drawCircle(tx - 9f, ty + 3f, 4.5f, p)
+        c.drawCircle(tx + 9f, ty - 4f, 4.5f, p)
+        c.drawCircle(tx + 9f, ty + 3f, 4.5f, p)
+        p.color = ColorX.withAlpha(0xFFB98F25.toInt(), 0.7f)
+        r.set(tx - 6f, ty - 1f, tx + 6f, ty + 2f)
+        c.drawRoundRect(r, 1.5f, 1.5f, p)
+        ink.strokeWidth = 5f
     }
 
     private fun bandana(c: Canvas) {

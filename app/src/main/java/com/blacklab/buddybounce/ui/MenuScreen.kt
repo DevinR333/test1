@@ -36,6 +36,7 @@ class MenuScreen(private val g: Game) {
         // --- header chips -------------------------------------------------------------
         drawPlayerChip(c)
         drawCoinChip(c)
+        drawNotice(c)
 
         if (wide) {
             val leftCx = g.worldW * 0.30f
@@ -143,6 +144,17 @@ class MenuScreen(private val g: Game) {
         if (ui.button(c, Id.SETTINGS, x, cy, w, 88f, "SETTINGS")) {
             g.tap(); g.goto(Game.Screen.SETTINGS)
         }
+    }
+
+    private fun drawNotice(c: Canvas) {
+        if (g.noticeT <= 0f) return
+        val ui = g.ui
+        val a = (g.noticeT / 0.7f).coerceAtMost(1f)
+        val w = ui.measure(g.notice, 40f, ui.title) + 80f
+        val x = (g.worldW - w) * 0.5f
+        val y = ui.safeTop + 110f
+        ui.pill(c, x, y, w, 68f, ColorX.withAlpha(Theme.GOOD, 0.3f * a))
+        ui.text(c, g.notice, g.worldW * 0.5f, y + 46f, 40f, ColorX.withAlpha(Theme.TEXT, a), ui.title, false)
     }
 
     private fun drawPlayerChip(c: Canvas) {

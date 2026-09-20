@@ -1,6 +1,7 @@
 package com.blacklab.buddybounce.input
 
 import com.blacklab.buddybounce.data.Save
+import com.blacklab.buddybounce.game.MathX
 import com.blacklab.buddybounce.game.MathX.clamp
 import com.blacklab.buddybounce.game.Tuning
 import kotlin.math.abs
@@ -51,7 +52,18 @@ class Controls(private val save: Save) {
 
     fun onTiltSample(screenAxisAccel: Float) {
         tiltRaw = screenAxisAccel
-        smoothedTilt += (screenAxisAccel - smoothedTilt) * 0.35f
+        // Enough smoothing to kill hand tremor, little enough that the lag is not felt.
+        smoothedTilt += (screenAxisAccel - smoothedTilt) * 0.55f
+    }
+
+    /**
+     * Mild expo. A small movement gives a small, precise correction while full deflection is
+     * still full speed - the difference between "nudge him left a bit" being possible and not.
+     */
+    private fun shape(v: Float): Float {
+        val a = if (v < 0f) -v else v
+        val shaped = MathX.pow(a, Tuning.STEER_EXPO)
+        return if (v < 0f) -shaped else shaped
     }
 
     // -------------------------------------------------------------------------------------
@@ -115,7 +127,7 @@ class Controls(private val save: Save) {
         v /= (Tuning.TILT_FULLSCALE - dead)
         v *= save.tiltSensitivity
         if (save.invertTilt) v = -v
-        return clamp(v, -1f, 1f)
+        return shape(clamp(v, -1f, 1f))
     }
 
     /** The value the simulation should use this frame. */
@@ -125,7 +137,7 @@ class Controls(private val save: Save) {
 
         if (touchActive && touchEnabled) {
             lastInputDigital = true
-            return touchSteer
+            return shape(touchSteer)
         }
         if (abs(keys) > 0.01f) {
             lastInputDigital = true
@@ -138,9 +150,6 @@ class Controls(private val save: Save) {
         lastInputDigital = false
         return tiltSteer()
     }
-
-    /** Current deflection, for drawing the touch indicator. */
-    fun displayValue(): Float = if (touchActive) touchSteer else steer()
 
     /** Captures the current tilt as "neutral" so you can play lying down. */
     fun calibrate() {

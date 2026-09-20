@@ -4,12 +4,10 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import com.blacklab.buddybounce.Game
-import com.blacklab.buddybounce.data.Powerups
 import com.blacklab.buddybounce.game.Flight
 import com.blacklab.buddybounce.game.MathX.clamp01
 import com.blacklab.buddybounce.game.Tuning
 import com.blacklab.buddybounce.render.ColorX
-import kotlin.math.abs
 import kotlin.math.sin
 
 /** Score, coins, power-up timers, the pause button and the touch steering indicator. */
@@ -37,12 +35,10 @@ class Hud(private val g: Game) {
 
     // -----------------------------------------------------------------------------------
 
-    fun draw(c: Canvas, hintTimer: Float, biomeToast: Float, biomeName: String) {
+    fun draw(c: Canvas, biomeToast: Float, biomeName: String) {
         val ui = g.ui
         val left = ui.safeLeft + 34f
         val top = ui.safeTop + 30f
-
-        if (g.controls.touchEnabled) drawTouchIndicator(c)
 
         ui.text(c, g.world.score.toString(), left, top + 74f, 84f, Theme.TEXT, ui.numbers)
         val best = g.save.bestScore
@@ -81,18 +77,6 @@ class Hud(private val g: Game) {
             ui.text(c, "NEW HEIGHTS", g.worldW * 0.5f, y + 42f, 28f, ColorX.withAlpha(Theme.ACCENT, a * 0.9f), ui.body, false)
         }
 
-        if (hintTimer > 0f) {
-            val a = clamp01(hintTimer / 0.8f)
-            val msg = when {
-                g.controls.touchEnabled && g.controls.tiltEnabled -> "Tilt, or slide a finger anywhere"
-                g.controls.touchEnabled -> "Slide a finger anywhere to steer"
-                else -> "Tilt your phone to steer"
-            }
-            ui.text(
-                c, msg, g.worldW * 0.5f, Theme.SCREEN_H * 0.72f, 40f,
-                ColorX.withAlpha(Theme.TEXT, a * 0.85f), ui.body
-            )
-        }
     }
 
     private fun drawPowerBar(c: Canvas, x: Float, y: Float) {
@@ -152,73 +136,6 @@ class Hud(private val g: Game) {
         c.drawCircle(cx - r * 0.3f, cy - r * 0.22f, r * 0.14f, p)
         c.drawCircle(cx, cy - r * 0.38f, r * 0.14f, p)
         c.drawCircle(cx + r * 0.3f, cy - r * 0.22f, r * 0.14f, p)
-    }
-
-    /**
-     * Relative steering feedback: the ring is where your finger went down (the centre), the
-     * knob is where it is now. Slide either side of the ring to steer that way, anywhere on
-     * the screen. Nothing is drawn until you touch.
-     */
-    private fun drawTouchIndicator(c: Canvas) {
-        val ctl = g.controls
-        if (!ctl.touchActive) {
-            if (g.save.showGaugeAlways) {
-                val pulse = 0.18f + 0.1f * sin(g.ui.time * 2.2f)
-                g.ui.text(
-                    c, "◀  slide anywhere  ▶", g.worldW * 0.5f,
-                    Theme.SCREEN_H - g.ui.safeBottom - 54f, 28f,
-                    ColorX.withAlpha(Theme.TEXT_DIM, pulse * 2.4f), g.ui.body, false
-                )
-            }
-            return
-        }
-
-        val ax = ctl.touchAnchorX
-        val ay = ctl.touchAnchorY
-        val fx = ctl.touchX
-        val value = ctl.displayValue()
-        val range = ctl.touchRange
-
-        p.reset(); p.isAntiAlias = true
-
-        // the track you are sliding along, centred on the anchor
-        p.color = ColorX.withAlpha(0xFF0B1220.toInt(), 0.35f)
-        rect.set(ax - range, ay - 13f, ax + range, ay + 13f)
-        c.drawRoundRect(rect, 13f, 13f, p)
-
-        // deflection fill
-        p.color = ColorX.withAlpha(Theme.ACCENT, 0.55f)
-        rect.set(minOf(ax, fx), ay - 9f, maxOf(ax, fx), ay + 9f)
-        c.drawRoundRect(rect, 9f, 9f, p)
-
-        // anchor ring
-        p.style = Paint.Style.STROKE
-        p.strokeWidth = 5f
-        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.45f)
-        c.drawCircle(ax, ay, 26f, p)
-        p.style = Paint.Style.FILL
-        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.18f)
-        c.drawCircle(ax, ay, 26f, p)
-
-        // knob under the finger
-        val knobR = 34f
-        g.art.drawGlow(c, fx, ay, knobR * 2.6f, Theme.ACCENT, 0.45f)
-        p.color = 0xFFF3F6FB.toInt()
-        c.drawCircle(fx, ay, knobR, p)
-        p.color = Theme.ACCENT
-        c.drawCircle(fx, ay, knobR * 0.55f, p)
-
-        // direction chevron once you are actually steering
-        if (abs(value) > 0.08f) {
-            p.style = Paint.Style.STROKE
-            p.strokeWidth = 6f
-            p.strokeCap = Paint.Cap.ROUND
-            p.color = ColorX.withAlpha(0xFF2A1D04.toInt(), 0.9f)
-            val dir = if (value > 0f) 1f else -1f
-            c.drawLine(fx - 6f * dir, ay - 11f, fx + 7f * dir, ay, p)
-            c.drawLine(fx + 7f * dir, ay, fx - 6f * dir, ay + 11f, p)
-            p.style = Paint.Style.FILL
-        }
     }
 
     // ---- pause -------------------------------------------------------------------------

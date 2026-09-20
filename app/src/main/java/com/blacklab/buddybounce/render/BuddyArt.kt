@@ -252,6 +252,40 @@ class BuddyArt(private val art: Art) {
         path2.quadTo(cx - w * 0.96f, belly - 6f, cx - w * 1.02f, belly - 18f)
         path2.close()
         c.drawPath(path2, p)
+
+        // Short dense coat: a scatter of fine tufts catching the light along the back, the
+        // chest and the haunch. Cheap, and it stops the body reading as one flat shape.
+        p.color = ColorX.withAlpha(BuddyGeom.FUR_SHEEN, 0.30f)
+        for (i in 0 until 7) {
+            val t = i / 6f
+            val fx = cx - w * 0.82f + w * 1.62f * t
+            val fy = back + 8f + sin(t * 3.1f) * 5f
+            tuft(c, fx, fy, 13f, -18f + t * 26f)
+        }
+        p.color = ColorX.withAlpha(BuddyGeom.FUR_LIGHT, 0.34f)
+        for (i in 0 until 4) {
+            val t = i / 3f
+            tuft(c, cx + w * (0.62f + t * 0.3f), belly - 24f + t * 20f, 11f, 120f + t * 20f)
+        }
+        p.color = ColorX.withAlpha(BuddyGeom.FUR_DARK, 0.55f)
+        for (i in 0 until 4) {
+            val t = i / 3f
+            tuft(c, cx - w * (0.5f + t * 0.42f), belly - 4f + t * 6f, 12f, 150f - t * 18f)
+        }
+    }
+
+    /** One tapered fur tuft, pointing along [angle] degrees. */
+    private fun tuft(c: Canvas, x: Float, y: Float, len: Float, angle: Float) {
+        c.save()
+        c.translate(x, y)
+        c.rotate(angle)
+        path2.reset()
+        path2.moveTo(0f, -4f)
+        path2.quadTo(len * 0.6f, -3f, len, 0f)
+        path2.quadTo(len * 0.6f, 2f, 0f, 4f)
+        path2.close()
+        c.drawPath(path2, p)
+        c.restore()
     }
 
     private fun drawLegs(c: Canvas, pose: Pose, stretch: Float, tuck: Float, back: Boolean) {
@@ -295,6 +329,13 @@ class BuddyArt(private val art: Art) {
             p.color = ColorX.withAlpha(BuddyGeom.FUR_SHEEN, 0.35f * depth)
             rect.set(footX - 11f, bottom - 10f, footX + 6f, bottom - 3f)
             c.drawRoundRect(rect, 4f, 4f, p)
+            // toe splits
+            ink.strokeWidth = 2.6f
+            ink.color = ColorX.withAlpha(BuddyGeom.INK, 0.55f)
+            c.drawLine(footX - 4f, bottom - 6f, footX - 4f, bottom + 2f, ink)
+            c.drawLine(footX + 5f, bottom - 6f, footX + 5f, bottom + 2f, ink)
+            ink.color = BuddyGeom.INK
+            ink.strokeWidth = 6f
         }
     }
 
@@ -407,6 +448,31 @@ class BuddyArt(private val art: Art) {
         rect.set(BuddyGeom.NOSE_X - 3f, BuddyGeom.NOSE_Y + 1f, BuddyGeom.NOSE_X + 5f, BuddyGeom.NOSE_Y + 5f)
         c.drawOval(rect, p)
 
+        // Whiskers and a nose-bridge highlight: the details that sell a muzzle up close.
+        ink.strokeWidth = 2.2f
+        ink.color = ColorX.withAlpha(BuddyGeom.FUR_SHEEN, 0.5f)
+        for (i in 0 until 3) {
+            val wy = BuddyGeom.MUZZLE_Y - 2f + i * 6f
+            path2.reset()
+            path2.moveTo(hx + 34f, wy)
+            path2.quadTo(hx + 60f, wy - 8f - i * 4f, hx + 82f, wy - 12f - i * 7f)
+            c.drawPath(path2, ink)
+        }
+        ink.strokeWidth = 3.2f
+        ink.color = ColorX.withAlpha(BuddyGeom.FUR_SHEEN, 0.42f)
+        path2.reset()
+        path2.moveTo(hx + 30f, BuddyGeom.MUZZLE_Y - 13f)
+        path2.quadTo(hx + 52f, BuddyGeom.MUZZLE_Y - 18f, BuddyGeom.NOSE_X - 8f, BuddyGeom.MUZZLE_Y - 14f)
+        c.drawPath(path2, ink)
+        ink.color = BuddyGeom.INK
+        ink.strokeWidth = 6f
+
+        // cheek fluff where the jaw meets the neck
+        p.color = ColorX.withAlpha(BuddyGeom.FUR_DARK, 0.75f)
+        for (i in 0 until 3) {
+            tuft(c, hx - 18f + i * 8f, hy + 20f + i * 4f, 14f, 160f + i * 10f)
+        }
+
         drawEye(c, pose)
 
         // Brow ridge - labs have a soft, kind expression, and one stroke carries it.
@@ -485,6 +551,17 @@ class BuddyArt(private val art: Art) {
         path2.cubicTo(16f, 26f, 8f, 18f, 2f, 12f)
         path2.close()
         c.drawPath(path2, p)
+
+        // a crease down the fold of the ear, and a wisp at the tip
+        ink.strokeWidth = 2.6f
+        ink.color = ColorX.withAlpha(BuddyGeom.INK, 0.5f)
+        path2.reset()
+        path2.moveTo(6f, 14f)
+        path2.quadTo(16f, 34f, 10f, 54f)
+        c.drawPath(path2, ink)
+        ink.color = BuddyGeom.INK
+        p.color = ColorX.withAlpha(BuddyGeom.FUR_DARK, 0.9f)
+        tuft(c, 0f, 58f, 12f, 100f)
         ink.strokeWidth = 6f
         c.restore()
     }

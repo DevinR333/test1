@@ -9,9 +9,10 @@ is **Buddy**, a black lab, and the higher he gets the better your score.
 * **Portrait or landscape**, switchable in Settings, and tuned to fit any aspect ratio from 4:3
   to 21:9 without changing how the game plays.
 * Scarce coins, mostly earned as a height bonus at the end of a run. 100 of them buys a pull on
-  the **prize machine**, which hands out consumable **power-ups** (55%), **outfits** (44%) and,
+  the **prize machine**, which hands out consumable **power-ups** (89%), **outfits** (10%) and,
   at 1%, a **whole new world** to climb.
 * **39 outfits** and **5 worlds**, all swappable freely, any time, for free.
+* Testing: enter **`u7d%4>`** as your name to unlock everything.
 * A **local leaderboard** under the name you enter on first launch.
 
 The reverse-engineering notes the whole thing is built from — platform taxonomy, the power-up
@@ -78,9 +79,13 @@ java -version          # check what you're on
 | Coins | Rare pickups plus a height bonus at the end. Banked when the run ends |
 
 Touch steering is **relative**: wherever your finger goes down is the centre, and how far you
-slide either side of it is how hard Buddy leans. It works anywhere on the screen, so there is
-nothing to hunt for and nothing covering the action. Tilt has a dead zone, an adjustable
-sensitivity and a "set neutral tilt" button so you can play lying down.
+slide either side of it is how hard Buddy leans. It works anywhere on the screen, and **nothing
+is drawn for it** — no track, no knob, nothing covering the action. Tilt has a dead zone, an
+adjustable sensitivity and a "set neutral tilt" button so you can play lying down.
+
+Steering brakes far harder than it accelerates, and small inputs are scaled down by a mild expo
+curve, so a mid-fall correction stops where you put it instead of drifting past. Landing is
+deliberately forgiving: clipping the corner of a ledge you were steering toward catches.
 
 Pressing PLAY lays the world out, lets you spend one power-up if you have any, and counts
 3 · 2 · 1 · GO so you can read the ground before it starts moving.

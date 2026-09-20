@@ -88,6 +88,18 @@ class GameRenderer(private val art: Art) {
         r.set(left + w * 0.06f, top + h * 0.06f, right - w * 0.06f, top + h * 0.2f)
         c.drawRoundRect(r, h * 0.1f, h * 0.1f, p)
 
+        // end caps: a slightly darker block at each end reads as thickness
+        p.color = ColorX.withAlpha(ColorX.shade(bodyColor, 0.82f), alpha * 0.9f)
+        r.set(left, top + h * 0.18f, left + h * 0.5f, top + h * 0.92f)
+        c.drawRoundRect(r, h * 0.2f, h * 0.2f, p)
+        r.set(right - h * 0.5f, top + h * 0.18f, right, top + h * 0.92f)
+        c.drawRoundRect(r, h * 0.2f, h * 0.2f, p)
+        // specular line along the very top
+        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), alpha * 0.22f)
+        r.set(left + w * 0.1f, top + h * 0.04f, right - w * 0.22f, top + h * 0.12f)
+        c.drawRoundRect(r, h * 0.06f, h * 0.06f, p)
+        surfaceDetail(c, plat, top, left, right, w, h, skin, alpha, pal)
+
         when (skin) {
             0 -> grassTufts(c, plat, top, left, right, pal, alpha)
             1 -> moss(c, plat, top, left, right, pal, alpha)
@@ -129,6 +141,71 @@ class GameRenderer(private val art: Art) {
         }
 
         c.restore()
+    }
+
+    /**
+     * Close-up texture on the plank face: grain and nail heads on wood, speckle and cracks on
+     * rock, facets on crystal, a dusting of sparkle on cloud. Two or three strokes each, but it
+     * is the difference between a coloured bar and a drawn object.
+     */
+    private fun surfaceDetail(
+        c: Canvas, plat: Platform, top: Float, left: Float, right: Float,
+        w: Float, h: Float, skin: Int, a: Float, pal: BiomePalette
+    ) {
+        when (skin) {
+            0, 1 -> {
+                // wood grain
+                ink.color = ColorX.withAlpha(ColorX.shade(pal.platBody, 0.62f), a * 0.55f)
+                ink.strokeWidth = 2.2f
+                for (i in 0 until 2) {
+                    val gy = top + h * (0.42f + i * 0.24f)
+                    path.reset()
+                    path.moveTo(left + w * 0.1f, gy)
+                    path.quadTo(plat.x, gy + (if (i == 0) 3f else -3f), right - w * 0.1f, gy)
+                    c.drawPath(path, ink)
+                }
+                // nail heads
+                p.color = ColorX.withAlpha(0xFF6E6152.toInt(), a * 0.8f)
+                c.drawCircle(left + h * 0.5f, top + h * 0.55f, h * 0.09f, p)
+                c.drawCircle(right - h * 0.5f, top + h * 0.55f, h * 0.09f, p)
+            }
+            2 -> {
+                // cloud sparkle
+                p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), a * 0.75f)
+                for (i in 0 until 3) {
+                    val sx = left + w * (0.22f + i * 0.28f)
+                    val sr = 2.4f + Hash.f(plat.seed + i, 271) * 2.2f
+                    c.drawCircle(sx, top + h * 0.52f, sr, p)
+                }
+            }
+            3 -> {
+                // crystal facets
+                ink.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), a * 0.45f)
+                ink.strokeWidth = 2.4f
+                for (i in 0 until 3) {
+                    val fx = left + w * (0.24f + i * 0.26f)
+                    c.drawLine(fx, top + h * 0.12f, fx - h * 0.35f, top + h * 0.9f, ink)
+                }
+            }
+            else -> {
+                // rock speckle and a hairline crack
+                p.color = ColorX.withAlpha(ColorX.shade(pal.platShade, 0.75f), a * 0.85f)
+                for (i in 0 until 6) {
+                    val sx = left + w * (0.12f + Hash.f(plat.seed + i, 277) * 0.76f)
+                    val sy = top + h * (0.3f + Hash.f(plat.seed + i, 281) * 0.5f)
+                    c.drawCircle(sx, sy, 1.8f + Hash.f(plat.seed + i, 283) * 2.4f, p)
+                }
+                ink.color = ColorX.withAlpha(0xFF000000.toInt(), a * 0.35f)
+                ink.strokeWidth = 2f
+                path.reset()
+                path.moveTo(left + w * 0.3f, top + h * 0.25f)
+                path.lineTo(left + w * 0.42f, top + h * 0.6f)
+                path.lineTo(left + w * 0.36f, top + h * 0.9f)
+                c.drawPath(path, ink)
+            }
+        }
+        ink.color = 0xCC080A0F.toInt()
+        ink.strokeWidth = 5f
     }
 
     /** Which platform dressing suits a band: grass, moss, snow/cloud, crystal or rock. */
@@ -348,6 +425,21 @@ class GameRenderer(private val art: Art) {
         p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.5f)
         r.set(x - w * 0.55f, y - rad * 0.7f, x - w * 0.1f, y - rad * 0.1f)
         c.drawOval(r, p)
+
+        // a shine sweeping across the face, so gold reads as metal rather than yellow
+        val sweep = ((t * 0.7f) % 1.6f) - 0.3f
+        if (sweep in 0f..1f && w > rad * 0.3f) {
+            c.save()
+            r.set(x - w, y - rad, x + w, y + rad)
+            c.clipRect(r.left, r.top, r.right, r.bottom)
+            p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.32f)
+            c.save()
+            c.rotate(24f, x, y)
+            r.set(x - w + w * 2f * sweep - 3f, y - rad * 1.4f, x - w + w * 2f * sweep + 5f, y + rad * 1.4f)
+            c.drawRect(r, p)
+            c.restore()
+            c.restore()
+        }
     }
 
     private fun boneCoin(c: Canvas, x: Float, y: Float, t: Float) {

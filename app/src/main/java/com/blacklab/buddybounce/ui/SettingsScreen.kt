@@ -17,7 +17,6 @@ class SettingsScreen(private val g: Game) {
         const val INVERT = 6006
         const val SOUND = 6007
         const val HAPTICS = 6008
-        const val GAUGE = 6009
         const val NAME = 6010
     }
 
@@ -98,12 +97,6 @@ class SettingsScreen(private val g: Game) {
             y += 100f
         }
 
-        if (save.controlMode != Save.CONTROL_TILT) {
-            if (ui.toggle(c, Id.GAUGE, x, y, w, 88f, "Show the swipe hint", save.showGaugeAlways)) {
-                g.tap(); save.showGaugeAlways = !save.showGaugeAlways
-            }
-            y += 100f
-        }
         return y
     }
 

@@ -31,11 +31,21 @@ object Tuning {
     const val MAX_SUBSTEPS = 8
 
     // ---- horizontal ------------------------------------------------------------------------
-    const val REF_MAX_VX = 1700f
-    const val STEER_EASE_TILT = 9f
-    const val STEER_EASE_DIGITAL = 16f
-    const val TILT_DEADZONE = 0.6f        // m/s^2
-    const val TILT_FULLSCALE = 4.5f       // m/s^2 (~27 degrees) for full deflection
+    const val REF_MAX_VX = 1900f
+
+    // Steering uses ASYMMETRIC rates: speeding up is deliberately softer than slowing down.
+    // A single symmetric rate is what made falls feel imprecise - the velocity lagged the
+    // finger on the way in AND on the way out, so Buddy kept drifting after a correction and
+    // sailed past the platform. Braking hard means "stop" is instant and a correction lands.
+    const val STEER_ACCEL_TILT = 15f
+    const val STEER_BRAKE_TILT = 38f
+    const val STEER_ACCEL_DIGITAL = 26f
+    const val STEER_BRAKE_DIGITAL = 55f
+    /** Small inputs get finer control; full deflection is still full speed. */
+    const val STEER_EXPO = 1.25f
+
+    const val TILT_DEADZONE = 0.45f       // m/s^2
+    const val TILT_FULLSCALE = 4.2f       // m/s^2 (~25 degrees) for full deflection
 
     // ---- camera --------------------------------------------------------------------------
     const val CAM_ANCHOR = 0.45f          // fraction from the top of the view
@@ -46,7 +56,12 @@ object Tuning {
     const val BUDDY_W = 220f
     const val BUDDY_H = 160f
     /** Collision half-width at the paws - narrower than the art so near-misses feel generous. */
-    const val BUDDY_FOOT_HALF = 48f
+    const val BUDDY_FOOT_HALF = 56f
+    /**
+     * Extra landing tolerance granted when he is still travelling toward the platform's centre.
+     * Clipping the corner of a ledge you were obviously aiming for should catch, not drop you.
+     */
+    const val LAND_GRAB = 26f
     const val BUDDY_HURT_HALF_W = 62f
     const val BUDDY_HURT_HALF_H = 52f
 
@@ -110,9 +125,10 @@ object Tuning {
     /** Difficulty 0..1 as a function of screens climbed. */
     fun difficulty(screens: Float): Float = smoothstep(0f, 55f, screens)
 
-    fun gapMin(screens: Float): Float = lerp(384f, 560f, difficulty(screens))
+    // Dense and forgiving down in the yard, thinning out as the climb gets serious.
+    fun gapMin(screens: Float): Float = lerp(300f, 575f, difficulty(screens))
 
-    fun gapMax(screens: Float): Float = lerp(470f, 627f, difficulty(screens))
+    fun gapMax(screens: Float): Float = lerp(380f, 640f, difficulty(screens))
 
     /** Platform width before the aspect-ratio correction in [Metrics]. */
     fun platWidth(screens: Float): Float = lerp(190f, 140f, difficulty(screens))
@@ -133,8 +149,11 @@ object Tuning {
     /** Expected enemies per screen of generated world. */
     fun enemyDensity(screens: Float): Float = lerp(0f, 1.1f, smoothstep(4f, 45f, screens))
 
-    /** Chance a row spawns a second, side-by-side platform. Kept low: sparse is the point. */
-    fun doubleRowChance(screens: Float): Float = lerp(0.05f, 0.14f, difficulty(screens))
+    /**
+     * Chance a row spawns a second, side-by-side platform. High early so the first screens are
+     * busy and forgiving, falling away as you climb so the top is genuinely sparse.
+     */
+    fun doubleRowChance(screens: Float): Float = lerp(0.38f, 0.05f, smoothstep(0f, 26f, screens))
 
     fun biomeIndex(screens: Float): Int {
         val i = (screens / BIOME_SPAN).toInt()

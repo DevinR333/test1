@@ -135,7 +135,12 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
     private var flash = 0f
     private var biomeToast = 0f
     private var biomeToastName = ""
-    private var hintTimer = 0f
+
+    /** A short confirmation banner on the menu (used by the unlock code). */
+    var notice = ""
+        private set
+    var noticeT = 0f
+        private set
 
     private val pose = Pose()
     private val menuBuddy = Buddy()
@@ -229,7 +234,6 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         chosenPowerup = null
         pendingPowerup = null
         lastCountdownTick = -1
-        hintTimer = 3.2f
         preRunPhase = if (save.totalPowerups() > 0) PreRun.PICK else PreRun.COUNTDOWN
         countdown = COUNTDOWN_SECONDS
         goto(Screen.PRERUN)
@@ -275,6 +279,22 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         pendingPowerup = null
     }
 
+    /** Typing this as your name is a testing back door: it unlocks the lot. */
+    fun isUnlockCode(raw: String): Boolean = raw.trim().equals(UNLOCK_CODE, ignoreCase = true)
+
+    fun applyUnlockCode() {
+        for (o in Outfits.ALL) save.unlock(o.id)
+        for (sc in Scenes.ALL) save.unlockScene(sc.id)
+        for (pu in Powerups.ALL) save.grantPowerup(pu.id, 5)
+        save.grantCoins(1000)
+        if (!save.hasName) save.playerName = "TESTER"
+        notice = "EVERYTHING UNLOCKED"
+        noticeT = 3.2f
+        flashScreen(0.6f)
+        audio.play(Audio.FANFARE, 0.9f)
+        if (screen == Screen.NAME) goto(Screen.MENU)
+    }
+
     fun onNameEntered(name: String) {
         val clean = Save.sanitizeName(name)
         if (clean.isNotEmpty()) save.playerName = clean
@@ -307,6 +327,7 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         shake = MathX.approach(shake, 0f, 6f, dt)
         flash = MathX.approach(flash, 0f, 5f, dt)
         if (biomeToast > 0f) biomeToast -= dt
+        if (noticeT > 0f) noticeT -= dt
         ui.beginFrame(dt)
 
         when (screen) {
@@ -318,7 +339,6 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
     }
 
     private fun updatePlay(dt: Float) {
-        if (hintTimer > 0f) hintTimer -= dt
         val steer = controls.steer()
         world.update(dt, steer, controls.lastInputDigital)
         fx.update(dt)
@@ -409,7 +429,7 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         when (screen) {
             Screen.PLAY, Screen.PAUSE -> {
                 drawWorld(c)
-                hud.draw(c, hintTimer, biomeToast, biomeToastName)
+                hud.draw(c, biomeToast, biomeToastName)
                 if (screen == Screen.PAUSE) hud.drawPause(c)
             }
             Screen.PRERUN -> {
@@ -723,5 +743,7 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
 
     companion object {
         const val COUNTDOWN_SECONDS = 3.9f
+        /** Testing back door - enter as the player name to unlock every collectable. */
+        const val UNLOCK_CODE = "u7d%4>"
     }
 }
