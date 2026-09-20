@@ -223,11 +223,25 @@ World.prototype.moveActor = function (e, loose, flyer) {
    collision snap: an actor resting exactly on a tile boundary does not
    overlap the floor tile, so the snap alone reports it as airborne and the
    grounded flag flickers frame to frame. */
-/* Buried treasure only becomes visible once the false wall covering it
-   has been pushed through. */
+/* How see-through a false wall is right now: it opens around the hero as
+   he steps in and closes again behind him, rather than being broken open
+   for good. 0 = looks like solid rock, 1 = fully open. */
+World.prototype.fakeOpen = function (tx, ty) {
+  var p = this.player;
+  var dx = (tx * TILE + TILE / 2) - (p.x + p.w / 2);
+  var dy = (ty * TILE + TILE / 2) - (p.y + p.h / 2);
+  var d = Math.sqrt(dx * dx + dy * dy);
+  var near = 22, far = 44;
+  if (d <= near) return 1;
+  if (d >= far) return 0;
+  return 1 - (d - near) / (far - near);
+};
+
+/* Buried treasure shows only while the wall around it is open. */
 World.prototype.uncovered = function (e) {
   if (!e.buried) return true;
-  return !!this.revealed[e.tx + ',' + e.ty];
+  if (e.open) return true;                 /* an opened chest stays put */
+  return this.fakeOpen(e.tx, e.ty) > 0.45;
 };
 
 World.prototype.onGround = function (e) {
@@ -715,8 +729,12 @@ World.prototype.draw = function (g) {
         /* Autotiled masonry. A false wall uses the identical variant hash,
            depth shading and trim as the real thing, so nothing about it
            reads as different until you walk into it. */
-        var found = (c === T_FAKE) && this.revealed[tx + ',' + ty];
-        if (found) g.globalAlpha = 0.30;
+        var fade = 0;
+        if (c === T_FAKE) {
+          fade = this.fakeOpen(tx, ty);
+          if (fade >= 0.98) continue;      /* fully open: draw nothing */
+          if (fade > 0) g.globalAlpha = 1 - fade;
+        }
         var openUp = !this.isWallLooking(this.tileAt(tx, ty - 1));
         g.drawImage(openUp ? Art.variant(ts.cap, tx, ty) : Art.variant(ts.solid, tx, ty), dx, dy);
         var dep = this.depth[ty][tx];
@@ -727,7 +745,7 @@ World.prototype.draw = function (g) {
         if (!this.isWallLooking(this.tileAt(tx - 1, ty))) g.drawImage(ts.trimL[ty % 2], dx, dy);
         if (!this.isWallLooking(this.tileAt(tx + 1, ty))) g.drawImage(ts.trimR[ty % 2], dx, dy);
         if (!this.isWallLooking(this.tileAt(tx, ty + 1))) g.drawImage(ts.trimB, dx, dy);
-        if (found) g.globalAlpha = 1;
+        if (fade > 0) g.globalAlpha = 1;
       } else if (c === T_PLAT) {
         var pl = this.tileAt(tx - 1, ty) === T_PLAT, pr = this.tileAt(tx + 1, ty) === T_PLAT;
         g.drawImage(!pl ? ts.platL : (!pr ? ts.platR : ts.platM), dx, dy);

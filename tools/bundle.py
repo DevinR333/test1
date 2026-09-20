@@ -21,7 +21,17 @@ out = out.replace('<link rel="stylesheet" href="src/style.css">',
 # drop the individual script tags, then append one combined block
 for name in order:
     out = out.replace('  <script src="src/%s"></script>\n' % name, '')
-out = out.replace('</body>', '  <script>\n%s\n  </script>\n</body>' % '\n'.join(js))
+import datetime, subprocess
+try:
+    sha = subprocess.check_output(['git', '-C', ROOT, 'rev-parse', '--short', 'HEAD'],
+                                  stderr=subprocess.DEVNULL).decode().strip()
+except Exception:
+    sha = 'local'
+build_id = datetime.datetime.now().strftime('%m%d-%H%M') + '-' + sha
+stamp = 'window.BUILD_ID = "%s";' % build_id
+out = out.replace('</body>', '  <script>%s</script>\n  <script>\n%s\n  </script>\n</body>'
+                  % (stamp, '\n'.join(js)))
+print('build id: ' + build_id)
 
 dest = os.path.join(ROOT, 'buddy-blade.html')
 open(dest, 'w').write(out)

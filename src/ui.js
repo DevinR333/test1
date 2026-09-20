@@ -92,6 +92,7 @@ var UI = (function () {
         Text.centerShadow(g, hint('PRESS ENTER', 'PRESS A', 'TAP TO START'),
           cx, VIEW_H - 32, '#ffffff', 1);
       }
+      Text.draw(g, 'BUILD ' + (window.BUILD_ID || 'DEV'), 6, VIEW_H - 10, '#4e4663', 1);
       Text.centerShadow(g, hint('ARROWS MOVE   Z JUMP   X SWING',
                                 'STICK MOVE   A JUMP   X SWING',
                                 'STICK MOVE   JUMP   SWING'),
@@ -724,6 +725,7 @@ var UI = (function () {
       Text.draw(g, String(Save.get().coins), pv, 130, '#ffe27a', 1);
       var cr = continueRect();
       tapBtn(g, cr, 'CONTINUE', Math.floor(G.t / 20) % 2 === 0);
+      Text.draw(g, 'BUILD ' + (window.BUILD_ID || 'DEV'), 6, VIEW_H - 10, '#4e4663', 1);
     }
   };
 
