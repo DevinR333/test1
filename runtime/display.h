@@ -26,6 +26,10 @@ typedef struct { int x, y, w, h; } gb_rect_t;
 gb_rect_t gb_view_frame(gb_view_mode_t mode, int win_w, int win_h);
 gb_rect_t gb_view_screen(gb_view_mode_t mode, int win_w, int win_h);
 
+/* The world renderer's scale for "the screen at its natural size" in this
+ * mode's frame. Zoom multiplies it. */
+float gb_view_base_scale(gb_view_mode_t mode, int win_w, int win_h);
+
 /* The chooser, drawn into the picture itself so it looks the same wherever it
  * runs and needs nothing from the platform but a buffer. */
 void gb_menu_draw(uint32_t *dst, int dst_w, int dst_h, int selected);

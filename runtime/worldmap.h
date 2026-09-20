@@ -43,6 +43,11 @@ extern const uint8_t  gb_world_room_tileset[GB_WORLD_ROOMS];
 extern const uint8_t  gb_world_layouts[][GB_ROOM_TILES];
 extern const int      gb_world_layout_count;
 extern const uint16_t gb_world_room_layout[GB_SEASONS][GB_WORLD_ROOMS];
+
+/* Rooms the cartridge leaves as a placeholder in a given season: a letter
+ * drawn in two metatiles, where the player can never stand. Drawn as void
+ * rather than as scenery. */
+extern const uint8_t  gb_world_room_void[GB_SEASONS][GB_WORLD_ROOMS];
 extern const uint8_t  gb_world_mappings[][GB_MAPPING_BYTES];
 extern const int      gb_world_mapping_count;
 extern const uint16_t gb_world_tileset_mapping[GB_SEASONS][GB_TILESET_SLOTS];

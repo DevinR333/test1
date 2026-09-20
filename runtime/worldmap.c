@@ -189,7 +189,14 @@ void gb_world_render(const gb_t *gb, uint32_t *dst, int dst_w, int dst_h,
                  * of the number. */
                 int tileset = gb_world_room_tileset[room] & 0x7F;
                 int assets = gb_world_tileset_asset[season][tileset];
-                solid = (assets == GB_TILESET_NONE);
+
+                /* A room the cartridge never uses this season holds a
+                 * placeholder rather than ground - a letter drawn in two
+                 * metatiles. The game never shows one because the player can
+                 * never stand there; a view pulled back over the whole world
+                 * would, so it is drawn as nothing instead. */
+                solid = (assets == GB_TILESET_NONE)
+                     || gb_world_room_void[season][room];
                 if (!solid) {
                     int layout = gb_world_room_layout[season][room];
                     uint8_t metatile =

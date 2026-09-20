@@ -87,6 +87,8 @@ static struct {
     float         cam_x, cam_y; /* eased, so a room change glides */
     int           cam_valid;
     int           map_w, map_h;
+    uint32_t     *frame_pixels;   /* the chosen shape, composed on its own */
+    int           frame_w, frame_h;
     BITMAPINFO    map_bmi;
 } app;
 
@@ -524,9 +526,12 @@ static float min_zoom(HWND hwnd)
 {
     RECT rc;
     GetClientRect(hwnd, &rc);
-    float base = game_scale(hwnd);
+    gb_rect_t f = gb_view_frame(app.view_mode, rc.right - rc.left,
+                                rc.bottom - rc.top);
+    float base = gb_view_base_scale(app.view_mode, rc.right - rc.left,
+                                    rc.bottom - rc.top);
     if (base <= 0.0f) return 1.0f;
-    return gb_world_cover_scale(rc.right - rc.left, rc.bottom - rc.top) / base;
+    return gb_world_cover_scale(f.w, f.h) / base;
 }
 
 /* One view, at any zoom.
@@ -538,6 +543,27 @@ static float min_zoom(HWND hwnd)
  * is in, at the same scale. The game never stops, and input keeps reaching it,
  * so zooming out is something done while playing rather than instead of it.
  */
+/* The composed picture into the window, with black wherever the chosen shape
+ * does not reach. One blit, so nothing is resampled twice. */
+static void blit_frame(HDC dc, gb_rect_t frame, int cw, int ch)
+{
+    memset(app.map_pixels, 0, (size_t)cw * ch * sizeof(uint32_t));
+    for (int y = 0; y < frame.h; y++) {
+        int dy = frame.y + y;
+        if (dy < 0 || dy >= ch) continue;
+        const uint32_t *src = app.frame_pixels + (size_t)y * frame.w;
+        uint32_t *row = app.map_pixels + (size_t)dy * cw;
+        for (int x = 0; x < frame.w; x++) {
+            int dx = frame.x + x;
+            if (dx >= 0 && dx < cw) row[dx] = src[x];
+        }
+    }
+    if (app.menu_open)
+        gb_menu_draw(app.map_pixels, cw, ch, app.menu_sel);
+    StretchDIBits(dc, 0, 0, cw, ch, 0, 0, cw, ch,
+                  app.map_pixels, &app.map_bmi, DIB_RGB_COLORS, SRCCOPY);
+}
+
 static void paint(HWND hwnd)
 {
     PAINTSTRUCT ps;
@@ -564,10 +590,19 @@ static void paint(HWND hwnd)
 
     SetStretchBltMode(dc, COLORONCOLOR);
 
-    /* At zoom 1 the screen is as large as it can be while staying square. */
-    float base = (float)cw / GB_SCREEN_W;
-    float by = (float)ch / GB_SCREEN_H;
-    if (by < base) base = by;
+    /* The shape the player chose, and the scale at which the hardware's
+     * screen is its natural size inside it.
+     *
+     * All three modes are the same picture: the world, drawn with square
+     * pixels, with the live screen in it at its own scale. They differ only
+     * in the shape of the rectangle that picture fills - the whole window, a
+     * 16:9 one, or a 4:3 one - and therefore in how much of the world is
+     * visible. Nothing is ever stretched to fit a shape, which is what made
+     * Link short in 4:3. */
+    gb_rect_t frame = gb_view_frame(app.view_mode, cw, ch);
+    float base = gb_view_base_scale(app.view_mode, cw, ch);
+    int fw = frame.w, fh = frame.h;
+    if (fw <= 0 || fh <= 0) { EndPaint(hwnd, &ps); return; }
 
     if (app.map_w != cw || app.map_h != ch) {
         free(app.map_pixels);
@@ -581,69 +616,45 @@ static void paint(HWND hwnd)
         app.map_bmi.bmiHeader.biBitCount = 32;
         app.map_bmi.bmiHeader.biCompression = BI_RGB;
     }
-    if (!app.map_pixels) { EndPaint(hwnd, &ps); return; }
-
-    /* The two fixed shapes show the hardware's screen and nothing else, in
-     * the largest 16:9 or 4:3 rectangle the window will hold, with the screen
-     * centred in it at a whole multiple so no row is doubled while its
-     * neighbour is not. */
-    if (app.view_mode != GB_VIEW_WORLD) {
-        gb_rect_t r = gb_view_screen(app.view_mode, cw, ch);
-        memset(app.map_pixels, 0, (size_t)cw * ch * sizeof(uint32_t));
-        for (int y = 0; y < r.h; y++) {
-            int dy = r.y + y;
-            if (dy < 0 || dy >= ch) continue;
-            const uint32_t *src = app.pixels + (y * GB_SCREEN_H / r.h) * GB_SCREEN_W;
-            uint32_t *row = app.map_pixels + (size_t)dy * cw;
-            for (int x = 0; x < r.w; x++) {
-                int dx = r.x + x;
-                if (dx >= 0 && dx < cw)
-                    row[dx] = src[x * GB_SCREEN_W / r.w];
-            }
-        }
-        if (app.menu_open)
-            gb_menu_draw(app.map_pixels, cw, ch, app.menu_sel);
-        StretchDIBits(dc, 0, 0, cw, ch, 0, 0, cw, ch,
-                      app.map_pixels, &app.map_bmi, DIB_RGB_COLORS, SRCCOPY);
-        EndPaint(hwnd, &ps);
-        return;
+    if (app.frame_w != fw || app.frame_h != fh) {
+        free(app.frame_pixels);
+        app.frame_pixels = malloc((size_t)fw * fh * sizeof(uint32_t));
+        app.frame_w = fw;
+        app.frame_h = fh;
     }
+    if (!app.map_pixels || !app.frame_pixels) { EndPaint(hwnd, &ps); return; }
 
-    /* Above natural size there is no world to put around the screen. Nor is
-     * there anywhere the world data does not describe - menus, cutscenes and
-     * the opening - where surrounding the screen with overworld scenery would
-     * show somewhere the player is not. */
+    uint32_t *fb = app.frame_pixels;
+
+    /* Where the world data does not describe what is on screen - a menu, a
+     * cutscene, a dungeon, the opening - there is nothing to draw around the
+     * screen, so the screen is shown on its own, centred, with its own
+     * proportions kept. */
     int world_ok = view && where->in_world;
-    if (app.zoom > 1.001f || !world_ok) {
-        app.cam_valid = 0;
-        float z = app.zoom < 1.0f ? 1.0f : app.zoom;
-        gb_viewport_t v = gb_fit_viewport(cw, ch, app.fit, z,
-                                          app.pan_x, app.pan_y);
-        if (v.dst_w < cw || v.dst_h < ch) {
-            HBRUSH bg = (HBRUSH)GetStockObject(BLACK_BRUSH);
-            RECT bars[4] = {
-                { 0, 0, cw, v.dst_y },
-                { 0, v.dst_y + v.dst_h, cw, ch },
-                { 0, v.dst_y, v.dst_x, v.dst_y + v.dst_h },
-                { v.dst_x + v.dst_w, v.dst_y, cw, v.dst_y + v.dst_h },
-            };
-            for (int i = 0; i < 4; i++)
-                if (bars[i].right > bars[i].left && bars[i].bottom > bars[i].top)
-                    FillRect(dc, &bars[i], bg);
+    if (!world_ok) {
+        float s = base * app.zoom;
+        if (s < 0.05f) s = 0.05f;
+        int sw = (int)(GB_SCREEN_W * s), sh = (int)(GB_SCREEN_H * s);
+        if (sw > fw) { sw = fw; sh = fw * GB_SCREEN_H / GB_SCREEN_W; }
+        if (sh > fh) { sh = fh; sw = fh * GB_SCREEN_W / GB_SCREEN_H; }
+        int ox = (fw - sw) / 2, oy = (fh - sh) / 2;
+        memset(fb, 0, (size_t)fw * fh * sizeof(uint32_t));
+        for (int y = 0; y < sh; y++) {
+            const uint32_t *src = app.pixels + (y * GB_SCREEN_H / sh) * GB_SCREEN_W;
+            uint32_t *row = fb + (size_t)(oy + y) * fw + ox;
+            for (int x = 0; x < sw; x++)
+                row[x] = src[x * GB_SCREEN_W / sw];
         }
-        StretchDIBits(dc, v.dst_x, v.dst_y, v.dst_w, v.dst_h,
-                      (int)(v.src_x + 0.5f), (int)(v.src_y + 0.5f),
-                      (int)(v.src_w + 0.5f), (int)(v.src_h + 0.5f),
-                      app.pixels, &app.bmi, DIB_RGB_COLORS, SRCCOPY);
+        app.cam_valid = 0;
+        blit_frame(dc, frame, cw, ch);
         EndPaint(hwnd, &ps);
         return;
     }
 
-    /* At natural size and below, the window is filled with world and the live
-     * screen sits in it at its own scale. At exactly 1 the screen is the size
-     * the hardware intends and the rest of a widescreen window shows the world
-     * around it, rather than black bars. Nothing is stretched: every pixel is
-     * drawn at the same scale. */
+    /* Every pixel is drawn at one scale: the screen's natural size in this
+     * frame, times the zoom. Below 1 the camera pulls back and more of the
+     * world is drawn around the live screen; above it, in. The game runs
+     * throughout, so this is something done while playing. */
     float scale = base * app.zoom;
 
     /* Where the screen actually is, which during a room crossing is somewhere
@@ -657,10 +668,7 @@ static void paint(HWND hwnd)
      * over about forty frames and then stops. Link's own position crosses the
      * same boundary as one unbroken line, so a camera on him has nothing to
      * shift about - the world just travels past while he walks, which is what
-     * a room boundary should look like when the whole world is drawn.
-     *
-     * The live screen still goes where the game says it is, so its pixels
-     * stay lined up with the world drawn around them throughout. */
+     * a room boundary should look like when the whole world is drawn. */
     float cam_x = screen_x + 80.0f;
     float cam_y = screen_y + 64.0f;
     if (where->have_link) {
@@ -671,57 +679,31 @@ static void paint(HWND hwnd)
     app.cam_y = cam_y;
     app.cam_valid = 1;
 
-
-    /* World, then the live screen into it, then the status bar over the top -
-     * all into one image, which then goes to the window in a single blit.
-     *
-     * The live screen used to be a second blit, positioned separately. Two
-     * blits mean two different resamplers over one picture: at a window
-     * height that is not a whole multiple of 144 - most of them, and every
-     * 16:9 one - the screen landed a fraction of a pixel from the world drawn
-     * around it. Worse, the source rectangle of a top-down bitmap is not
-     * measured from the top, so asking for the 128 rows below the status bar
-     * actually fetched the 128 rows above it: the world was drawn sixteen
-     * pixels out of place with the hearts and rupees painted into it, and the
-     * status bar travelled around with the player. Sampling both here, by
-     * index, through one position and scale, none of that can happen. */
+    /* World, then what the other rooms held, then every live object, then the
+     * hardware's own screen over the room it belongs to, then the status bar
+     * across the top - all into one image at one scale, so none of them can
+     * land a fraction of a pixel from the others. */
     int loaded = gb_world_active_room(view);
 
-    gb_world_render(view, app.map_pixels, cw, ch, cam_x, cam_y, scale, 1);
+    gb_world_render(view, fb, fw, fh, cam_x, cam_y, scale, 1);
 
-    /* Who was in the other rooms.
-     *
-     * The game simulates one room; objects elsewhere are not slowed down or
-     * paused, they are simply not there, so there is nothing live to draw for
-     * them. What was seen is remembered and kept on screen, so the world
-     * stays populated rather than emptying to bare ground everywhere the
-     * player is not. They hold their last pose until their room is loaded
-     * again, at which point the live ones take over. */
+    /* The game simulates one room; objects elsewhere are simply not there, so
+     * what was seen is remembered and kept on screen. They hold their last
+     * pose until their room is loaded again and the live ones take over. */
     gb_world_remember(&app.memory, view, screen_x, screen_y,
                       cam_x, cam_y, where->crossing ? -1 : loaded);
-    gb_world_draw_remembered(&app.memory, app.map_pixels, cw, ch,
+    gb_world_draw_remembered(&app.memory, fb, fw, fh,
                              cam_x, cam_y, scale, where->crossing ? -1 : loaded);
 
-    /* Every object the game has active, drawn at its own position across the
-     * whole view - not only where the hardware's screen happens to reach.
-     * Objects at a room's edge used to be sliced off by that edge, and the
-     * hardware drops any beyond ten on a line, so they flickered. Drawn
-     * before the live screen, so where that screen is used its own rendering
-     * wins and keeps the game's own ordering; the only pixels left are the
-     * ones it never covered. */
-    /* The frame before's objects first, then this frame's over them.
-     *
-     * The hardware draws at most ten objects on a line and drops the rest,
-     * and the game rotates which ones it drops so that everything is seen
-     * some of the time. On the small screen that reads as a shimmer; drawn
-     * large it reads as people blinking in and out. Whatever was dropped this
-     * frame was almost certainly present last frame, so last frame covers for
-     * it, and this frame's copy lands on top with the positions up to date. */
+    /* The frame before's objects first, then this frame's over them. The
+     * hardware draws at most ten objects on a line and rotates which ones it
+     * drops; drawn large that reads as people blinking in and out, and last
+     * frame covers for whatever this one dropped. */
     if (app.prev_objects && app.prev_room == loaded)
-        gb_world_draw_objects(view, app.prev_oam, app.map_pixels, cw, ch,
+        gb_world_draw_objects(view, app.prev_oam, fb, fw, fh,
                               cam_x, cam_y, scale,
                               app.prev_screen_x, app.prev_screen_y);
-    gb_world_draw_objects(view, NULL, app.map_pixels, cw, ch, cam_x, cam_y, scale,
+    gb_world_draw_objects(view, NULL, fb, fw, fh, cam_x, cam_y, scale,
                           screen_x, screen_y);
     memcpy(app.prev_oam, view->oam, sizeof(app.prev_oam));
     app.prev_screen_x = screen_x;
@@ -729,30 +711,19 @@ static void paint(HWND hwnd)
     app.prev_room = loaded;
     app.prev_objects = 1;
 
-    /* Crossing between rooms, the hardware's screen is not to be trusted.
-     *
-     * Its background is one tilemap 256 pixels wide and a room is 160, so as
-     * the game scrolls the next room's columns in, it writes over the columns
-     * of the old one still on display. There is no room for both. Measured
-     * part way through a crossing, the leftmost sixteen pixels disagreed with
-     * the world on 72 rows of 128 - a stripe of the wrong room, sweeping
-     * across. The world drawn here has both rooms and is right about each, so
-     * for the quarter of a second a crossing lasts, it is used on its own. */
+    /* Crossing between rooms, the hardware's screen is not to be trusted: its
+     * background is one tilemap 256 pixels wide and a room is 160, so the next
+     * room's columns overwrite the old one's while both are on display. The
+     * world drawn here has both rooms and is right about each. */
     if (!where->crossing)
-        gb_world_draw_screen(view, app.map_pixels, cw, ch, cam_x, cam_y, scale,
+        gb_world_draw_screen(view, fb, fw, fh, cam_x, cam_y, scale,
                              screen_x, screen_y);
 
-    /* The status bar is the player's, not the world's: it stays across the
-     * top of the window at its natural size, whatever the camera is doing and
-     * however far out the view is pulled. */
-    gb_world_draw_status(view, app.map_pixels, cw, ch, base);
+    /* The status bar is the player's, not the world's: it stays across the top
+     * of the picture at its natural size, whatever the camera is doing. */
+    gb_world_draw_status(view, fb, fw, fh, base);
 
-    if (app.menu_open)
-        gb_menu_draw(app.map_pixels, cw, ch, app.menu_sel);
-
-    StretchDIBits(dc, 0, 0, cw, ch, 0, 0, cw, ch,
-                  app.map_pixels, &app.map_bmi, DIB_RGB_COLORS, SRCCOPY);
-
+    blit_frame(dc, frame, cw, ch);
     EndPaint(hwnd, &ps);
 }
 

@@ -559,6 +559,29 @@ def emit_c(path, group, room_tilesets, seasons):
         lines.append("    {" + ",".join(str(v) for v in row) + "},")
     lines += ["};", ""]
 
+    # Rooms the cartridge never uses in a given season carry a placeholder
+    # layout: two metatiles arranged into a letter. rooms/seasons/small has
+    # them plainly - room0009.bin is an H drawn in metatile 244 on a field of
+    # metatile 4, room0109.bin an N, room0209.bin an A - and the same rooms
+    # hold real ground in the season they exist in. The game never shows them
+    # because the player can never stand there, but a view pulled back over
+    # the whole world does, and a field of letters is not the world. Two or
+    # three distinct metatiles in a whole room only ever means one of these;
+    # the busiest real room in the game uses fifty-two.
+    lines.append("/* Rooms the cartridge leaves as a placeholder in this season -")
+    lines.append(" * two metatiles drawn into a letter - which are not places and")
+    lines.append(" * are drawn as nothing. */")
+    lines.append("const uint8_t gb_world_room_void[4][GB_WORLD_ROOMS] = {")
+    voids = 0
+    for row in room_index:
+        flags = []
+        for layout in row:
+            distinct = len(set(layout_pool.items[layout][0]))
+            flags.append(1 if distinct <= 3 else 0)
+            voids += flags[-1]
+        lines.append("    {" + ",".join(str(v) for v in flags) + "},")
+    lines += ["};", ""]
+
     lines.append("/* Metatile definitions: four tiles of index, then four of")
     lines.append(" * attributes. */")
     _blob_table(lines,
