@@ -40,4 +40,9 @@ void gb_text_draw(uint32_t *dst, int dst_w, int dst_h, int x, int y,
                   const char *text, uint32_t colour, int scale);
 int  gb_text_width(const char *text, int scale);
 
+/* The same, mixed into the picture instead of replacing it. */
+void gb_text_blend(uint32_t *dst, int dst_w, int dst_h, int x, int y,
+                   const char *text, uint32_t colour, int scale,
+                   float alpha);
+
 #endif /* GB_DISPLAY_H */

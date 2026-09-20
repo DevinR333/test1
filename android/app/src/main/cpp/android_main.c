@@ -24,6 +24,7 @@
 #include "gb.h"
 #include "worldmap.h"
 #include "display.h"
+#include "touch.h"
 
 #define LOG(...) __android_log_print(ANDROID_LOG_INFO, "oracle", __VA_ARGS__)
 #define ERR(...) __android_log_print(ANDROID_LOG_ERROR, "oracle", __VA_ARGS__)
@@ -61,7 +62,11 @@ static struct {
     float     prev_screen_x, prev_screen_y;
     int       prev_room, prev_objects;
 
-    volatile uint8_t buttons;    /* what the pad is holding */
+    volatile uint8_t buttons;    /* what the pad and the glass hold between them */
+    uint8_t   pad_mask;          /* ... and each of them on its own, so that */
+    uint8_t   touch_mask;        /*     letting go of one keeps the other */
+    uint32_t  touch_held;        /* a bit per on-screen control, for drawing */
+    long long touch_at_ns;       /* when the glass was last touched */
     volatile uint8_t latched;    /* and anything tapped since the last frame */
 
     gb_view_mode_t view_mode;
@@ -233,21 +238,140 @@ static int button_for(int32_t code)
     }
 }
 
+/* The pad and the glass are held separately and combined, so that lifting a
+ * thumb off a drawn button does not release what a real pad is holding, and
+ * the other way round. */
+static void settle_buttons(void)
+{
+    ORA.buttons = (uint8_t)(ORA.pad_mask | ORA.touch_mask);
+}
+
 static void press(int bit, int down)
 {
     if (bit < 0) return;
     if (down) {
-        ORA.buttons |= (uint8_t)(1u << bit);
+        ORA.pad_mask |= (uint8_t)(1u << bit);
         /* A tap shorter than a frame would otherwise never be seen. */
         __atomic_or_fetch(&ORA.latched, (uint8_t)(1u << bit), __ATOMIC_SEQ_CST);
     } else {
-        ORA.buttons &= (uint8_t)~(1u << bit);
+        ORA.pad_mask &= (uint8_t)~(1u << bit);
     }
+    settle_buttons();
+}
+
+/* ------------------------------------------------------------ the glass */
+
+#define TOUCH_HOLD_NS  3000000000LL   /* shown for three seconds after a touch */
+#define TOUCH_FADE_NS   600000000LL   /* then half a second going */
+
+static long long now_ns(void)
+{
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (long long)t.tv_sec * 1000000000LL + t.tv_nsec;
+}
+
+/* Full while they are in use, gone a few seconds after the last touch. The
+ * player who is using a pad never sees them at all. */
+static float touch_alpha(void)
+{
+    long long age = now_ns() - ORA.touch_at_ns;
+    if (ORA.touch_at_ns == 0) return 0.0f;
+    if (age <= TOUCH_HOLD_NS) return 1.0f;
+    if (age >= TOUCH_HOLD_NS + TOUCH_FADE_NS) return 0.0f;
+    return 1.0f - (float)(age - TOUCH_HOLD_NS) / (float)TOUCH_FADE_NS;
+}
+
+static void zoom_by(float factor)
+{
+    ORA.zoom *= factor;
+    if (ORA.zoom > 4.0f) ORA.zoom = 4.0f;
+    if (ORA.zoom < 0.08f) ORA.zoom = 0.08f;
 }
 
 static void menu_move(int delta)
 {
     ORA.menu_sel = (ORA.menu_sel + GB_VIEW_MODES + delta) % GB_VIEW_MODES;
+}
+
+/* What the drawn controls are holding, worked out from every finger on the
+ * glass at once - so a thumb on the d-pad and a thumb on B are both heard,
+ * which walking while attacking needs.
+ *
+ * They press the same joypad bits a gamepad presses and nothing else, so the
+ * inventory, the map, the save prompt, a text box and the display chooser are
+ * all driven by them without any of those knowing they exist. The chooser is
+ * the one exception, because it is this program's own and reads its keys
+ * rather than the joypad.
+ */
+static int32_t on_touch(AInputEvent *e)
+{
+    int32_t action = AMotionEvent_getAction(e);
+    int32_t kind = action & AMOTION_EVENT_ACTION_MASK;
+    size_t going = (size_t)((action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK)
+                            >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT);
+
+    /* The first touch after they have faded only brings them back. Pressing
+     * a button the player cannot see is not something they asked for. */
+    int was_visible = touch_alpha() > 0.0f;
+    ORA.touch_at_ns = now_ns();
+    if (!was_visible) {
+        ORA.touch_mask = 0;
+        ORA.touch_held = 0;
+        settle_buttons();
+        return 1;
+    }
+
+    uint32_t held = 0;
+    if (kind != AMOTION_EVENT_ACTION_UP && kind != AMOTION_EVENT_ACTION_CANCEL) {
+        size_t n = AMotionEvent_getPointerCount(e);
+        for (size_t i = 0; i < n; i++) {
+            if (kind == AMOTION_EVENT_ACTION_POINTER_UP && i == going)
+                continue;                  /* this one is on its way off */
+            int hit = gb_touch_hit(ORA.win_w, ORA.win_h,
+                                   AMotionEvent_getX(e, i),
+                                   AMotionEvent_getY(e, i));
+            if (hit >= 0) held |= 1u << hit;
+        }
+    }
+
+    uint32_t began = held & ~ORA.touch_held;   /* newly pressed this event */
+    ORA.touch_held = held;
+
+    /* The chooser is ours, so it is worked here rather than through the pad. */
+    if (ORA.menu_open) {
+        ORA.touch_mask = 0;
+        settle_buttons();
+        if (began & (1u << GB_TOUCH_UP))    menu_move(-1);
+        if (began & (1u << GB_TOUCH_DOWN))  menu_move(+1);
+        if (began & ((1u << GB_TOUCH_A) | (1u << GB_TOUCH_START))) {
+            ORA.view_mode = (gb_view_mode_t)ORA.menu_sel;
+            ORA.menu_open = 0;
+        }
+        if (began & (1u << GB_TOUCH_B)) ORA.menu_open = 0;
+        return 1;
+    }
+
+    if (began & (1u << GB_TOUCH_ZOOM_OUT)) zoom_by(1.0f / 1.25f);
+    if (began & (1u << GB_TOUCH_ZOOM_IN))  zoom_by(1.25f);
+
+    uint8_t mask = 0;
+    for (int i = 0; i < GB_TOUCH_COUNT; i++) {
+        int bit = gb_touch_button((gb_touch_id_t)i);
+        if (bit >= 0 && (held & (1u << i))) mask |= (uint8_t)(1u << bit);
+    }
+    /* Latch what was newly pressed, so a tap between two frames still counts
+     * - the same rule the pad gets. */
+    uint8_t fresh = 0;
+    for (int i = 0; i < GB_TOUCH_COUNT; i++) {
+        int bit = gb_touch_button((gb_touch_id_t)i);
+        if (bit >= 0 && (began & (1u << i))) fresh |= (uint8_t)(1u << bit);
+    }
+    if (fresh) __atomic_or_fetch(&ORA.latched, fresh, __ATOMIC_SEQ_CST);
+
+    ORA.touch_mask = mask;
+    settle_buttons();
+    return 1;
 }
 
 static int32_t on_input(struct android_app *app, AInputEvent *e)
@@ -286,15 +410,17 @@ static int32_t on_input(struct android_app *app, AInputEvent *e)
         }
 
         /* Shoulders pull the camera back and push it in, while playing. */
-        if (code == AKEYCODE_BUTTON_L1) { if (down) ORA.zoom /= 1.25f; return 1; }
-        if (code == AKEYCODE_BUTTON_R1) { if (down) ORA.zoom *= 1.25f; return 1; }
-        if (ORA.zoom > 4.0f) ORA.zoom = 4.0f;
-        if (ORA.zoom < 0.08f) ORA.zoom = 0.08f;
+        if (code == AKEYCODE_BUTTON_L1) { if (down) zoom_by(1.0f / 1.25f); return 1; }
+        if (code == AKEYCODE_BUTTON_R1) { if (down) zoom_by(1.25f); return 1; }
 
         int bit = button_for(code);
         if (bit >= 0) { press(bit, down); return 1; }
         return 0;                          /* back, volume: let Android have it */
     }
+
+    if (type == AINPUT_EVENT_TYPE_MOTION
+        && (AInputEvent_getSource(e) & AINPUT_SOURCE_TOUCHSCREEN))
+        return on_touch(e);
 
     if (type == AINPUT_EVENT_TYPE_MOTION
         && (AInputEvent_getSource(e) & (AINPUT_SOURCE_JOYSTICK | AINPUT_SOURCE_DPAD))) {
@@ -496,6 +622,9 @@ static void draw(void)
     if (ORA.menu_open)
         gb_menu_draw(ORA.pixels, ORA.pix_w, ORA.pix_h, ORA.menu_sel);
 
+    /* Over everything, including the chooser, because they work it too. */
+    gb_touch_draw(ORA.pixels, ORA.pix_w, ORA.pix_h, ORA.touch_held, touch_alpha());
+
     glBindTexture(GL_TEXTURE_2D, ORA.texture);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, ORA.pix_w, ORA.pix_h,
                     GL_RGBA, GL_UNSIGNED_BYTE, ORA.pixels);
@@ -531,7 +660,9 @@ static void on_cmd(struct android_app *app, int32_t cmd)
     case APP_CMD_GAINED_FOCUS:
     case APP_CMD_LOST_FOCUS:
         /* Nothing held down carries across a focus change. */
-        ORA.buttons = 0;
+        ORA.pad_mask = ORA.touch_mask = 0;
+        ORA.touch_held = 0;
+        settle_buttons();
         break;
     default:
         break;

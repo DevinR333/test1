@@ -28,6 +28,7 @@ add_library(oracle SHARED
     ${REPO}/runtime/io_masks.c
     ${REPO}/runtime/diag.c
     ${REPO}/runtime/display.c
+    ${REPO}/runtime/touch.c
     ${REPO}/runtime/worldmap.c
     ${WORLD}
     ${TRANSLATED}

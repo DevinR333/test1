@@ -161,7 +161,16 @@ int gb_text_width(const char *text, int scale)
 void gb_text_draw(uint32_t *dst, int dst_w, int dst_h, int x, int y,
                   const char *text, uint32_t colour, int scale)
 {
-    if (!dst || !text || scale < 1) return;
+    gb_text_blend(dst, dst_w, dst_h, x, y, text, colour, scale, 1.0f);
+}
+
+/* The same letters, mixed into what is already there rather than replacing
+ * it, so text can fade in and out over the picture. */
+void gb_text_blend(uint32_t *dst, int dst_w, int dst_h, int x, int y,
+                   const char *text, uint32_t colour, int scale, float alpha)
+{
+    if (!dst || !text || scale < 1 || alpha <= 0.0f) return;
+    if (alpha > 1.0f) alpha = 1.0f;
 
     for (const char *p = text; *p; p++) {
         int c = (unsigned char)*p;
@@ -178,7 +187,15 @@ void gb_text_draw(uint32_t *dst, int dst_w, int dst_h, int x, int y,
                     for (int sx = 0; sx < scale; sx++) {
                         int px = x + col * scale + sx;
                         if (px < 0 || px >= dst_w) continue;
-                        dst[(size_t)py * dst_w + px] = colour;
+                        uint32_t *q = &dst[(size_t)py * dst_w + px];
+                        if (alpha >= 1.0f) { *q = colour; continue; }
+                        int dr = (*q >> 16) & 0xFF, dg = (*q >> 8) & 0xFF,
+                            db = *q & 0xFF;
+                        int sr = (colour >> 16) & 0xFF,
+                            sg = (colour >> 8) & 0xFF, sb = colour & 0xFF;
+                        *q = ((uint32_t)(dr + (sr - dr) * alpha) << 16)
+                           | ((uint32_t)(dg + (sg - dg) * alpha) << 8)
+                           |  (uint32_t)(db + (sb - db) * alpha);
                     }
                 }
             }

@@ -26,6 +26,7 @@ add_library(oracle SHARED
     runtime/io_masks.c
     runtime/diag.c
     runtime/display.c
+    runtime/touch.c
     runtime/worldmap.c
     game/world_data.c
     game/dispatch.c
