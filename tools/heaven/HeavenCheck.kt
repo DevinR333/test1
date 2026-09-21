@@ -85,7 +85,22 @@ fun main() {
     check("another outfit is not blessed",
         Outfits.isBlessed("fighter", false, false, false), false)
 
-    println("--- 5. a save from the old build gets it taken back ---")
+    println("--- 5. the u7d%4+ back door parks you one halo short ---")
+    // what Game.applyUnlockCode does for HALO_PRIME_CODE
+    save.unlockScene(Scenes.HEAVEN_ID)
+    save.primeHalosForTest()
+    check("halos parked at 999", save.halos == 999, true)
+    check("Eternal taken back", save.owns(ETERNAL), false)
+    check("toggle wound back", save.ghostUnlocked, false)
+    check("no longer equipped", save.equippedOutfit == Outfits.DEFAULT_ID, true)
+    check("Heaven is open so halos are reachable", save.ownsScene(Scenes.HEAVEN_ID), true)
+    save.addHalos(1)
+    check("the thousandth halo unlocks it", save.owns(ETERNAL), true)
+    check("the thousandth halo unlocks the toggle", save.ghostUnlocked, true)
+    save.primeHalosForTest()
+    check("re-runnable: locked again", save.owns(ETERNAL), false)
+
+    println("--- 6. a save from the old build gets it taken back ---")
     val old = FakePrefs()
     old.map["owned"] = hashSetOf("fighter", ETERNAL)
     old.map["equipped"] = ETERNAL

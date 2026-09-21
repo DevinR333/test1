@@ -342,13 +342,16 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
     //   u7d%4<   unlock everything EXCEPT one trail, so the final unlock - and Heaven opening
     //            as a result of it - can actually be watched happening
     //   u7d%4=   free spins on the prize machine, to grind out that last trail
+    //   u7d%4+   parks you on 999 halos with Heaven open, so the thousandth halo - and
+    //            the outfit it unlocks - can be tested without the grind
     // -------------------------------------------------------------------------------------
 
     fun isUnlockCode(raw: String): Boolean {
         val t = raw.trim()
         return t.equals(UNLOCK_CODE, ignoreCase = true) ||
             t.equals(ALMOST_CODE, ignoreCase = true) ||
-            t.equals(FREE_SPINS_CODE, ignoreCase = true)
+            t.equals(FREE_SPINS_CODE, ignoreCase = true) ||
+            t.equals(HALO_PRIME_CODE, ignoreCase = true)
     }
 
     fun applyUnlockCode(raw: String) {
@@ -357,6 +360,13 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
             t.equals(FREE_SPINS_CODE, ignoreCase = true) -> {
                 save.freeSpins = true
                 notice = "FREE SPINS ON"
+            }
+            t.equals(HALO_PRIME_CODE, ignoreCase = true) -> {
+                // Halos only drop in Heaven, so the code is useless unless Heaven is open. This
+                // opens the world and nothing else - the other codes are there for the rest.
+                save.unlockScene(Scenes.HEAVEN_ID)
+                save.primeHalosForTest()
+                notice = "999 HALOS - ONE MORE UNLOCKS IT"
             }
             t.equals(ALMOST_CODE, ignoreCase = true) -> unlockAllBut(1)
             else -> unlockAllBut(0)
@@ -1078,5 +1088,7 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         const val ALMOST_CODE = "u7d%4<"
         /** Free prize-machine pulls, for grinding out that last trail. */
         const val FREE_SPINS_CODE = "u7d%4="
+        /** Opens Heaven and parks you on 999 halos, so the thousandth can be tested. */
+        const val HALO_PRIME_CODE = "u7d%4+"
     }
 }

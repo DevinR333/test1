@@ -281,6 +281,25 @@ class Save(ctx: Context) {
 
     val ghostUnlocked: Boolean get() = prefs.getBoolean(KEY_GHOST_UNLOCKED, false)
 
+    /**
+     * Testing back door: parks the halo count one short of the threshold and winds back
+     * everything crossing it grants, so the unlock can be watched happening rather than taken on
+     * trust. A single halo in Heaven does the rest. Re-runnable, deliberately - the outfit it
+     * takes back is one pickup away again.
+     */
+    fun primeHalosForTest() {
+        editSync {
+            it.putInt(KEY_HALOS, (Tuning.HALOS_FOR_GHOST - 1).coerceAtLeast(0))
+            it.putBoolean(KEY_GHOST_UNLOCKED, false)
+            it.putBoolean(KEY_GHOST_ON, false)
+        }
+        val set = ownedOutfits()
+        if (set.remove(Outfits.HEAVEN_ONLY_ID)) editSync { it.putStringSet(KEY_OWNED, set) }
+        if (prefs.getString(KEY_EQUIPPED, null) == Outfits.HEAVEN_ONLY_ID) {
+            editSync { it.putString(KEY_EQUIPPED, Outfits.DEFAULT_ID) }
+        }
+    }
+
     /** Testing back door: prize-machine pulls cost nothing. */
     var freeSpins: Boolean
         get() = prefs.getBoolean(KEY_FREE_SPINS, false)
