@@ -23,6 +23,25 @@ class Save(ctx: Context) {
     private val prefs: SharedPreferences =
         ctx.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
+    init {
+        // An earlier build handed out Good Boy Eternal the moment Heaven opened. It is only ever
+        // earned by collecting a thousand halos, and that is the same thing that sets
+        // [ghostUnlocked] - so owning one without the other can only be that old mistake.
+        if (!prefs.getBoolean(KEY_GHOST_UNLOCKED, false)) {
+            val owned = prefs.getStringSet(KEY_OWNED, null)
+            if (owned != null && owned.contains(Outfits.HEAVEN_ONLY_ID)) {
+                val fixed = HashSet<String>(owned)
+                fixed.remove(Outfits.HEAVEN_ONLY_ID)
+                val e = prefs.edit()
+                e.putStringSet(KEY_OWNED, fixed)
+                if (prefs.getString(KEY_EQUIPPED, null) == Outfits.HEAVEN_ONLY_ID) {
+                    e.putString(KEY_EQUIPPED, Outfits.DEFAULT_ID)
+                }
+                e.commit()
+            }
+        }
+    }
+
     /** Fire-and-forget: fine for settings, never used for currency or progress. */
     private inline fun editAsync(block: (SharedPreferences.Editor) -> Unit) {
         val e = prefs.edit()
@@ -241,15 +260,23 @@ class Save(ctx: Context) {
     /**
      * Banked with the rest of a run, and once a thousand have been collected the ghost look is
      * unlocked for good - at which point it becomes a toggle in the wardrobe that works in every
-     * world, not just Heaven.
+     * world, not just Heaven, and Good Boy Eternal joins the wardrobe alongside it.
+     *
+     * A thousand halos is the ONLY way to earn either. Reaching Heaven is not enough, and neither
+     * is a Second Life - that one only lends the look for the rest of the run it saved.
      */
     fun addHalos(n: Int) {
         if (n <= 0) return
+        var earned = false
         editSync {
             val total = halos + n
             it.putInt(KEY_HALOS, total)
-            if (total >= Tuning.HALOS_FOR_GHOST) it.putBoolean(KEY_GHOST_UNLOCKED, true)
+            if (total >= Tuning.HALOS_FOR_GHOST && !ghostUnlocked) {
+                it.putBoolean(KEY_GHOST_UNLOCKED, true)
+                earned = true
+            }
         }
+        if (earned) unlock(Outfits.HEAVEN_ONLY_ID)
     }
 
     val ghostUnlocked: Boolean get() = prefs.getBoolean(KEY_GHOST_UNLOCKED, false)
@@ -285,8 +312,7 @@ class Save(ctx: Context) {
         if (ownsScene(Scenes.HEAVEN_ID)) return false
         if (!hasUnlockedEverything()) return false
         unlockScene(Scenes.HEAVEN_ID)
-        // The outfit that lives there comes with it.
-        unlock(Outfits.HEAVEN_ONLY_ID)
+        // The world only. Good Boy Eternal is earned inside it, a thousand halos at a time.
         return true
     }
 

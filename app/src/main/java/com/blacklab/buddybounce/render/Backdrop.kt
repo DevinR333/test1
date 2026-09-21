@@ -297,6 +297,31 @@ class Backdrop(private val art: Art) {
         c.drawPath(path, paint)
     }
 
+    /**
+     * A soft snowbank running the full width at [footY], filled well past the bottom of the
+     * band so the trees standing on it always have ground underneath them.
+     */
+    private fun snowRidge(
+        c: Canvas, worldW: Float, footY: Float, bandH: Float,
+        amp: Float, color: Int, key: Int
+    ) {
+        path.reset()
+        path.moveTo(-60f, footY + amp)
+        val lobes = 5
+        val step = (worldW + 120f) / lobes
+        var x = -60f
+        for (i in 0..lobes) {
+            val crest = footY - amp * (0.35f + Hash.f(key * 37 + i, 149) * 0.9f)
+            path.quadTo(x + step * 0.5f, crest, x + step, footY + amp * (0.1f + Hash.f(key * 41 + i, 151) * 0.5f))
+            x += step
+        }
+        path.lineTo(worldW + 60f, footY + bandH)
+        path.lineTo(-60f, footY + bandH)
+        path.close()
+        paint.color = color
+        c.drawPath(path, paint)
+    }
+
     private fun trees(c: Canvas, worldW: Float, camY: Float, pal: BiomePalette, alpha: Float) {
         paint.reset(); paint.isAntiAlias = true
         val h = Tuning.VIEW_H * 0.8f
@@ -349,18 +374,19 @@ class Backdrop(private val art: Art) {
                 val snowCol = ColorX.withAlpha(
                     0xFFFFFFFF.toInt(), alpha * (if (far) 0.42f else 0.85f)
                 )
+                // the line the whole rank stands on, so the drift and the trunks agree
+                val footY = baseY + (if (far) h * 0.10f else h * 0.24f)
                 for (i in 0 until count) {
                     val key = idx * 29 + rank * 13 + i
                     val cx = (Hash.f(key, 131) * (worldW + 400f)) - 200f
                     val treeH = h * (if (far) 0.42f else 0.62f) * (0.72f + Hash.f(key, 133) * 0.56f)
                     val halfW = treeH * 0.30f
-                    val footY = baseY + (if (far) h * 0.10f else h * 0.24f)
 
                     // trunk
                     paint.color = ColorX.withAlpha(
                         ColorX.shade(pal.nearShape, 0.55f), alpha * (if (far) 0.4f else 0.8f)
                     )
-                    rect.set(cx - halfW * 0.10f, footY - treeH * 0.16f, cx + halfW * 0.10f, footY)
+                    rect.set(cx - halfW * 0.12f, footY - treeH * 0.16f, cx + halfW * 0.12f, footY + h * 0.05f)
                     c.drawRect(rect, paint)
 
                     // four tiers, each narrower and higher than the last
@@ -403,6 +429,19 @@ class Backdrop(private val art: Art) {
                     paint.color = snowCol
                     c.drawCircle(cx, footY - treeH * 0.90f, halfW * 0.16f, paint)
                 }
+
+                // The drift the rank stands in. Without it the trunks were short stubs hanging
+                // in empty sky, so every repeat of the band looked like trees popping into
+                // existence rather than a treeline sliding past.
+                snowRidge(
+                    c, worldW, footY, h,
+                    if (far) h * 0.045f else h * 0.075f,
+                    ColorX.withAlpha(
+                        if (far) ColorX.tint(pal.farShape, 0.55f) else ColorX.tint(pal.midShape, 0.72f),
+                        alpha * (if (far) 0.65f else 0.95f)
+                    ),
+                    idx * 7 + rank
+                )
             }
 
             // drifting snow in front of the whole band
@@ -804,9 +843,16 @@ class Backdrop(private val art: Art) {
                 path.lineTo(-60f, baseY + h * 1.4f)
                 path.close()
                 c.drawPath(path, paint)
-                // snow caps
+                // The lit cap on each peak.
+                //
+                // This used to be hard-coded white, which is right for the Frozen Peaks and
+                // wrong everywhere else that uses this style: over Emberfall's dark red sky a
+                // 55%-white triangle reads as a pale blue shard sitting on top of the obsidian,
+                // and the canyon, the liquorice spires and the belfry all had the same problem.
+                // Lightening the band's OWN colour gives snow where the rock is already pale and
+                // a believable highlight where it is not.
                 if (layer == 1) {
-                    paint.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), alpha * 0.55f)
+                    paint.color = ColorX.withAlpha(ColorX.tint(pal.midShape, 0.62f), alpha * 0.6f)
                     x = -60f
                     i = 0
                     while (x < worldW + 60f) {

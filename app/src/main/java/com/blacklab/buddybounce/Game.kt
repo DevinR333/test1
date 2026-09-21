@@ -241,9 +241,15 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         music.setWorld(save.selectedScene)
     }
 
-    /** True when the dog should be drawn blessed: in Heaven, after a Second Life, or by choice. */
+    /**
+     * True when the dog should be drawn blessed: in Heaven, after a Second Life, because the
+     * wardrobe toggle is on, or because Good Boy Eternal is the outfit he is wearing. The last
+     * one is the reason this is not just [Save.ghostEnabled] - the outfit has no clothes of its
+     * own, so without it the wardrobe showed the halo and the run did not.
+     */
     private fun ghostAmount(): Boolean =
-        world.haloMode || secondLifeActive || save.ghostEnabled
+        world.haloMode || secondLifeActive || save.ghostEnabled ||
+            equippedOutfit == Outfits.HEAVEN_ONLY_ID
 
     fun announceHeaven() {
         notice = "HEAVEN IS OPEN"

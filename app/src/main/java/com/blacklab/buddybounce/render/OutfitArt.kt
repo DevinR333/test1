@@ -184,7 +184,8 @@ object OutfitArt {
     // -------------------------------------------------------------------------------------
 
     /** A coat/suit over the torso, following the body silhouette. */
-    private fun torso(c: Canvas, color: Int, shade: Int) {
+    /** The shirt silhouette, left in [path]. Anything drawn on a torso clips to this. */
+    private fun torsoSilhouette() {
         path.reset()
         path.moveTo(BX1 - 2f, BACK + 10f)
         path.cubicTo(20f, BACK - 2f, -40f, BACK + 1f, BX0 - 2f, BACK + 20f)
@@ -192,6 +193,10 @@ object OutfitArt {
         path.cubicTo(-20f, BELLY + 14f, 16f, BELLY + 12f, BX1 - 8f, BELLY + 2f)
         path.cubicTo(BX1 + 14f, BELLY - 10f, BX1 + 16f, BACK + 40f, BX1 - 2f, BACK + 10f)
         path.close()
+    }
+
+    private fun torso(c: Canvas, color: Int, shade: Int) {
+        torsoSilhouette()
         fillInk(c, color)
         p.color = ColorX.withAlpha(shade, 0.85f)
         r.set(BX0 - 8f, BELLY - 26f, BX1 + 6f, BELLY + 12f)
@@ -1311,13 +1316,7 @@ object OutfitArt {
     private fun bretonStripes(c: Canvas) {
         c.save()
         // reuse the torso silhouette as a clip so the bands stop at the edges of the shirt
-        path.reset()
-        path.moveTo(BX1 - 2f, BACK + 10f)
-        path.cubicTo(20f, BACK - 2f, -40f, BACK + 1f, BX0 - 2f, BACK + 20f)
-        path.cubicTo(BX0 - 16f, BACK + 40f, BX0 - 12f, BELLY - 4f, BX0 + 12f, BELLY + 4f)
-        path.cubicTo(-20f, BELLY + 14f, 16f, BELLY + 12f, BX1 - 8f, BELLY + 2f)
-        path.cubicTo(BX1 + 14f, BELLY - 10f, BX1 + 16f, BACK + 40f, BX1 - 2f, BACK + 10f)
-        path.close()
+        torsoSilhouette()
         c.clipPath(path)
         p.color = 0xFF23262F.toInt()
         var y = BACK + 6f
@@ -1507,56 +1506,109 @@ object OutfitArt {
     // Fighting Gi
     // -------------------------------------------------------------------------------------
 
-    /** The crossed-over jacket front and the blue belt that holds it shut. */
+    /**
+     * The crossed-over jacket front and the belt that holds it shut.
+     *
+     * The neckline is the whole point of a gi, so it is drawn here and nowhere else: the fighter
+     * deliberately skips the usual collar, which is a wide band across the throat drawn in the
+     * LATER head pass and so used to bury the crossover completely. Everything that sits on the
+     * cloth is clipped to the shirt; only the knot and its tails are allowed past the edge.
+     */
     private fun giWrap(c: Canvas) {
         val cloth = 0xFFF2882A.toInt()
         val under = 0xFF2E56B8.toInt()
 
-        // the blue undershirt showing at the collar
-        p.color = under
+        c.save()
+        torsoSilhouette()
+        c.clipPath(path)
+
+        // The far panel: the half of the jacket on the other side of him, in shadow. A real tonal
+        // step, because at arm's length a 14% shade of the same orange reads as nothing at all.
+        p.color = ColorX.shade(cloth, 0.74f)
         path.reset()
-        path.moveTo(BX1 - 18f, BACK + 12f)
-        path.cubicTo(BX1 - 4f, BACK + 30f, BX1 - 8f, BACK + 52f, BX1 - 24f, BACK + 58f)
-        path.cubicTo(BX1 - 32f, BACK + 40f, BX1 - 30f, BACK + 22f, BX1 - 18f, BACK + 12f)
+        path.moveTo(BX1 + 18f, BACK - 10f)
+        path.cubicTo(BX1 - 26f, BACK + 30f, -6f, BELLY - 44f, BX0 - 20f, BELLY - 30f)
+        path.lineTo(BX0 - 20f, BACK - 10f)
         path.close()
         c.drawPath(path, p)
 
-        // the jacket's left panel crossing over the right - the one detail that says "gi"
-        p.color = ColorX.shade(cloth, 0.86f)
+        // The blue undershirt, showing in the notch between the two panels.
+        p.color = under
         path.reset()
-        path.moveTo(BX1 - 26f, BACK + 8f)
-        path.cubicTo(BX1 - 40f, BACK + 34f, BX0 + 40f, BELLY - 18f, BX0 + 16f, BELLY - 2f)
-        path.lineTo(BX0 + 10f, BELLY + 4f)
-        path.cubicTo(BX0 + 46f, BELLY - 22f, BX1 - 34f, BACK + 30f, BX1 - 18f, BACK + 6f)
+        path.moveTo(BX1 - 10f, BACK + 4f)
+        path.lineTo(BX1 - 44f, BELLY - 46f)
+        path.lineTo(BX1 - 2f, BELLY - 34f)
         path.close()
         c.drawPath(path, p)
-        ink.strokeWidth = 3.4f
-        ink.color = ColorX.withAlpha(BuddyGeom.INK, 0.7f)
+        p.color = ColorX.shade(under, 0.76f)
         path.reset()
-        path.moveTo(BX1 - 22f, BACK + 8f)
-        path.cubicTo(BX1 - 40f, BACK + 34f, BX0 + 40f, BELLY - 18f, BX0 + 12f, BELLY + 2f)
+        path.moveTo(BX1 - 10f, BACK + 4f)
+        path.lineTo(BX1 - 27f, BELLY - 40f)
+        path.lineTo(BX1 - 2f, BELLY - 34f)
+        path.close()
+        c.drawPath(path, p)
+
+        // The near panel, crossing left-over-right down to the belt. Wide enough to read as cloth.
+        p.color = cloth
+        path.reset()
+        path.moveTo(BX1 - 40f, BACK - 10f)
+        path.cubicTo(BX1 - 48f, BACK + 26f, BX1 - 46f, BELLY - 48f, BX1 - 34f, BELLY - 26f)
+        path.lineTo(BX0 - 20f, BELLY - 26f)
+        path.lineTo(BX0 - 20f, BACK - 10f)
+        path.close()
+        c.drawPath(path, p)
+
+        // its lit edge, then the shadow the far panel casts under it
+        p.color = ColorX.tint(cloth, 0.30f)
+        path.reset()
+        path.moveTo(BX1 - 40f, BACK - 10f)
+        path.cubicTo(BX1 - 48f, BACK + 26f, BX1 - 46f, BELLY - 48f, BX1 - 34f, BELLY - 26f)
+        path.lineTo(BX1 - 44f, BELLY - 26f)
+        path.cubicTo(BX1 - 56f, BELLY - 48f, BX1 - 58f, BACK + 26f, BX1 - 50f, BACK - 10f)
+        path.close()
+        c.drawPath(path, p)
+        ink.strokeWidth = 4f
+        ink.color = ColorX.withAlpha(BuddyGeom.INK, 0.8f)
+        path.reset()
+        path.moveTo(BX1 - 40f, BACK - 10f)
+        path.cubicTo(BX1 - 48f, BACK + 26f, BX1 - 46f, BELLY - 48f, BX1 - 34f, BELLY - 26f)
         c.drawPath(path, ink)
         ink.color = BuddyGeom.INK
         ink.strokeWidth = 5f
 
-        // the belt, knotted on the near side
+        // The obi, in line with every other belt on the rig: a band low on the shirt.
         p.color = under
-        r.set(BX0 + 2f, BELLY - 30f, BX1 - 6f, BELLY - 12f)
-        c.drawRoundRect(r, 4f, 4f, p)
-        p.color = ColorX.shade(under, 0.72f)
-        r.set(BX0 + 2f, BELLY - 17f, BX1 - 6f, BELLY - 12f)
-        c.drawRoundRect(r, 3f, 3f, p)
-        p.color = under
-        r.set(BX1 - 34f, BELLY - 34f, BX1 - 12f, BELLY - 8f)
-        c.drawRoundRect(r, 5f, 5f, p)          // the knot
-        p.color = ColorX.shade(under, 0.8f)
-        path.reset()                            // the hanging end
-        path.moveTo(BX1 - 30f, BELLY - 10f)
-        path.lineTo(BX1 - 24f, BELLY + 14f)
-        path.lineTo(BX1 - 14f, BELLY + 12f)
-        path.lineTo(BX1 - 16f, BELLY - 10f)
+        r.set(BX0 - 20f, BELLY - 32f, BX1 + 20f, BELLY - 10f)
+        c.drawRect(r, p)
+        p.color = ColorX.shade(under, 0.68f)
+        r.set(BX0 - 20f, BELLY - 15f, BX1 + 20f, BELLY - 10f)
+        c.drawRect(r, p)
+        p.color = ColorX.tint(under, 0.22f)
+        r.set(BX0 - 20f, BELLY - 32f, BX1 + 20f, BELLY - 28f)
+        c.drawRect(r, p)
+        c.restore()
+
+        // The knot and its tails hang off the front of the belt, so they are the one part that is
+        // allowed outside the shirt.
+        p.color = ColorX.shade(under, 0.84f)
+        path.reset()
+        path.moveTo(BX1 - 32f, BELLY - 14f)
+        path.lineTo(BX1 - 27f, BELLY + 16f)
+        path.lineTo(BX1 - 16f, BELLY + 14f)
+        path.lineTo(BX1 - 17f, BELLY - 14f)
         path.close()
         c.drawPath(path, p)
+        path.reset()
+        path.moveTo(BX1 - 22f, BELLY - 14f)
+        path.lineTo(BX1 - 10f, BELLY + 10f)
+        path.lineTo(BX1 - 1f, BELLY + 5f)
+        path.lineTo(BX1 - 9f, BELLY - 14f)
+        path.close()
+        c.drawPath(path, p)
+        rrInk(c, BX1 - 36f, BELLY - 34f, BX1 - 8f, BELLY - 8f, 6f, under)
+        p.color = ColorX.shade(under, 0.6f)
+        r.set(BX1 - 30f, BELLY - 26f, BX1 - 14f, BELLY - 16f)
+        c.drawOval(r, p)
     }
 
     /** Tall backswept spikes. Read as hair, not as a crown, because they all lean the same way. */
@@ -1597,8 +1649,6 @@ object OutfitArt {
         p.color = ColorX.withAlpha(0xFF6B4A2F.toInt(), 0.5f)
         r.set(HX - 24f, TOP - 1f, HX + 6f, TOP + 9f)
         c.drawOval(r, p)
-
-        collar(c, 0xFF2E56B8.toInt())
     }
 
     /** A standing aura behind him - the charge-up flames, not an attack. */

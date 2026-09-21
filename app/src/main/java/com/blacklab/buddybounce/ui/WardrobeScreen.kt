@@ -6,6 +6,7 @@ import android.graphics.RectF
 import com.blacklab.buddybounce.Game
 import com.blacklab.buddybounce.data.Outfits
 import com.blacklab.buddybounce.data.Trails
+import com.blacklab.buddybounce.game.Tuning
 import com.blacklab.buddybounce.render.ColorX
 import kotlin.math.ceil
 import kotlin.math.min
@@ -146,10 +147,17 @@ class WardrobeScreen(private val g: Game) {
         }
 
         ui.text(c, outfit.name.uppercase(), x + w * 0.5f, y + h - 108f, 44f, Theme.TEXT, ui.title)
-        ui.text(
-            c, if (owned) outfit.blurb else "Locked - win it from the coin machine",
-            x + w * 0.5f, y + h - 68f, 27f, Theme.TEXT_DIM, ui.body, false
-        )
+        // Good Boy Eternal is never in the machine's pool - it is earned a halo at a time in
+        // Heaven - so the usual "win it from the machine" line would send the player nowhere.
+        val lockLine = when {
+            owned -> outfit.blurb
+            outfit.id == Outfits.HEAVEN_ONLY_ID ->
+                "Locked - collect ${Tuning.HALOS_FOR_GHOST} halos in Heaven"
+            else -> "Locked - win it from the coin machine"
+        }
+        var blurbSize = 27f
+        while (ui.measure(lockLine, blurbSize, ui.body) > w - 50f && blurbSize > 17f) blurbSize -= 1f
+        ui.text(c, lockLine, x + w * 0.5f, y + h - 68f, blurbSize, Theme.TEXT_DIM, ui.body, false)
 
         val bw = min(w - 80f, 420f)
         val bx = x + (w - bw) * 0.5f

@@ -25,18 +25,31 @@ class ScenesScreen(private val g: Game) {
         const val CARD = 9100   // + index
     }
 
+    private val scroll = Scroller()
+    private var maxScroll = 0f
+
+    /**
+     * The worlds to show. Heaven is left out until it has been earned - it is meant to be a
+     * surprise, and a locked "???" card (or a total that does not add up) gives it away.
+     */
+    private fun visibleScenes(): List<com.blacklab.buddybounce.render.Scene> =
+        if (g.save.ownsScene(Scenes.HEAVEN_ID)) Scenes.ALL
+        else Scenes.ALL.filter { it.id != Scenes.HEAVEN_ID }
+
     fun draw(c: Canvas) {
         val ui = g.ui
         val h = Theme.SCREEN_H
         val wide = g.worldW > h * 1.12f
         val rise = (1f - g.screenAnim) * 50f
+        val list = visibleScenes()
 
         if (ui.backButton(c, Id.BACK, ui.safeLeft + 78f, ui.safeTop + 78f, 52f)) {
             g.tap(); g.goto(Game.Screen.MENU)
         }
         ui.text(c, "WORLDS", g.worldW * 0.5f, ui.safeTop + 96f, 62f, Theme.TEXT, ui.title)
+        val owned = list.count { g.save.ownsScene(it.id) }
         ui.text(
-            c, "${g.ownedSceneCount()} of ${Scenes.ALL.size} unlocked  •  swap any time",
+            c, "$owned of ${list.size} unlocked  \u2022  swap any time",
             g.worldW * 0.5f, ui.safeTop + 140f, 30f, Theme.TEXT_DIM, ui.body, false,
             g.worldW - ui.safeLeft - ui.safeRight - 80f
         )
@@ -47,34 +60,63 @@ class ScenesScreen(private val g: Game) {
         val cardW = (listW - gap * (cols - 1)) / cols
         val cardH = if (wide) cardW * 1.05f else 230f
         val x0 = (g.worldW - listW) * 0.5f
-        val top = ui.safeTop + 182f + rise
+        val top = ui.safeTop + 182f
+        val viewH = (h - ui.safeBottom - top - 16f).coerceAtLeast(200f)
 
-        for (i in Scenes.ALL.indices) {
+        // There are ten worlds now. The list used to simply stop drawing when it ran out of
+        // room, which left the later ones invisible AND unreachable - there was no way to
+        // select a world you could not see.
+        val rows = ceil(list.size / cols.toFloat()).toInt()
+        val contentH = rows * (cardH + gap) + 72f
+        maxScroll = (contentH - viewH).coerceAtLeast(0f)
+        scroll.update(ui.frameDt, ui.pointerDown, ui.scrollDrag, maxScroll)
+
+        c.save()
+        c.clipRect(x0 - 12f, top, x0 + listW + 12f, top + viewH)
+        for (i in list.indices) {
             val col = i % cols
             val row = i / cols
             val x = x0 + col * (cardW + gap)
-            val y = top + row * (cardH + gap)
-            if (y + cardH > h - ui.safeBottom) break
-            drawCard(c, i, x, y, cardW, cardH, wide)
+            val y = top + row * (cardH + gap) - scroll.y + rise
+            if (y + cardH < top - 40f || y > top + viewH + 40f) continue
+            drawCard(c, list[i], i, x, y, cardW, cardH, wide)
         }
-
-        val rows = ceil(Scenes.ALL.size / cols.toFloat()).toInt()
-        val after = top + rows * (cardH + gap)
-        if (after < h - ui.safeBottom - 60f) {
+        val after = top + rows * (cardH + gap) - scroll.y
+        if (after < top + viewH) {
             ui.text(
                 c, "More worlds turn up in the prize machine. Rarely.",
-                g.worldW * 0.5f, after + 40f, 28f, Theme.TEXT_DIM, ui.body, false
+                g.worldW * 0.5f, after + 40f, 28f, Theme.TEXT_DIM, ui.body, false, listW - 40f
             )
+        }
+        c.restore()
+
+        // scroll affordance
+        if (maxScroll > 1f) {
+            val trackH = viewH * 0.9f
+            val knobH = (trackH * (viewH / (viewH + maxScroll))).coerceAtLeast(60f)
+            val t = scroll.y / maxScroll
+            p.reset(); p.isAntiAlias = true
+            p.color = 0x22FFFFFF
+            r.set(x0 + listW + 16f, top + viewH * 0.05f, x0 + listW + 22f, top + viewH * 0.05f + trackH)
+            c.drawRoundRect(r, 3f, 3f, p)
+            p.color = 0x66FFFFFF
+            val ky = top + viewH * 0.05f + (trackH - knobH) * t
+            r.set(x0 + listW + 16f, ky, x0 + listW + 22f, ky + knobH)
+            c.drawRoundRect(r, 3f, 3f, p)
         }
     }
 
-    private fun drawCard(c: Canvas, index: Int, x: Float, y: Float, w: Float, h: Float, wide: Boolean) {
+    private fun drawCard(
+        c: Canvas, scene: com.blacklab.buddybounce.render.Scene, index: Int,
+        x: Float, y: Float, w: Float, h: Float, wide: Boolean
+    ) {
         val ui = g.ui
-        val scene = Scenes.ALL[index]
         val owned = g.save.ownsScene(scene.id)
         val selected = g.save.selectedScene == scene.id
 
-        if (ui.button(c, Id.CARD + index, x, y, w, h, "", Ui.ButtonStyle.GHOST) && owned && !selected) {
+        if (ui.button(c, Id.CARD + index, x, y, w, h, "", Ui.ButtonStyle.GHOST) &&
+            owned && !selected && !scroll.suppressTap
+        ) {
             g.tap()
             g.save.selectedScene = scene.id
             g.applyScene()
@@ -142,7 +184,7 @@ class ScenesScreen(private val g: Game) {
                 textX, nameY + 40f, 26f, Theme.TEXT_DIM, ui.bodyLeft, false, textBox
             )
             ui.text(
-                c, bandList(index), textX, nameY + 74f, 24f,
+                c, bandList(scene), textX, nameY + 74f, 24f,
                 ColorX.withAlpha(scene.cardTint, 0.9f), ui.bodyLeft, false, textBox
             )
         }
@@ -173,8 +215,8 @@ class ScenesScreen(private val g: Game) {
         p.style = Paint.Style.FILL
     }
 
-    private fun bandList(index: Int): String {
-        val bands = Scenes.ALL[index].bands
+    private fun bandList(scene: com.blacklab.buddybounce.render.Scene): String {
+        val bands = scene.bands
         val sb = StringBuilder()
         for (i in bands.indices) {
             if (i > 0) sb.append("  ›  ")
