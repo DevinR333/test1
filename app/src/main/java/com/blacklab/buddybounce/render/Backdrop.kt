@@ -252,6 +252,11 @@ class Backdrop(private val art: Art) {
             BandStyle.REEF -> reef(c, worldW, camY, pal, alpha, time)
             BandStyle.CITY -> city(c, worldW, camY, pal, alpha, time)
             BandStyle.PEAKS -> peaks(c, worldW, camY, pal, alpha)
+            BandStyle.PINES -> pines(c, worldW, camY, pal, alpha, time)
+            BandStyle.DUNES -> dunes(c, worldW, camY, pal, alpha)
+            BandStyle.CANOPY -> canopy(c, worldW, camY, pal, alpha, time)
+            BandStyle.SWEETS -> sweets(c, worldW, camY, pal, alpha)
+            BandStyle.TOMBS -> tombs(c, worldW, camY, pal, alpha)
             else -> lava(c, worldW, camY, pal, alpha, time)
         }
     }
@@ -316,6 +321,265 @@ class Backdrop(private val art: Art) {
                 val cx = trunkX + dir * (190f + Hash.f(idx * 19 + i, 101) * 340f)
                 val cy = baseY - h * (0.35f + Hash.f(idx * 19 + i, 103) * 0.8f)
                 c.drawCircle(cx, cy, 120f + Hash.f(idx * 19 + i, 107) * 120f, paint)
+            }
+        }
+    }
+
+    /**
+     * Snow-laden conifers.
+     *
+     * The frozen world used the same round-canopy [trees] as the backyard, which made its pine
+     * band read as the same place in a colder tint. Conifers are a different SHAPE - stacked
+     * triangular tiers narrowing to a spire - and the snow sitting along the top of each tier is
+     * what says "winter" at a glance rather than "green trees, but blue".
+     */
+    private fun pines(c: Canvas, worldW: Float, camY: Float, pal: BiomePalette, alpha: Float, time: Float) {
+        paint.reset(); paint.isAntiAlias = true
+        val h = Tuning.VIEW_H * 0.8f
+        band(camY, 0.26f, h) { idx, baseY ->
+            // two ranks: a pale far rank, then a darker near rank in front of it
+            for (rank in 0 until 2) {
+                val far = rank == 0
+                val count = if (far) 7 else 5
+                val bodyCol = if (far) {
+                    ColorX.withAlpha(ColorX.tint(pal.farShape, 0.3f), alpha * 0.5f)
+                } else {
+                    ColorX.withAlpha(pal.midShape, alpha * 0.9f)
+                }
+                val snowCol = ColorX.withAlpha(
+                    0xFFFFFFFF.toInt(), alpha * (if (far) 0.42f else 0.85f)
+                )
+                for (i in 0 until count) {
+                    val key = idx * 29 + rank * 13 + i
+                    val cx = (Hash.f(key, 131) * (worldW + 400f)) - 200f
+                    val treeH = h * (if (far) 0.42f else 0.62f) * (0.72f + Hash.f(key, 133) * 0.56f)
+                    val halfW = treeH * 0.30f
+                    val footY = baseY + (if (far) h * 0.10f else h * 0.24f)
+
+                    // trunk
+                    paint.color = ColorX.withAlpha(
+                        ColorX.shade(pal.nearShape, 0.55f), alpha * (if (far) 0.4f else 0.8f)
+                    )
+                    rect.set(cx - halfW * 0.10f, footY - treeH * 0.16f, cx + halfW * 0.10f, footY)
+                    c.drawRect(rect, paint)
+
+                    // four tiers, each narrower and higher than the last
+                    for (tier in 0 until 4) {
+                        val t = tier / 3f
+                        val tierW = halfW * (1f - t * 0.62f)
+                        val tierTop = footY - treeH * (0.22f + t * 0.24f) - treeH * 0.30f
+                        val tierBot = footY - treeH * (0.10f + t * 0.24f)
+
+                        paint.color = bodyCol
+                        path.reset()
+                        path.moveTo(cx, tierTop)
+                        path.lineTo(cx + tierW, tierBot)
+                        path.lineTo(cx + tierW * 0.62f, tierBot)
+                        path.lineTo(cx, tierBot - (tierBot - tierTop) * 0.18f)
+                        path.lineTo(cx - tierW * 0.62f, tierBot)
+                        path.lineTo(cx - tierW, tierBot)
+                        path.close()
+                        c.drawPath(path, paint)
+
+                        // the snow load: a thinner copy of the tier's upper edge, sagging a
+                        // little at the tips the way settled snow does
+                        paint.color = snowCol
+                        path.reset()
+                        path.moveTo(cx, tierTop)
+                        path.lineTo(cx + tierW * 0.92f, tierBot - (tierBot - tierTop) * 0.1f)
+                        path.quadTo(
+                            cx + tierW * 0.5f, tierBot - (tierBot - tierTop) * 0.46f,
+                            cx, tierTop + (tierBot - tierTop) * 0.2f
+                        )
+                        path.quadTo(
+                            cx - tierW * 0.5f, tierBot - (tierBot - tierTop) * 0.46f,
+                            cx - tierW * 0.92f, tierBot - (tierBot - tierTop) * 0.1f
+                        )
+                        path.close()
+                        c.drawPath(path, paint)
+                    }
+
+                    // a cap of snow on the spire
+                    paint.color = snowCol
+                    c.drawCircle(cx, footY - treeH * 0.90f, halfW * 0.16f, paint)
+                }
+            }
+
+            // drifting snow in front of the whole band
+            paint.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), alpha * 0.5f)
+            for (i in 0 until 16) {
+                val key = idx * 41 + i
+                val driftX = (Hash.f(key, 141) * worldW + sin(time * 0.6f + i) * 40f) % worldW
+                val driftY = baseY - ((Hash.f(key, 143) * h + time * 34f) % h)
+                c.drawCircle(driftX, driftY, 3f + Hash.f(key, 147) * 3f, paint)
+            }
+        }
+    }
+
+    /** Smooth wind-carved sand: long shallow crests with a lit windward face. */
+    private fun dunes(c: Canvas, worldW: Float, camY: Float, pal: BiomePalette, alpha: Float) {
+        paint.reset(); paint.isAntiAlias = true
+        band(camY, 0.16f, Tuning.VIEW_H * 1.05f) { idx, baseY ->
+            for (row in 0 until 3) {
+                val t = row / 2f
+                val y = baseY - row * 210f
+                paint.color = ColorX.withAlpha(
+                    ColorX.lerp(pal.nearShape, pal.farShape, t), alpha * (0.85f - t * 0.3f)
+                )
+                path.reset()
+                path.moveTo(-40f, y + 240f)
+                var x = -40f
+                var k = 0
+                while (x < worldW + 80f) {
+                    val span = 260f + Hash.f(idx * 31 + row * 7 + k, 151) * 300f
+                    val rise = 90f + Hash.f(idx * 31 + row * 7 + k, 153) * 130f
+                    path.quadTo(x + span * 0.5f, y - rise, x + span, y + 10f)
+                    x += span
+                    k++
+                }
+                path.lineTo(x, y + 240f)
+                path.close()
+                c.drawPath(path, paint)
+                // the sunlit lip along each crest
+                paint.color = ColorX.withAlpha(pal.platAccent, alpha * (0.3f - t * 0.1f))
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = 5f
+                c.drawPath(path, paint)
+                paint.style = Paint.Style.FILL
+            }
+        }
+    }
+
+    /** Layered leaf from above, with vines hanging down out of it. */
+    private fun canopy(c: Canvas, worldW: Float, camY: Float, pal: BiomePalette, alpha: Float, time: Float) {
+        paint.reset(); paint.isAntiAlias = true
+        val h = Tuning.VIEW_H * 0.75f
+        band(camY, 0.22f, h) { idx, baseY ->
+            for (layer in 0 until 3) {
+                val t = layer / 2f
+                paint.color = ColorX.withAlpha(
+                    ColorX.lerp(pal.nearShape, pal.farShape, t), alpha * (0.9f - t * 0.35f)
+                )
+                val n = 9
+                for (i in 0 until n) {
+                    val key = idx * 43 + layer * 11 + i
+                    val cx = Hash.f(key, 161) * (worldW + 300f) - 150f
+                    val cy = baseY - h * (0.1f + t * 0.4f) - Hash.f(key, 163) * h * 0.4f
+                    val rw = 150f + Hash.f(key, 167) * 190f
+                    // a leaf, not a circle: pointed at both ends
+                    path.reset()
+                    path.moveTo(cx - rw, cy)
+                    path.quadTo(cx - rw * 0.2f, cy - rw * 0.52f, cx + rw, cy - rw * 0.08f)
+                    path.quadTo(cx - rw * 0.1f, cy + rw * 0.42f, cx - rw, cy)
+                    path.close()
+                    c.drawPath(path, paint)
+                }
+            }
+            // vines swaying out of the underside
+            paint.style = Paint.Style.STROKE
+            paint.strokeCap = Paint.Cap.ROUND
+            paint.strokeWidth = 7f
+            paint.color = ColorX.withAlpha(ColorX.shade(pal.nearShape, 0.7f), alpha * 0.7f)
+            for (i in 0 until 6) {
+                val key = idx * 47 + i
+                val vx = Hash.f(key, 171) * worldW
+                val len = 200f + Hash.f(key, 173) * 320f
+                val sway = sin(time * 0.7f + i) * 28f
+                path.reset()
+                path.moveTo(vx, baseY - h * 0.1f)
+                path.quadTo(vx + sway, baseY - h * 0.1f + len * 0.5f, vx + sway * 1.6f, baseY - h * 0.1f + len)
+                c.drawPath(path, paint)
+            }
+            paint.style = Paint.Style.FILL
+        }
+    }
+
+    /** Stacked confectionery: gumdrop domes, candy canes and a dripping icing line. */
+    private fun sweets(c: Canvas, worldW: Float, camY: Float, pal: BiomePalette, alpha: Float) {
+        paint.reset(); paint.isAntiAlias = true
+        val h = Tuning.VIEW_H * 0.9f
+        band(camY, 0.19f, h) { idx, baseY ->
+            // gumdrop hills
+            for (i in 0 until 6) {
+                val key = idx * 53 + i
+                val cx = Hash.f(key, 181) * (worldW + 200f) - 100f
+                val rad = 150f + Hash.f(key, 183) * 210f
+                paint.color = ColorX.withAlpha(
+                    if (i % 2 == 0) pal.nearShape else pal.midShape, alpha * 0.8f
+                )
+                rect.set(cx - rad, baseY - rad * 1.1f, cx + rad, baseY + rad * 0.4f)
+                c.drawOval(rect, paint)
+                // the sugar crust catching the light
+                paint.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), alpha * 0.22f)
+                rect.set(cx - rad * 0.6f, baseY - rad * 0.95f, cx + rad * 0.1f, baseY - rad * 0.45f)
+                c.drawOval(rect, paint)
+            }
+            // an icing drip line running across the band
+            paint.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), alpha * 0.5f)
+            path.reset()
+            val dripY = baseY - h * 0.42f
+            path.moveTo(-20f, dripY - 40f)
+            path.lineTo(worldW + 20f, dripY - 40f)
+            var x = -20f
+            var k = 0
+            while (x < worldW + 40f) {
+                val span = 120f + Hash.f(idx * 59 + k, 187) * 90f
+                val drop = 26f + Hash.f(idx * 59 + k, 189) * 60f
+                path.quadTo(x + span * 0.5f, dripY + drop, x + span, dripY)
+                x += span
+                k++
+            }
+            path.lineTo(x, dripY - 40f)
+            path.close()
+            c.drawPath(path, paint)
+        }
+    }
+
+    /** Leaning headstones, railings and bare branches. */
+    private fun tombs(c: Canvas, worldW: Float, camY: Float, pal: BiomePalette, alpha: Float) {
+        paint.reset(); paint.isAntiAlias = true
+        val h = Tuning.VIEW_H * 0.8f
+        band(camY, 0.24f, h) { idx, baseY ->
+            // bare trees behind
+            paint.style = Paint.Style.STROKE
+            paint.strokeCap = Paint.Cap.ROUND
+            paint.color = ColorX.withAlpha(ColorX.shade(pal.farShape, 0.7f), alpha * 0.55f)
+            for (i in 0 until 3) {
+                val key = idx * 61 + i
+                val tx = Hash.f(key, 191) * worldW
+                val th = 340f + Hash.f(key, 193) * 300f
+                paint.strokeWidth = 14f
+                c.drawLine(tx, baseY + 40f, tx + 20f, baseY - th, paint)
+                paint.strokeWidth = 7f
+                for (b in 0 until 4) {
+                    val bt = 0.45f + b * 0.15f
+                    val bx = tx + 20f * bt
+                    val by = baseY + 40f - th * bt
+                    val d = if (b % 2 == 0) 1f else -1f
+                    c.drawLine(bx, by, bx + d * (70f + b * 22f), by - 70f - b * 14f, paint)
+                }
+            }
+            paint.style = Paint.Style.FILL
+
+            // headstones, each leaning its own way
+            for (i in 0 until 7) {
+                val key = idx * 67 + i
+                val sx = Hash.f(key, 197) * (worldW + 160f) - 80f
+                val sw = 70f + Hash.f(key, 199) * 60f
+                val sh = 120f + Hash.f(key, 211) * 130f
+                val lean = (Hash.f(key, 213) - 0.5f) * 16f
+                c.save()
+                c.rotate(lean, sx, baseY)
+                paint.color = ColorX.withAlpha(pal.midShape, alpha * 0.9f)
+                rect.set(sx - sw * 0.5f, baseY - sh, sx + sw * 0.5f, baseY + 30f)
+                c.drawRoundRect(rect, sw * 0.5f, sw * 0.5f, paint)
+                rect.set(sx - sw * 0.5f, baseY - sh * 0.5f, sx + sw * 0.5f, baseY + 30f)
+                c.drawRect(rect, paint)
+                // a lighter face so it is not a flat slab
+                paint.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), alpha * 0.1f)
+                rect.set(sx - sw * 0.34f, baseY - sh * 0.86f, sx - sw * 0.04f, baseY + 10f)
+                c.drawRect(rect, paint)
+                c.restore()
             }
         }
     }
@@ -605,6 +869,31 @@ class Backdrop(private val art: Art) {
     // the ground a run starts on
     // -----------------------------------------------------------------------------------
 
+    /**
+     * A plain three-band floor: surface, body, and a darker lip. The worlds added later use it
+     * with their own colours rather than each getting bespoke geometry - at the bottom of a run
+     * the ground is on screen for a couple of seconds before the camera leaves it behind, and
+     * the colour is doing all the work anyway.
+     */
+    private fun flatGround(c: Canvas, worldW: Float, sy: Float, top: Int, body: Int, deep: Int) {
+        paint.color = body
+        rect.set(-20f, sy, worldW + 20f, sy + 900f)
+        c.drawRect(rect, paint)
+        paint.color = top
+        rect.set(-20f, sy, worldW + 20f, sy + 26f)
+        c.drawRect(rect, paint)
+        paint.color = deep
+        rect.set(-20f, sy + 120f, worldW + 20f, sy + 900f)
+        c.drawRect(rect, paint)
+        // a little scatter so it is not a flat slab
+        paint.color = ColorX.withAlpha(deep, 0.5f)
+        for (i in 0 until 14) {
+            val x = Hash.f(i, 231) * worldW
+            val y = sy + 34f + Hash.f(i, 233) * 76f
+            c.drawCircle(x, y, 4f + Hash.f(i, 237) * 7f, paint)
+        }
+    }
+
     fun drawGround(c: Canvas, worldW: Float, viewTop: Float, groundY: Float, scene: Scene) {
         val sy = viewTop - groundY
         if (sy < -80f || sy > Tuning.VIEW_H + 900f) return
@@ -617,6 +906,10 @@ class Backdrop(private val art: Art) {
             GroundStyle.SEABED -> seabedGround(c, worldW, sy)
             GroundStyle.STREET -> streetGround(c, worldW, sy)
             GroundStyle.SNOW -> snowGround(c, worldW, sy)
+            GroundStyle.SAND -> flatGround(c, worldW, sy, 0xFFE8C084.toInt(), 0xFFC49A5E.toInt(), 0xFF8E6C3E.toInt())
+            GroundStyle.LOAM -> flatGround(c, worldW, sy, 0xFF4A6E3A.toInt(), 0xFF3A4E26.toInt(), 0xFF2A3418.toInt())
+            GroundStyle.FROSTING -> flatGround(c, worldW, sy, 0xFFFFF0F6.toInt(), 0xFFFFC9DE.toInt(), 0xFFE0A0BE.toInt())
+            GroundStyle.GRAVE -> flatGround(c, worldW, sy, 0xFF3A3048.toInt(), 0xFF2A2236.toInt(), 0xFF1A1424.toInt())
             else -> ashGround(c, worldW, sy)
         }
     }

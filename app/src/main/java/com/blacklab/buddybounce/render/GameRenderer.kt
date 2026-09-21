@@ -110,16 +110,8 @@ class GameRenderer(private val art: Art) {
         }
 
         when (plat.kind) {
-            PlatKind.CRUMBLE -> cracks(c, plat, top, left, right, w, h, alpha, 0.45f)
-            PlatKind.FRAGILE -> {
-                cracks(c, plat, top, left, right, w, h, alpha, 0.9f)
-                p.color = ColorX.withAlpha(0xFFE07A5F.toInt(), alpha * 0.85f)
-                p.style = Paint.Style.STROKE
-                p.strokeWidth = 3.5f
-                r.set(left + 2f, top + 2f, right - 2f, top + h - 2f)
-                c.drawRoundRect(r, h * 0.3f, h * 0.3f, p)
-                p.style = Paint.Style.FILL
-            }
+            PlatKind.CRUMBLE -> breakCue(c, plat, top, left, right, w, h, skin, alpha, pal, false)
+            PlatKind.FRAGILE -> breakCue(c, plat, top, left, right, w, h, skin, alpha, pal, true)
             PlatKind.SLIDER -> sliderMarks(c, plat, top, left, right, h, alpha)
             PlatKind.HOVER -> {
                 art.drawGlow(c, plat.x, top + h + 16f, w * 0.7f, pal.platAccent, 0.35f * alpha)
@@ -210,9 +202,164 @@ class GameRenderer(private val art: Art) {
     }
 
     /** Which platform dressing suits a band: grass, moss, snow/cloud, crystal or rock. */
+    /**
+     * The "this one is not going to hold you" treatment, themed to the world's material.
+     *
+     * Two things have to be true at once. It must be obvious at a GLANCE which of the three a
+     * plank is, and it must look like it belongs to the world it is in - a cloud platform that
+     * cracks like stone is nonsense. So the SILHOUETTE carries the meaning and the material
+     * carries the theme:
+     *
+     * * crumbling (one bounce): the plank is visibly split into pieces that have already come
+     *   slightly apart. It is still a solid plank, just a broken one.
+     * * fragile (no bounce at all): the plank is punched through. You can see the sky through
+     *   it, which is the honest signal for something that will not carry any weight.
+     *
+     * The seams, the holes and the debris around them are then drawn in the world's own
+     * material - splinters in the yard, vapour on the cloudline, shards in the crystal bands,
+     * flaking crust over the lava.
+     */
+    private fun breakCue(
+        c: Canvas, plat: Platform, top: Float, left: Float, right: Float,
+        w: Float, h: Float, skin: Int, alpha: Float, pal: BiomePalette, fragile: Boolean
+    ) {
+        val a = alpha
+        val seamCol = ColorX.withAlpha(0xFF0B0E14.toInt(), a * (if (fragile) 0.95f else 0.7f))
+
+        // --- the silhouette cue --------------------------------------------------------------
+        if (fragile) {
+            // punched through in two places, so the plank reads as holed rather than merely dirty
+            p.color = seamCol
+            r.set(left + w * 0.20f, top + h * 0.16f, left + w * 0.40f, top + h * 0.92f)
+            c.drawRoundRect(r, h * 0.2f, h * 0.2f, p)
+            r.set(left + w * 0.58f, top + h * 0.24f, left + w * 0.76f, top + h * 0.86f)
+            c.drawRoundRect(r, h * 0.2f, h * 0.2f, p)
+            // a broken, uneven rim rather than a clean edge
+            p.style = Paint.Style.STROKE
+            p.strokeWidth = 2.6f
+            p.color = ColorX.withAlpha(pal.platTop, a * 0.9f)
+            r.set(left + 2f, top + 2f, right - 2f, top + h - 2f)
+            c.drawRoundRect(r, h * 0.34f, h * 0.34f, p)
+            p.style = Paint.Style.FILL
+        } else {
+            // two seams, with the middle piece dropped a hair - already coming apart
+            p.color = seamCol
+            for (i in 0 until 2) {
+                val sx = left + w * (0.34f + i * 0.32f)
+                path.reset()
+                path.moveTo(sx - 3f, top)
+                path.lineTo(sx + 4f, top + h * 0.45f)
+                path.lineTo(sx - 2f, top + h)
+                path.lineTo(sx - 8f, top + h * 0.5f)
+                path.close()
+                c.drawPath(path, p)
+            }
+            p.color = ColorX.withAlpha(0xFF000000.toInt(), a * 0.28f)
+            r.set(left + w * 0.36f, top + h * 0.06f, left + w * 0.64f, top + h * 0.2f)
+            c.drawRect(r, p)
+        }
+
+        // --- the material cue -----------------------------------------------------------------
+        when (skin) {
+            0, 1 -> {
+                // WOOD: splinters standing off the break, and loose fibres
+                p.color = ColorX.withAlpha(ColorX.shade(pal.platBody, 0.55f), a)
+                val n = if (fragile) 5 else 3
+                for (i in 0 until n) {
+                    val sx = left + w * (0.22f + i * (0.56f / n.coerceAtLeast(1)))
+                    val up = 7f + Hash.f(plat.seed + i, 421) * 11f
+                    path.reset()
+                    path.moveTo(sx, top + 2f)
+                    path.lineTo(sx + 3.5f, top - up)
+                    path.lineTo(sx + 7f, top + 2f)
+                    path.close()
+                    c.drawPath(path, p)
+                }
+                if (fragile) {
+                    p.style = Paint.Style.STROKE
+                    p.strokeWidth = 1.8f
+                    p.color = ColorX.withAlpha(0xFF6B4A2F.toInt(), a * 0.8f)
+                    c.drawLine(left + w * 0.1f, top + h * 0.5f, right - w * 0.1f, top + h * 0.62f, p)
+                    p.style = Paint.Style.FILL
+                }
+            }
+            2 -> {
+                // CLOUD: it is not cracking, it is coming apart into vapour
+                p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), a * (if (fragile) 0.5f else 0.34f))
+                val n = if (fragile) 7 else 4
+                for (i in 0 until n) {
+                    val cx = left + w * (0.12f + Hash.f(plat.seed * 3 + i, 431) * 0.76f)
+                    val cy = top - 4f - Hash.f(plat.seed * 3 + i, 433) * 16f
+                    c.drawCircle(cx, cy, 5f + Hash.f(plat.seed * 3 + i, 437) * 7f, p)
+                }
+                if (fragile) {
+                    // wisps falling out of the underside - nothing is holding together
+                    p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), a * 0.35f)
+                    for (i in 0 until 4) {
+                        val cx = left + w * (0.2f + i * 0.2f)
+                        c.drawCircle(cx, top + h + 6f + i * 3f, 4f + (i % 2) * 3f, p)
+                    }
+                }
+            }
+            3 -> {
+                // CRYSTAL: hairline fractures, and for fragile, a piece already gone
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = if (fragile) 2.4f else 1.6f
+                p.color = ColorX.withAlpha(0xFFEAF6FF.toInt(), a * (if (fragile) 0.95f else 0.6f))
+                for (i in 0 until (if (fragile) 5 else 3)) {
+                    val sx = left + w * (0.16f + i * 0.17f)
+                    path.reset()
+                    path.moveTo(sx, top + 1f)
+                    path.lineTo(sx + 9f, top + h * 0.42f)
+                    path.lineTo(sx - 5f, top + h * 0.7f)
+                    path.lineTo(sx + 6f, top + h - 1f)
+                    c.drawPath(path, p)
+                }
+                p.style = Paint.Style.FILL
+                if (fragile) {
+                    p.color = ColorX.withAlpha(0xFFEAF6FF.toInt(), a * 0.7f)
+                    for (i in 0 until 3) {
+                        val sx = left + w * (0.3f + i * 0.2f)
+                        path.reset()
+                        path.moveTo(sx, top - 12f - i * 4f)
+                        path.lineTo(sx + 6f, top - 2f)
+                        path.lineTo(sx - 5f, top - 3f)
+                        path.close()
+                        c.drawPath(path, p)
+                    }
+                }
+            }
+            else -> {
+                // SLAG / STONE: glowing seams where the crust has split
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = if (fragile) 4f else 2.6f
+                p.color = ColorX.withAlpha(pal.platAccent, a * (if (fragile) 0.95f else 0.6f))
+                for (i in 0 until (if (fragile) 4 else 2)) {
+                    val sx = left + w * (0.2f + i * 0.2f)
+                    path.reset()
+                    path.moveTo(sx, top + 2f)
+                    path.lineTo(sx + 10f, top + h * 0.5f)
+                    path.lineTo(sx - 4f, top + h - 2f)
+                    c.drawPath(path, p)
+                }
+                p.style = Paint.Style.FILL
+                if (fragile) {
+                    art.drawGlow(c, plat.x, top + h * 0.5f, w * 0.8f, pal.platAccent, 0.3f * a)
+                    // flakes of crust dropping off it
+                    p.color = ColorX.withAlpha(ColorX.shade(pal.platBody, 0.5f), a * 0.8f)
+                    for (i in 0 until 3) {
+                        val fx = left + w * (0.26f + i * 0.24f)
+                        r.set(fx - 5f, top + h + 4f + i * 4f, fx + 5f, top + h + 10f + i * 4f)
+                        c.drawRoundRect(r, 2f, 2f, p)
+                    }
+                }
+            }
+        }
+    }
+
     private fun skinFor(style: Int): Int = when (style) {
         BandStyle.HILLS -> 0
-        BandStyle.TREES, BandStyle.KELP -> 1
+        BandStyle.TREES, BandStyle.KELP, BandStyle.PINES -> 1
         BandStyle.CLOUDS, BandStyle.PEAKS -> 2
         BandStyle.AURORA, BandStyle.REEF -> 3
         else -> 4
@@ -288,21 +435,6 @@ class GameRenderer(private val art: Art) {
         p.strokeWidth = 3f
         r.set(left + 3f, top + 2f, right - 3f, top + h * 0.6f)
         c.drawRoundRect(r, h * 0.3f, h * 0.3f, p)
-        p.style = Paint.Style.FILL
-    }
-
-    private fun cracks(c: Canvas, plat: Platform, top: Float, left: Float, right: Float, w: Float, h: Float, a: Float, strength: Float) {
-        p.color = ColorX.withAlpha(0xFF23150F.toInt(), a * strength * 0.8f)
-        p.style = Paint.Style.STROKE
-        p.strokeWidth = 3f
-        for (i in 0 until 3) {
-            val x = left + w * (0.25f + i * 0.25f + Hash.range(plat.seed + i, 261, -0.06f, 0.06f))
-            path.reset()
-            path.moveTo(x, top + 2f)
-            path.lineTo(x + w * 0.05f, top + h * 0.45f)
-            path.lineTo(x - w * 0.03f, top + h * 0.95f)
-            c.drawPath(path, p)
-        }
         p.style = Paint.Style.FILL
     }
 

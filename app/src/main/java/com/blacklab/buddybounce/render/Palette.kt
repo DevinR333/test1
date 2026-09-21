@@ -50,6 +50,12 @@ object BandStyle {
     const val CITY = 7
     const val PEAKS = 8
     const val LAVA = 9
+    /** Snow-laden conifers. Separate from TREES so the frozen world cannot look like the yard. */
+    const val PINES = 10
+    const val DUNES = 11        // rolling sand with wind-carved crests
+    const val CANOPY = 12       // layered jungle leaf with hanging vines
+    const val SWEETS = 13       // stacked confectionery
+    const val TOMBS = 14        // leaning headstones and bare branches
 }
 
 /** How the very bottom of a run is dressed, before the camera leaves it behind. */
@@ -59,6 +65,10 @@ object GroundStyle {
     const val STREET = 2
     const val SNOW = 3
     const val ASH = 4
+    const val SAND = 5
+    const val LOAM = 6
+    const val FROSTING = 7
+    const val GRAVE = 8
 }
 
 /**
@@ -96,6 +106,10 @@ object Fauna {
     const val FROST = 3
     const val EMBER = 4
     const val HEAVEN = 5
+    const val DESERT = 6
+    const val JUNGLE = 7
+    const val CANDY = 8
+    const val HAUNT = 9
 }
 
 /**
@@ -266,7 +280,7 @@ object Scenes {
                 0xFFFFFFFF.toInt(), cloudAlpha = 0.85f
             ),
             BiomePalette(
-                "Pine Woods", BandStyle.TREES,
+                "Pine Woods", BandStyle.PINES,
                 0xFF5A93C4.toInt(), 0xFF8FC0E0.toInt(), 0xFFDCEEF7.toInt(),
                 0xFF2E5A4A.toInt(), 0xFF1E4038.toInt(), 0xFF16302A.toInt(),
                 0xFFE8F4FF.toInt(), 0xFFB8CFE0.toInt(), 0xFF86A0B8.toInt(), 0xFF6FBF9F.toInt(),
@@ -392,7 +406,188 @@ object Scenes {
         )
     )
 
-    val ALL: List<Scene> = listOf(YARD, OCEAN, NEON, FROST, EMBER, HEAVEN)
+    // ---- Dust Run ---------------------------------------------------------------------------
+
+    private val DESERT = Scene(
+        "desert", "Dust Run",
+        "Out of the dunes, up past the canyon rim and the storm, into a sky bleached white.",
+        GroundStyle.SAND, 0xFFE8B45C.toInt(), Fauna.DESERT,
+        listOf(
+            BiomePalette(
+                "Dunes", BandStyle.DUNES,
+                0xFFE8A54C.toInt(), 0xFFF2C888.toInt(), 0xFFFCEBC4.toInt(),
+                0xFFD89A52.toInt(), 0xFFB87C3E.toInt(), 0xFF8E5C2C.toInt(),
+                0xFFD8B278.toInt(), 0xFFAE8450.toInt(), 0xFF7A5C34.toInt(), 0xFFFFD98A.toInt(),
+                0xFFFFF0C8.toInt(), cloudAlpha = 0.4f
+            ),
+            BiomePalette(
+                "Canyon", BandStyle.PEAKS,
+                0xFFD07A44.toInt(), 0xFFE2A268.toInt(), 0xFFF4CE9E.toInt(),
+                0xFFA85436.toInt(), 0xFF7E3A28.toInt(), 0xFF56261C.toInt(),
+                0xFFC08454.toInt(), 0xFF8E5C36.toInt(), 0xFF5E3C22.toInt(), 0xFFFFB055.toInt(),
+                0xFFFFDCA8.toInt(), cloudAlpha = 0.35f
+            ),
+            BiomePalette(
+                "Sandstorm", BandStyle.CLOUDS,
+                0xFFC69A5E.toInt(), 0xFFDCB77E.toInt(), 0xFFF0D8A8.toInt(),
+                0xFFE8CC96.toInt(), 0xFFC4A068.toInt(), 0xFF9E7A46.toInt(),
+                0xFFE0C08E.toInt(), 0xFFAE8A56.toInt(), 0xFF7E6236.toInt(), 0xFFFFE0A0.toInt(),
+                0xFFFFF4D8.toInt(), cloudAlpha = 1f
+            ),
+            BiomePalette(
+                "Mirage", BandStyle.HILLS,
+                0xFF7FB6D8.toInt(), 0xFFAFD4E8.toInt(), 0xFFE4E6D0.toInt(),
+                0xFFC8CC96.toInt(), 0xFF9AA870.toInt(), 0xFF6E7E50.toInt(),
+                0xFFE8D8A8.toInt(), 0xFFB89C68.toInt(), 0xFF867040.toInt(), 0xFFFFE28E.toInt(),
+                0xFFFFF6D0.toInt(), starAlpha = 0.15f, cloudAlpha = 0.5f
+            ),
+            BiomePalette(
+                "White Sky", BandStyle.NEBULA,
+                0xFFDCE8F4.toInt(), 0xFFEEF4FA.toInt(), 0xFFFDFCF6.toInt(),
+                0xFFE8D8B8.toInt(), 0xFFC6B48E.toInt(), 0xFF9E8C68.toInt(),
+                0xFFF2E6C8.toInt(), 0xFFC8B48C.toInt(), 0xFF968260.toInt(), 0xFFFFCC66.toInt(),
+                0xFFFFFFFF.toInt(), starAlpha = 0.5f, cloudAlpha = 0.2f
+            )
+        )
+    )
+
+    // ---- Overgrown -------------------------------------------------------------------------
+
+    private val JUNGLE = Scene(
+        "jungle", "Overgrown",
+        "Up through the roots and the canopy to the mist above the treetops.",
+        GroundStyle.LOAM, 0xFF6ABE5C.toInt(), Fauna.JUNGLE,
+        listOf(
+            BiomePalette(
+                "Root Floor", BandStyle.CANOPY,
+                0xFF16301C.toInt(), 0xFF244A2C.toInt(), 0xFF396A40.toInt(),
+                0xFF2E6B38.toInt(), 0xFF1E4A28.toInt(), 0xFF132E1A.toInt(),
+                0xFF7A5A34.toInt(), 0xFF56401F.toInt(), 0xFF342612.toInt(), 0xFF8FE060.toInt(),
+                0xFFCFF2A0.toInt(), cloudAlpha = 0.3f
+            ),
+            BiomePalette(
+                "Understorey", BandStyle.CANOPY,
+                0xFF1E4426.toInt(), 0xFF2F6636.toInt(), 0xFF4D8C4A.toInt(),
+                0xFF418A44.toInt(), 0xFF2A6030.toInt(), 0xFF1A3C1E.toInt(),
+                0xFF6E8A3E.toInt(), 0xFF4C6428.toInt(), 0xFF2E3E18.toInt(), 0xFFA8E863.toInt(),
+                0xFFDCF8B0.toInt(), cloudAlpha = 0.45f
+            ),
+            BiomePalette(
+                "Canopy", BandStyle.TREES,
+                0xFF3C7E4E.toInt(), 0xFF5FA463.toInt(), 0xFF96C87E.toInt(),
+                0xFF68B45E.toInt(), 0xFF43863E.toInt(), 0xFF2A5C28.toInt(),
+                0xFF8FA84E.toInt(), 0xFF647C30.toInt(), 0xFF3E4E1C.toInt(), 0xFFC4F06A.toInt(),
+                0xFFE8FCC0.toInt(), cloudAlpha = 0.7f
+            ),
+            BiomePalette(
+                "Flowerline", BandStyle.HILLS,
+                0xFF6FA8D0.toInt(), 0xFF9CC8E2.toInt(), 0xFFD8EEDC.toInt(),
+                0xFFE070A8.toInt(), 0xFFB04E84.toInt(), 0xFF7E3660.toInt(),
+                0xFFA8C468.toInt(), 0xFF7A9444.toInt(), 0xFF4E6428.toInt(), 0xFFFF9CC8.toInt(),
+                0xFFFFD8EC.toInt(), cloudAlpha = 0.8f
+            ),
+            BiomePalette(
+                "Mistline", BandStyle.CLOUDS,
+                0xFF8FBCCE.toInt(), 0xFFBCD8E4.toInt(), 0xFFE8F2F0.toInt(),
+                0xFFDCEAE4.toInt(), 0xFFB4CCC4.toInt(), 0xFF88A49C.toInt(),
+                0xFFD8E4D0.toInt(), 0xFFA8B89E.toInt(), 0xFF76866C.toInt(), 0xFF9FE8C0.toInt(),
+                0xFFE4FFF2.toInt(), starAlpha = 0.2f, cloudAlpha = 1f
+            )
+        )
+    )
+
+    // ---- Sugar Rush -------------------------------------------------------------------------
+
+    private val CANDY = Scene(
+        "candy", "Sugar Rush",
+        "Gingerbread, gumdrops and a sky made of spun sugar. Do not lick the platforms.",
+        GroundStyle.FROSTING, 0xFFFF8FC4.toInt(), Fauna.CANDY,
+        listOf(
+            BiomePalette(
+                "Bakery Floor", BandStyle.SWEETS,
+                0xFFFFC9DE.toInt(), 0xFFFFE0EC.toInt(), 0xFFFFF4F8.toInt(),
+                0xFFE8A05C.toInt(), 0xFFC47C3E.toInt(), 0xFF96582A.toInt(),
+                0xFFFFE8C0.toInt(), 0xFFE0BC8A.toInt(), 0xFFAE8C5E.toInt(), 0xFFFF6FA8.toInt(),
+                0xFFFFF0F6.toInt(), cloudAlpha = 0.6f
+            ),
+            BiomePalette(
+                "Gumdrop Hills", BandStyle.SWEETS,
+                0xFFFFB0D8.toInt(), 0xFFFFD0E6.toInt(), 0xFFFFF0F6.toInt(),
+                0xFF8FE0C8.toInt(), 0xFF5EBCA4.toInt(), 0xFF3E8E7C.toInt(),
+                0xFFFFDCEE.toInt(), 0xFFE8AECC.toInt(), 0xFFB07E96.toInt(), 0xFFFFE05C.toInt(),
+                0xFFFFFAE0.toInt(), cloudAlpha = 0.7f
+            ),
+            BiomePalette(
+                "Liquorice Spires", BandStyle.PEAKS,
+                0xFFC98FD8.toInt(), 0xFFE0B4EC.toInt(), 0xFFF6E0F8.toInt(),
+                0xFF4A3252.toInt(), 0xFF342438.toInt(), 0xFF201622.toInt(),
+                0xFFF2C8E0.toInt(), 0xFFC496B2.toInt(), 0xFF8E6880.toInt(), 0xFFFF9CE0.toInt(),
+                0xFFFFE4F6.toInt(), cloudAlpha = 0.5f
+            ),
+            BiomePalette(
+                "Candyfloss", BandStyle.CLOUDS,
+                0xFFFFA8D4.toInt(), 0xFFFFC8E4.toInt(), 0xFFFFEAF4.toInt(),
+                0xFFFFD8EC.toInt(), 0xFFF2B0D4.toInt(), 0xFFD088AE.toInt(),
+                0xFFFFE4F2.toInt(), 0xFFE4B2D0.toInt(), 0xFFB0809C.toInt(), 0xFFFFF07A.toInt(),
+                0xFFFFFFFF.toInt(), cloudAlpha = 1f
+            ),
+            BiomePalette(
+                "Sugar Sky", BandStyle.AURORA,
+                0xFF6E5AC8.toInt(), 0xFFA890E8.toInt(), 0xFFE0D4F8.toInt(),
+                0xFFFF9CD8.toInt(), 0xFF8FE0E8.toInt(), 0xFF4E3E96.toInt(),
+                0xFFFFDCF0.toInt(), 0xFFC8A0D8.toInt(), 0xFF8E70A4.toInt(), 0xFFFFE87A.toInt(),
+                0xFFFFFFFF.toInt(), starAlpha = 0.8f, cloudAlpha = 0.35f
+            )
+        )
+    )
+
+    // ---- Hollow Hill -------------------------------------------------------------------------
+
+    private val HAUNT = Scene(
+        "haunt", "Hollow Hill",
+        "Through the graves and the dead wood, up where the moon is far too close.",
+        GroundStyle.GRAVE, 0xFF9C7BD8.toInt(), Fauna.HAUNT,
+        listOf(
+            BiomePalette(
+                "Graveyard", BandStyle.TOMBS,
+                0xFF150F20.toInt(), 0xFF241A34.toInt(), 0xFF3A2A50.toInt(),
+                0xFF4E4060.toInt(), 0xFF342A44.toInt(), 0xFF1E182C.toInt(),
+                0xFF5A5468.toInt(), 0xFF3C3848.toInt(), 0xFF24222E.toInt(), 0xFF8FE0A8.toInt(),
+                0xFFBFF2CE.toInt(), starAlpha = 0.5f, cloudAlpha = 0.5f
+            ),
+            BiomePalette(
+                "Dead Wood", BandStyle.TOMBS,
+                0xFF1A1226.toInt(), 0xFF2C1E3C.toInt(), 0xFF46305C.toInt(),
+                0xFF3E3050.toInt(), 0xFF2A2038.toInt(), 0xFF171022.toInt(),
+                0xFF6A5442.toInt(), 0xFF463828.toInt(), 0xFF2A2018.toInt(), 0xFFB08FE8.toInt(),
+                0xFFD8C0FF.toInt(), starAlpha = 0.6f, cloudAlpha = 0.45f
+            ),
+            BiomePalette(
+                "Fog Bank", BandStyle.CLOUDS,
+                0xFF241C34.toInt(), 0xFF3E3450.toInt(), 0xFF60566E.toInt(),
+                0xFF6E6480.toInt(), 0xFF4E4660.toInt(), 0xFF322C44.toInt(),
+                0xFF6E687C.toInt(), 0xFF4A4658.toInt(), 0xFF2C2A38.toInt(), 0xFF9CE0C0.toInt(),
+                0xFFD0F2E0.toInt(), starAlpha = 0.4f, cloudAlpha = 1f
+            ),
+            BiomePalette(
+                "Belfry", BandStyle.PEAKS,
+                0xFF1E1830.toInt(), 0xFF342A4E.toInt(), 0xFF50406E.toInt(),
+                0xFF2E2642.toInt(), 0xFF1E1830.toInt(), 0xFF120E1E.toInt(),
+                0xFF585070.toInt(), 0xFF3A3450.toInt(), 0xFF221E32.toInt(), 0xFFFFD87A.toInt(),
+                0xFFFFEFC0.toInt(), starAlpha = 0.85f, cloudAlpha = 0.3f
+            ),
+            BiomePalette(
+                "Moonrise", BandStyle.NEBULA,
+                0xFF0C0A18.toInt(), 0xFF181430.toInt(), 0xFF2A2250.toInt(),
+                0xFF6A58B0.toInt(), 0xFF3E3276.toInt(), 0xFF1C1640.toInt(),
+                0xFF8A84A8.toInt(), 0xFF5A5676.toInt(), 0xFF34324A.toInt(), 0xFFE8E0FF.toInt(),
+                0xFFFFFFFF.toInt(), starAlpha = 1f, cloudAlpha = 0.15f
+            )
+        )
+    )
+
+    val ALL: List<Scene> =
+        listOf(YARD, OCEAN, NEON, FROST, EMBER, DESERT, JUNGLE, CANDY, HAUNT, HEAVEN)
 
     private val index: Map<String, Scene> = ALL.associateBy { it.id }
 

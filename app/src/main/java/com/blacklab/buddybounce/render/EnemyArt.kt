@@ -60,6 +60,30 @@ class EnemyArt(private val art: Art) {
                 EnemyKind.STORM -> moltenRock(c, t, phase, a)
                 else -> obsidianRift(c, t, a)
             }
+            Fauna.DESERT -> when (kind) {
+                EnemyKind.BEE -> scarab(c, t, phase, facing, a)
+                EnemyKind.CROW -> vulture(c, t, phase, facing, a)
+                EnemyKind.STORM -> cactus(c, t, phase, a)
+                else -> sandVortex(c, t, a)
+            }
+            Fauna.JUNGLE -> when (kind) {
+                EnemyKind.BEE -> frog(c, t, phase, facing, a)
+                EnemyKind.CROW -> parrot(c, t, phase, facing, a)
+                EnemyKind.STORM -> pitcherPlant(c, t, phase, a)
+                else -> hiveSwarm(c, t, a)
+            }
+            Fauna.CANDY -> when (kind) {
+                EnemyKind.BEE -> gumdrop(c, t, phase, facing, a)
+                EnemyKind.CROW -> candyBat(c, t, phase, facing, a)
+                EnemyKind.STORM -> lollipop(c, t, phase, a)
+                else -> tafflePull(c, t, a)
+            }
+            Fauna.HAUNT -> when (kind) {
+                EnemyKind.BEE -> wisp(c, t, phase, facing, a)
+                EnemyKind.CROW -> ghostDog(c, t, phase, facing, a)
+                EnemyKind.STORM -> gargoyle(c, t, phase, a)
+                else -> graveRift(c, t, a)
+            }
             Fauna.HEAVEN -> when (kind) {
                 EnemyKind.BEE -> cherub(c, t, phase, facing, a)
                 EnemyKind.CROW -> seraph(c, t, phase, facing, a)
@@ -853,5 +877,490 @@ class EnemyArt(private val art: Art) {
         c.drawOval(r, p)
         stroke(0xFFFFFDF0.toInt(), a * 0.8f, rad * 0.08f)
         c.drawOval(r, p)
+    }
+
+    // =====================================================================================
+    // Dust Run - scarab, vulture, cactus, sand vortex
+    // =====================================================================================
+
+    private fun scarab(c: Canvas, t: Float, phase: Float, facing: Float, a: Float) {
+        val flap = sin(t * 36f + phase)
+        c.scale(if (facing >= 0f) 1f else -1f, 1f)
+        fill(0xFFCFE4F2.toInt(), a * 0.5f)                 // wings under the shell
+        c.save(); c.scale(1f, 0.35f + 0.65f * abs(flap))
+        r.set(-44f, -50f, -2f, -14f); c.drawOval(r, p)
+        r.set(2f, -50f, 44f, -14f); c.drawOval(r, p)
+        c.restore()
+        fill(0xFF2E8F6E.toInt(), a)                        // iridescent shell
+        r.set(-40f, -30f, 40f, 30f)
+        c.drawOval(r, p)
+        fill(0xFF1E6E52.toInt(), a)
+        r.set(-6f, -30f, 6f, 30f)
+        c.drawRect(r, p)
+        fill(0xFF7FE0B0.toInt(), a * 0.45f)                 // sheen
+        r.set(-30f, -24f, -6f, -4f)
+        c.drawOval(r, p)
+        fill(0xFF1A4A38.toInt(), a)                         // head and horn
+        c.drawCircle(38f, 0f, 18f, p)
+        path.reset()
+        path.moveTo(48f, -8f); path.lineTo(70f, -22f); path.lineTo(52f, 4f); path.close()
+        c.drawPath(path, p)
+        eyes(c, 30f, 44f, -6f, 5f, a)
+        stroke(0xFF1A4A38.toInt(), a, 4f)                   // legs
+        for (i in 0 until 3) c.drawLine(-20f + i * 20f, 26f, -30f + i * 20f, 44f, p)
+    }
+
+    private fun vulture(c: Canvas, t: Float, phase: Float, facing: Float, a: Float) {
+        val flap = sin(t * 5f + phase)                      // slow, soaring
+        c.scale(if (facing >= 0f) 1f else -1f, 1f)
+        fill(0xFF4A3A34.toInt(), a)
+        path.reset()                                        // long flat wings
+        path.moveTo(-6f, -4f)
+        path.quadTo(-50f, -26f - flap * 20f, -104f, -6f - flap * 12f)
+        path.quadTo(-56f, 12f, -6f, 12f)
+        path.close()
+        c.drawPath(path, p)
+        path.reset()
+        path.moveTo(6f, -4f)
+        path.quadTo(46f, -26f - flap * 20f, 96f, -6f - flap * 12f)
+        path.quadTo(52f, 12f, 6f, 12f)
+        path.close()
+        c.drawPath(path, p)
+        r.set(-26f, -18f, 30f, 28f)                         // body
+        c.drawOval(r, p)
+        fill(0xFFE8C8A8.toInt(), a)                         // bald neck and head
+        r.set(22f, -26f, 40f, 4f)
+        c.drawOval(r, p)
+        c.drawCircle(38f, -30f, 16f, p)
+        fill(0xFFE8A03C.toInt(), a)                         // hooked beak
+        path.reset()
+        path.moveTo(50f, -34f)
+        path.quadTo(72f, -28f, 56f, -16f)
+        path.quadTo(50f, -24f, 50f, -34f)
+        path.close()
+        c.drawPath(path, p)
+        fill(0xFFFFFFFF.toInt(), a); c.drawCircle(42f, -36f, 6f, p)
+        fill(0xFF15161C.toInt(), a); c.drawCircle(44f, -36f, 3f, p)
+    }
+
+    private fun cactus(c: Canvas, t: Float, phase: Float, a: Float) {
+        fill(0xFF3E8A4E.toInt(), a)
+        r.set(-22f, -62f, 22f, 66f)                          // trunk
+        c.drawRoundRect(r, 22f, 22f, p)
+        r.set(-60f, -18f, -18f, 12f)                         // arms
+        c.drawRoundRect(r, 18f, 18f, p)
+        r.set(-60f, -46f, -34f, 4f)
+        c.drawRoundRect(r, 14f, 14f, p)
+        r.set(18f, -32f, 58f, -2f)
+        c.drawRoundRect(r, 16f, 16f, p)
+        r.set(38f, -58f, 62f, -10f)
+        c.drawRoundRect(r, 13f, 13f, p)
+        fill(0xFF2A6638.toInt(), a * 0.7f)                   // ribs
+        for (i in 0 until 3) {
+            r.set(-14f + i * 12f, -56f, -11f + i * 12f, 60f)
+            c.drawRect(r, p)
+        }
+        stroke(0xFFF2E8C8.toInt(), a, 3f)                    // spines
+        for (i in 0 until 9) {
+            val sy = -54f + i * 13f
+            val flick = if ((i + (t * 2f + phase).toInt()) % 4 == 0) 1.3f else 1f
+            c.drawLine(-22f, sy, -34f * flick, sy - 5f, p)
+            c.drawLine(22f, sy, 34f * flick, sy - 5f, p)
+        }
+        fill(0xFFFF6FA8.toInt(), a)                          // a flower on top
+        for (i in 0 until 5) {
+            val ang = i * 1.2566f
+            c.drawCircle(cos(ang) * 13f, -70f + sin(ang) * 9f, 8f, p)
+        }
+        fill(0xFFFFE07A.toInt(), a); c.drawCircle(0f, -70f, 7f, p)
+        eyes(c, -10f, 10f, -6f, 8f, a, 0xFF1A3A20.toInt())
+    }
+
+    private fun sandVortex(c: Canvas, t: Float, a: Float) {
+        swirl(c, t, a, 0xFFE8B45C.toInt(), 0xFF5E3C1E.toInt(), 0xFFFFE8B8.toInt())
+        fill(0xFFF2D8A8.toInt(), a * 0.8f)                   // grit flung out of it
+        for (i in 0 until 7) {
+            val ph = t * 3f + i * 0.9f
+            val d = 40f + ((ph * 26f) % 52f)
+            c.drawCircle(cos(ph * 1.6f) * d, sin(ph * 1.2f) * d * 0.7f, 3.4f, p)
+        }
+    }
+
+    // =====================================================================================
+    // Overgrown - dart frog, parrot, pitcher plant, hornet swarm
+    // =====================================================================================
+
+    private fun frog(c: Canvas, t: Float, phase: Float, facing: Float, a: Float) {
+        val puff = 1f + 0.07f * sin(t * 4f + phase)          // breathing throat
+        c.scale(if (facing >= 0f) 1f else -1f, 1f)
+        fill(0xFF3AC2E0.toInt(), a)                          // body
+        r.set(-42f, -24f, 42f, 30f)
+        c.drawOval(r, p)
+        fill(0xFF1A1C22.toInt(), a)                          // dart-frog blotches
+        c.drawCircle(-18f, -6f, 11f, p)
+        c.drawCircle(14f, 4f, 9f, p)
+        c.drawCircle(2f, -16f, 7f, p)
+        fill(0xFF6FE0F2.toInt(), a)                          // throat
+        c.save(); c.scale(1f, puff)
+        r.set(-20f, 6f, 24f, 32f)
+        c.drawOval(r, p)
+        c.restore()
+        fill(0xFF3AC2E0.toInt(), a)                          // legs
+        r.set(-52f, 12f, -16f, 34f); c.drawRoundRect(r, 11f, 11f, p)
+        r.set(16f, 12f, 52f, 34f); c.drawRoundRect(r, 11f, 11f, p)
+        fill(0xFFFFFFFF.toInt(), a)                          // big high-set eyes
+        c.drawCircle(-16f, -28f, 14f, p)
+        c.drawCircle(16f, -28f, 14f, p)
+        fill(0xFF15161C.toInt(), a)
+        c.drawCircle(-14f, -27f, 7f, p)
+        c.drawCircle(18f, -27f, 7f, p)
+        fill(0xFFFF9C4A.toInt(), a * 0.9f)                   // a tongue flick
+        if (((t * 2f + phase).toInt() % 5) == 0) {
+            r.set(30f, 2f, 74f, 10f)
+            c.drawRoundRect(r, 4f, 4f, p)
+            c.drawCircle(76f, 6f, 7f, p)
+        }
+    }
+
+    private fun parrot(c: Canvas, t: Float, phase: Float, facing: Float, a: Float) {
+        val flap = sin(t * 13f + phase)
+        c.scale(if (facing >= 0f) 1f else -1f, 1f)
+        fill(0xFF1E9E4A.toInt(), a)                          // long tail feathers
+        path.reset()
+        path.moveTo(-34f, 4f); path.lineTo(-96f, 26f); path.lineTo(-92f, 6f)
+        path.lineTo(-30f, -6f); path.close()
+        c.drawPath(path, p)
+        fill(0xFF1478C8.toInt(), a)
+        path.reset()
+        path.moveTo(-34f, 10f); path.lineTo(-88f, 38f); path.lineTo(-34f, 20f); path.close()
+        c.drawPath(path, p)
+        fill(0xFFE8433C.toInt(), a)                          // body
+        r.set(-40f, -22f, 34f, 30f)
+        c.drawOval(r, p)
+        fill(0xFFFFD24A.toInt(), a)                          // wing
+        path.reset()
+        path.moveTo(-6f, -8f)
+        path.quadTo(-34f, -34f - flap * 30f, -62f, -8f - flap * 14f)
+        path.quadTo(-32f, 12f, -6f, 14f)
+        path.close()
+        c.drawPath(path, p)
+        fill(0xFF1E9E4A.toInt(), a)
+        path.reset()
+        path.moveTo(-8f, -4f)
+        path.quadTo(-28f, -22f - flap * 22f, -48f, -4f - flap * 10f)
+        path.quadTo(-26f, 8f, -8f, 10f)
+        path.close()
+        c.drawPath(path, p)
+        fill(0xFFE8433C.toInt(), a)
+        c.drawCircle(30f, -18f, 24f, p)                      // head
+        fill(0xFFFFD24A.toInt(), a)                          // crest
+        for (i in 0 until 3) {
+            path.reset()
+            path.moveTo(22f + i * 8f, -38f)
+            path.lineTo(26f + i * 8f, -62f - i * 4f)
+            path.lineTo(32f + i * 8f, -38f)
+            path.close()
+            c.drawPath(path, p)
+        }
+        fill(0xFF2A2B32.toInt(), a)                          // hooked beak
+        path.reset()
+        path.moveTo(46f, -24f)
+        path.quadTo(72f, -16f, 50f, -2f)
+        path.quadTo(44f, -12f, 46f, -24f)
+        path.close()
+        c.drawPath(path, p)
+        fill(0xFFFFFFFF.toInt(), a); c.drawCircle(36f, -24f, 8f, p)
+        fill(0xFF15161C.toInt(), a); c.drawCircle(38f, -24f, 4f, p)
+    }
+
+    private fun pitcherPlant(c: Canvas, t: Float, phase: Float, a: Float) {
+        val sway = sin(t * 1.8f + phase) * 5f
+        c.rotate(sway)
+        fill(0xFF2A6638.toInt(), a)                          // stem and leaves
+        r.set(-7f, -10f, 7f, 74f)
+        c.drawRoundRect(r, 7f, 7f, p)
+        path.reset()
+        path.moveTo(-6f, 46f); path.quadTo(-52f, 34f, -62f, 58f)
+        path.quadTo(-30f, 62f, -6f, 58f); path.close()
+        c.drawPath(path, p)
+        fill(0xFF7EC44E.toInt(), a)                          // the pitcher
+        path.reset()
+        path.moveTo(-34f, -46f)
+        path.cubicTo(-46f, 6f, -32f, 40f, 0f, 44f)
+        path.cubicTo(32f, 40f, 46f, 6f, 34f, -46f)
+        path.close()
+        c.drawPath(path, p)
+        fill(0xFFE05C7A.toInt(), a * 0.55f)                  // veins
+        for (i in 0 until 4) {
+            r.set(-26f + i * 15f, -40f, -22f + i * 15f, 36f)
+            c.drawRect(r, p)
+        }
+        fill(0xFF3A1A22.toInt(), a)                          // the mouth
+        r.set(-34f, -58f, 34f, -34f)
+        c.drawOval(r, p)
+        fill(0xFFE05C7A.toInt(), a)                          // the lip
+        stroke(0xFFE05C7A.toInt(), a, 9f)
+        c.drawOval(r, p)
+        fill(0xFFFFFFFF.toInt(), a * 0.9f)                   // teeth on the rim
+        for (i in 0 until 6) {
+            val x = -26f + i * 10.5f
+            path.reset()
+            path.moveTo(x, -46f); path.lineTo(x + 4f, -32f); path.lineTo(x + 8f, -46f); path.close()
+            c.drawPath(path, p)
+        }
+        eyes(c, -14f, 14f, -4f, 8f, a, 0xFF2A1A20.toInt())
+    }
+
+    private fun hiveSwarm(c: Canvas, t: Float, a: Float) {
+        art.drawGlow(c, 0f, 0f, 220f, 0xFF3A2A12.toInt(), 0.36f * a)
+        fill(0xFFCFA24A.toInt(), a * 0.9f)                   // the hive itself
+        for (i in 0 until 4) {
+            val k = 1f - i * 0.2f
+            r.set(-62f * k, -50f + i * 26f, 62f * k, -10f + i * 26f)
+            c.drawOval(r, p)
+        }
+        fill(0xFF2A1A08.toInt(), a)
+        r.set(-16f, 28f, 16f, 52f)
+        c.drawOval(r, p)
+        // the swarm around it - that is the part that hurts
+        for (i in 0 until 14) {
+            val ph = t * 2.6f + i * 0.45f
+            val d = 70f + sin(ph * 1.7f) * 34f
+            val x = cos(ph) * d
+            val y = sin(ph * 1.3f) * d * 0.66f
+            fill(0xFF2A2B32.toInt(), a * 0.95f)
+            c.drawCircle(x, y, 6f, p)
+            fill(0xFFF2C14E.toInt(), a * 0.95f)
+            c.drawCircle(x + 1.5f, y, 3.6f, p)
+        }
+    }
+
+    // =====================================================================================
+    // Sugar Rush - gumdrop, candy bat, lollipop, taffy pull
+    // =====================================================================================
+
+    private fun gumdrop(c: Canvas, t: Float, phase: Float, facing: Float, a: Float) {
+        val squish = 1f + 0.12f * sin(t * 5f + phase)
+        c.scale(if (facing >= 0f) 1f else -1f, 1f)
+        c.scale(1f / squish, squish)
+        fill(0xFFFF6FA8.toInt(), a * 0.92f)
+        path.reset()
+        path.moveTo(-40f, 32f)
+        path.cubicTo(-44f, -18f, -20f, -42f, 0f, -42f)
+        path.cubicTo(20f, -42f, 44f, -18f, 40f, 32f)
+        path.close()
+        c.drawPath(path, p)
+        fill(0xFFFFFFFF.toInt(), a * 0.5f)                    // sugar crust
+        for (i in 0 until 9) {
+            val ang = i * 0.7f
+            c.drawCircle(cos(ang) * 30f, 6f + sin(ang) * 26f, 3.4f, p)
+        }
+        fill(0xFFFFB0D8.toInt(), a * 0.6f)                    // highlight
+        r.set(-26f, -30f, -4f, -6f)
+        c.drawOval(r, p)
+        eyes(c, -14f, 14f, -8f, 9f, a, 0xFF7A2A48.toInt())
+        stroke(0xFF7A2A48.toInt(), a, 3.5f)                   // a small smile
+        r.set(-12f, 2f, 12f, 20f)
+        c.drawArc(r, 20f, 140f, false, p)
+    }
+
+    private fun candyBat(c: Canvas, t: Float, phase: Float, facing: Float, a: Float) {
+        val flap = sin(t * 14f + phase)
+        c.scale(if (facing >= 0f) 1f else -1f, 1f)
+        fill(0xFF8F4AD8.toInt(), a)                            // liquorice wings
+        for (s in 0 until 2) {
+            val d = if (s == 0) -1f else 1f
+            path.reset()
+            path.moveTo(0f, -2f)
+            path.lineTo(d * 36f, -30f - flap * 24f)
+            path.lineTo(d * 58f, -8f - flap * 14f)
+            path.lineTo(d * 44f, -10f)
+            path.lineTo(d * 62f, 16f)
+            path.lineTo(d * 42f, 10f)
+            path.lineTo(d * 50f, 32f)
+            path.lineTo(0f, 18f)
+            path.close()
+            c.drawPath(path, p)
+        }
+        fill(0xFFFFE07A.toInt(), a)                            // a marshmallow body
+        r.set(-24f, -22f, 24f, 28f)
+        c.drawRoundRect(r, 16f, 16f, p)
+        fill(0xFFFFF4C2.toInt(), a * 0.7f)
+        r.set(-18f, -16f, 6f, 6f)
+        c.drawOval(r, p)
+        fill(0xFFFFE07A.toInt(), a)
+        path.reset()                                           // ears
+        path.moveTo(-22f, -20f); path.lineTo(-28f, -48f); path.lineTo(-6f, -28f); path.close()
+        c.drawPath(path, p)
+        path.reset()
+        path.moveTo(22f, -20f); path.lineTo(28f, -48f); path.lineTo(6f, -28f); path.close()
+        c.drawPath(path, p)
+        eyes(c, -9f, 9f, -8f, 7f, a, 0xFF8F4AD8.toInt())
+        fill(0xFFFFFFFF.toInt(), a)                             // sugar fangs
+        path.reset()
+        path.moveTo(-7f, 4f); path.lineTo(-4f, 14f); path.lineTo(-1f, 4f); path.close()
+        c.drawPath(path, p)
+        path.reset()
+        path.moveTo(2f, 4f); path.lineTo(5f, 14f); path.lineTo(8f, 4f); path.close()
+        c.drawPath(path, p)
+    }
+
+    private fun lollipop(c: Canvas, t: Float, phase: Float, a: Float) {
+        art.drawGlow(c, 0f, -10f, 170f, 0xFFFF6FA8.toInt(), 0.3f * a)
+        fill(0xFFFFF4E8.toInt(), a)                             // stick
+        r.set(-7f, -6f, 7f, 74f)
+        c.drawRoundRect(r, 7f, 7f, p)
+        // the spiral, which is what makes it a lollipop and not a ball
+        c.save()
+        c.rotate(t * 44f + phase * 20f)
+        fill(0xFFFFFDF6.toInt(), a)
+        c.drawCircle(0f, -14f, 52f, p)
+        p.reset(); p.isAntiAlias = true
+        p.style = Paint.Style.STROKE
+        p.strokeCap = Paint.Cap.ROUND
+        p.strokeWidth = 13f
+        p.color = ColorX.withAlpha(0xFFFF4A88.toInt(), a)
+        path.reset()
+        var rad = 6f
+        var ang = 0f
+        path.moveTo(0f, -14f)
+        while (rad < 46f) {
+            rad += 1.6f
+            ang += 0.36f
+            path.lineTo(cos(ang) * rad, -14f + sin(ang) * rad)
+        }
+        c.drawPath(path, p)
+        p.style = Paint.Style.FILL
+        c.restore()
+        stroke(0xFF7A2A48.toInt(), a, 4f)                       // wrapper twist
+        c.drawLine(-14f, 40f, -30f, 30f, p)
+        c.drawLine(14f, 40f, 30f, 30f, p)
+        eyes(c, -16f, 16f, -14f, 9f, a, 0xFF7A2A48.toInt())
+    }
+
+    private fun tafflePull(c: Canvas, t: Float, a: Float) {
+        swirl(c, t, a, 0xFFFF6FA8.toInt(), 0xFF3A1024.toInt(), 0xFFFFF0F6.toInt())
+        // strands of taffy being stretched into it
+        stroke(0xFFFFB0D8.toInt(), a * 0.8f, 7f)
+        for (i in 0 until 5) {
+            val ang = t * 0.9f + i * 1.2566f
+            path.reset()
+            path.moveTo(cos(ang) * 96f, sin(ang) * 68f)
+            path.quadTo(cos(ang) * 40f, sin(ang) * 28f, 0f, 0f)
+            c.drawPath(path, p)
+        }
+    }
+
+    // =====================================================================================
+    // Hollow Hill - wisp, ghost dog, gargoyle, grave rift
+    // =====================================================================================
+
+    private fun wisp(c: Canvas, t: Float, phase: Float, facing: Float, a: Float) {
+        val pulse = 0.7f + 0.3f * sin(t * 4f + phase)
+        c.scale(if (facing >= 0f) 1f else -1f, 1f)
+        art.drawGlow(c, 0f, 0f, 190f * pulse, 0xFF8FE0A8.toInt(), 0.5f * a)
+        fill(0xFF8FE0A8.toInt(), a * 0.55f)
+        c.drawCircle(0f, 0f, 30f * pulse, p)
+        fill(0xFFD8FFE8.toInt(), a * 0.95f)
+        c.drawCircle(0f, 0f, 15f * pulse, p)
+        // the tail of embers it drags
+        for (i in 0 until 5) {
+            val k = i / 4f
+            val ph = t * 3f + phase + i * 0.8f
+            fill(0xFF8FE0A8.toInt(), a * (1f - k) * 0.6f)
+            c.drawCircle(-30f - i * 20f, sin(ph) * 14f, 10f - i * 1.6f, p)
+        }
+        eyes(c, -8f, 8f, -3f, 5f, a, 0xFF10301C.toInt())
+    }
+
+    private fun ghostDog(c: Canvas, t: Float, phase: Float, facing: Float, a: Float) {
+        val drift = sin(t * 3f + phase) * 5f
+        c.scale(if (facing >= 0f) 1f else -1f, 1f)
+        art.drawGlow(c, 0f, -6f, 210f, 0xFFB0C8FF.toInt(), 0.34f * a)
+        fill(0xFFCFE0FF.toInt(), a * 0.62f)
+        // a hound shape trailing off into vapour instead of legs
+        path.reset()
+        path.moveTo(-58f, -6f + drift)
+        path.cubicTo(-58f, -36f, -16f, -40f, 10f, -32f)
+        path.cubicTo(30f, -46f, 54f, -42f, 60f, -22f)
+        path.cubicTo(72f, -18f, 70f, -2f, 56f, 0f)
+        path.cubicTo(50f, 18f, 24f, 22f, 8f, 16f)
+        path.cubicTo(-6f, 36f, -30f, 40f, -44f, 26f)
+        path.cubicTo(-56f, 34f, -66f, 14f, -58f, -6f + drift)
+        path.close()
+        c.drawPath(path, p)
+        fill(0xFFCFE0FF.toInt(), a * 0.4f)                       // the wisps it trails
+        for (i in 0 until 3) {
+            c.drawCircle(-64f - i * 18f, 18f + sin(t * 4f + i) * 8f, 13f - i * 3f, p)
+        }
+        fill(0xFFCFE0FF.toInt(), a * 0.62f)                      // a drop ear
+        path.reset()
+        path.moveTo(40f, -36f); path.quadTo(34f, -8f, 50f, -4f)
+        path.quadTo(56f, -26f, 40f, -36f); path.close()
+        c.drawPath(path, p)
+        fill(0xFF7FC8FF.toInt(), a)                               // cold eye
+        c.drawCircle(56f, -24f, 7f, p)
+        fill(0xFFFFFFFF.toInt(), a * 0.9f)
+        c.drawCircle(57f, -25f, 3f, p)
+    }
+
+    private fun gargoyle(c: Canvas, t: Float, phase: Float, a: Float) {
+        fill(0xFF5A5468.toInt(), a)                               // plinth
+        r.set(-52f, 34f, 52f, 62f)
+        c.drawRoundRect(r, 6f, 6f, p)
+        fill(0xFF6E687C.toInt(), a)                               // hunched body
+        path.reset()
+        path.moveTo(-36f, 36f)
+        path.cubicTo(-44f, -6f, -24f, -30f, 0f, -30f)
+        path.cubicTo(24f, -30f, 44f, -6f, 36f, 36f)
+        path.close()
+        c.drawPath(path, p)
+        fill(0xFF585268.toInt(), a)                               // folded wings
+        for (s in 0 until 2) {
+            val d = if (s == 0) -1f else 1f
+            path.reset()
+            path.moveTo(d * 20f, -18f)
+            path.lineTo(d * 62f, -52f)
+            path.lineTo(d * 58f, -6f)
+            path.lineTo(d * 70f, 18f)
+            path.lineTo(d * 30f, 22f)
+            path.close()
+            c.drawPath(path, p)
+        }
+        fill(0xFF6E687C.toInt(), a)                               // head and horns
+        c.drawCircle(0f, -40f, 26f, p)
+        path.reset()
+        path.moveTo(-22f, -52f); path.lineTo(-34f, -82f); path.lineTo(-8f, -58f); path.close()
+        c.drawPath(path, p)
+        path.reset()
+        path.moveTo(22f, -52f); path.lineTo(34f, -82f); path.lineTo(8f, -58f); path.close()
+        c.drawPath(path, p)
+        // the eyes light up on a slow cycle - the tell that it is not just scenery
+        val lit = 0.35f + 0.65f * abs(sin(t * 1.5f + phase))
+        art.drawGlow(c, 0f, -42f, 120f, 0xFFFF6B4A.toInt(), 0.4f * a * lit)
+        fill(0xFFFF6B4A.toInt(), a * lit)
+        c.drawCircle(-10f, -44f, 7f, p)
+        c.drawCircle(10f, -44f, 7f, p)
+        fill(0xFF3A3448.toInt(), a)                               // a grimace
+        r.set(-14f, -30f, 14f, -22f)
+        c.drawRoundRect(r, 3f, 3f, p)
+    }
+
+    private fun graveRift(c: Canvas, t: Float, a: Float) {
+        swirl(c, t, a, 0xFF9C7BD8.toInt(), 0xFF0E0A18.toInt(), 0xFFB0FFD0.toInt())
+        // hands reaching out of it
+        fill(0xFFCFE0FF.toInt(), a * 0.7f)
+        for (i in 0 until 3) {
+            val ph = t * 1.4f + i * 2.1f
+            val reach = 30f + (ph % 2f) * 40f
+            val ang = -1.6f + i * 0.9f
+            val hx = cos(ang) * reach
+            val hy = sin(ang) * reach * 0.7f
+            r.set(hx - 8f, hy - 14f, hx + 8f, hy + 10f)
+            c.drawRoundRect(r, 6f, 6f, p)
+            for (f in 0 until 3) {
+                c.drawCircle(hx - 6f + f * 6f, hy - 18f, 3.4f, p)
+            }
+        }
     }
 }
