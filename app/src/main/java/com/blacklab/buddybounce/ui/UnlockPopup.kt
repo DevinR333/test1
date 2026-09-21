@@ -139,10 +139,8 @@ class UnlockPopup(private val g: Game) {
         val e = showing ?: return
         val ui = g.ui
         val k = smoothstep(0f, 1f, anim)
-        val pop = 1f + (1f - k) * 0.25f
+        val pop = 1f + (1f - k) * 0.06f   // a settle, not a pounce
         val tint = tintOf(e)
-
-        ui.scrim(c, g.worldW, Theme.SCREEN_H, 0.72f * k)
 
         val w = min(g.worldW - ui.safeLeft - ui.safeRight - 80f, 720f)
         val h = min(Theme.SCREEN_H - ui.safeTop - ui.safeBottom - 120f, 980f)
@@ -153,15 +151,25 @@ class UnlockPopup(private val g: Game) {
         // this the buttons behind it would still take the press.
         ui.setInputClip(x, y, x + w, y + h)
 
+        // The whole thing - dimmed background included - fades up as ONE layer.
+        //
+        // It used to be assembled from parts that arrived at different rates: the scrim and the
+        // rays faded in on k while the panel and its text were already at full opacity, and the
+        // card started at 125% and shrank onto the screen. So the first frames showed a solid
+        // card over an almost-clear background, snapping about as it settled - which reads as a
+        // glitch rather than as an entrance. One layer, one alpha, and a much smaller settle.
+        val layer = c.saveLayerAlpha(null, (255 * k).toInt())
+        ui.scrim(c, g.worldW, Theme.SCREEN_H, 0.72f)
+
         c.save()
         c.scale(pop, pop, g.worldW * 0.5f, Theme.SCREEN_H * 0.5f)
 
-        g.art.drawGlow(c, g.worldW * 0.5f, y + h * 0.42f, w * 1.1f, tint, 0.35f * k)
+        g.art.drawGlow(c, g.worldW * 0.5f, y + h * 0.42f, w * 1.1f, tint, 0.35f)
         // Everything that comes through here is rare by definition, so every one gets the rays.
         p.reset(); p.isAntiAlias = true
         for (i in 0 until 12) {
             val a = ui.time * 0.5f + i * 0.5236f
-            p.color = ColorX.withAlpha(tint, 0.16f * k)
+            p.color = ColorX.withAlpha(tint, 0.16f)
             path.reset()
             path.moveTo(g.worldW * 0.5f, y + h * 0.42f)
             path.lineTo(g.worldW * 0.5f + cos(a) * w * 1.2f - 40f, y + h * 0.42f + sin(a) * w * 1.2f)
@@ -187,15 +195,22 @@ class UnlockPopup(private val g: Game) {
         }
 
         val by = y + h - 96f
+        // Same clip as the machine's reveal - nothing the prize draws may reach its name.
+        c.save()
+        c.clipRect(x + 8f, y + 186f, x + w - 8f, by - 86f)
         when (e.kind) {
             Kind.OUTFIT -> g.drawPosedBuddy(
                 c, g.worldW * 0.5f, y + h * 0.72f, min(w / 300f, h / 620f) * 1.05f, e.id, ui.time
             )
             Kind.TRAIL -> g.drawTrailPreview(c, g.worldW * 0.5f, y + h * 0.46f, w * 0.52f, h * 0.22f, e.id, ui.time)
             Kind.SCENE -> scenePreview(c, e.id, g.worldW * 0.5f, y + h * 0.46f, w * 0.52f, h * 0.30f)
-            Kind.CONTROLS -> controlChooser(c, x, y, w, h)
+            Kind.CONTROLS -> {}
             else -> {}
         }
+        c.restore()
+        // The chooser is interactive, so it is NOT inside the clip - a clipped button still
+        // takes taps where it cannot draw, which is the trap the worlds list fell into.
+        if (e.kind == Kind.CONTROLS) controlChooser(c, x, y, w, h)
 
         if (e.kind == Kind.MESSAGE) {
             ui.text(c, e.title.uppercase(), g.worldW * 0.5f, y + h * 0.44f, 48f, Theme.TEXT, ui.title, true, w - 60f)
@@ -227,6 +242,7 @@ class UnlockPopup(private val g: Game) {
             dismiss()
         }
         c.restore()
+        c.restoreToCount(layer)
         ui.clearInputClip()
     }
 

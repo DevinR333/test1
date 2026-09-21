@@ -57,8 +57,8 @@ class MenuScreen(private val g: Game) {
             val rightX = g.worldW * 0.58f
             val room = bottom - ui.safeTop - 120f
             val k = (room / BUTTON_STACK_H).coerceIn(0.7f, 1f)
-            drawTitle(c, leftCx, h * 0.24f - titleSize() * 0.82f + rise)
-            drawStage(c, leftCx, bottom - 40f)
+            val titleEnd = drawTitle(c, leftCx, h * 0.24f - titleSize() * 0.82f + rise)
+            drawStage(c, leftCx, bottom - 40f, titleEnd)
             drawButtons(c, rightX, ui.safeTop + 120f + rise, rightW, k)
         } else {
             val bw = min(g.worldW - ui.safeLeft - ui.safeRight - 120f, 700f)
@@ -67,8 +67,8 @@ class MenuScreen(private val g: Game) {
             val k = (room / BUTTON_STACK_H).coerceIn(0.7f, 1f)
             val stackH = BUTTON_STACK_H * k
             val btnTop = bottom - stackH
-            drawTitle(c, g.worldW * 0.5f, ui.safeTop + 190f - titleSize() * 0.82f + rise)
-            drawStage(c, g.worldW * 0.5f, btnTop - 34f)
+            val titleEnd = drawTitle(c, g.worldW * 0.5f, ui.safeTop + 190f - titleSize() * 0.82f + rise)
+            drawStage(c, g.worldW * 0.5f, btnTop - 34f, titleEnd)
             drawButtons(c, (g.worldW - bw) * 0.5f, btnTop + rise, bw, k)
         }
     }
@@ -76,8 +76,11 @@ class MenuScreen(private val g: Game) {
     /** Behind the native name-entry overlay: just Buddy, looking hopeful. */
     fun drawNamePrompt(c: Canvas) {
         val h = Theme.SCREEN_H
-        drawTitle(c, g.worldW * 0.5f, h * 0.20f - titleSize() * 0.82f)
+        val titleEnd = drawTitle(c, g.worldW * 0.5f, h * 0.20f - titleSize() * 0.82f)
+        c.save()
+        c.clipRect(0f, titleEnd, g.worldW, h)
         g.drawMenuBuddy(c, g.worldW * 0.5f, h * 0.56f, 1.3f, Outfits.DEFAULT_ID)
+        c.restore()
     }
 
     private fun titleSize(): Float = min(g.worldW * 0.22f, 168f)
@@ -95,8 +98,11 @@ class MenuScreen(private val g: Game) {
         return if (g.save.ownsScene(Scenes.HEAVEN_ID)) coin + 12f + 58f else coin
     }
 
-    /** @param topY the TOP of the title block, not its baseline. */
-    private fun drawTitle(c: Canvas, cx: Float, topY: Float) {
+    /**
+     * @param topY the TOP of the title block, not its baseline.
+     * @return the Y below which the title has finished, so the stage can be kept clear of it.
+     */
+    private fun drawTitle(c: Canvas, cx: Float, topY: Float): Float {
         val ui = g.ui
         val bounce = sin(ui.time * 1.6f) * 8f
         val size = titleSize()
@@ -110,6 +116,7 @@ class MenuScreen(private val g: Game) {
             c, "good boy • great height", cx, cy + size * 1.22f, 34f,
             ColorX.withAlpha(Theme.TEXT_DIM, 0.95f), ui.body, false
         )
+        return cy + size * 1.22f + 12f
     }
 
     private fun titleWord(c: Canvas, s: String, cx: Float, baseline: Float, size: Float, color: Int) {
@@ -125,7 +132,16 @@ class MenuScreen(private val g: Game) {
         c.drawText(s, cx, baseline, ui.title)
     }
 
-    private fun drawStage(c: Canvas, cx: Float, groundY: Float) {
+    /**
+     * @param topLimit the Y the title ends at. The stage is clipped to below it.
+     *
+     * Buddy's trail streams up and back from him and is happily taller than he is, so on a
+     * short screen it climbed straight over the logo. Clipping the whole stage means the trail,
+     * his glow and anything else that grows out of him all stop at the same line.
+     */
+    private fun drawStage(c: Canvas, cx: Float, groundY: Float, topLimit: Float) {
+        c.save()
+        c.clipRect(0f, topLimit, g.worldW, Theme.SCREEN_H)
         // a plank for him to bounce on
         val w = 300f
         g.art.drawShadow(c, cx, groundY + 26f, w * 1.2f, 90f, 0.45f)
@@ -147,6 +163,7 @@ class MenuScreen(private val g: Game) {
             g.drawTrailSample(c, cx - 150f, groundY - 150f, 300f, 110f, g.save.equippedTrail, g.ui.time)
         }
         g.drawMenuBuddy(c, cx, groundY - 2f, 1.15f, g.equippedOutfit)
+        c.restore()
     }
 
     /** @param k fit factor - 1 when there is room for the stack at its natural size. */

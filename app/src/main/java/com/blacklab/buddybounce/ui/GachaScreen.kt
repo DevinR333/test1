@@ -580,6 +580,11 @@ class GachaScreen(private val g: Game) {
         // a short panel - the same trap the wardrobe's preview fell into - and the artwork is
         // held above that band rather than free to grow into it.
         val textBottom = y + h - 96f
+        // Clipped for the same reason the wardrobe's previews are: the glow, the trail sample
+        // and a tall outfit all grow past whatever box you nominally give them, and the first
+        // thing they reach is the prize's own name.
+        c.save()
+        c.clipRect(x + 8f, y + 186f, x + w - 8f, textBottom - 86f)
         when (prizeKind) {
             Kind.OUTFIT -> g.drawPosedBuddy(
                 c, g.worldW * 0.5f, minOf(y + h * 0.72f, textBottom - 118f),
@@ -589,6 +594,7 @@ class GachaScreen(private val g: Game) {
             Kind.TRAIL -> g.drawTrailPreview(c, g.worldW * 0.5f, y + h * 0.46f, w * 0.52f, h * 0.22f, prizeId, ui.time)
             else -> drawScenePreview(c, g.worldW * 0.5f, y + h * 0.46f, w * 0.52f, h * 0.30f)
         }
+        c.restore()
 
         ui.text(c, prizeName().uppercase(), g.worldW * 0.5f, textBottom - 72f, 48f, Theme.TEXT, ui.title, true, w - 60f)
         val blurb = when {
