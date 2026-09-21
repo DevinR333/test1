@@ -42,7 +42,6 @@ class MenuScreen(private val g: Game) {
         // --- header chips -------------------------------------------------------------
         drawPlayerChip(c)
         drawCoinChip(c)
-        drawNotice(c)
 
         // The button stack is anchored to the BOTTOM of the safe area and everything else is
         // placed above it, rather than all of it hanging off fractions of a fixed 1600-unit
@@ -58,7 +57,7 @@ class MenuScreen(private val g: Game) {
             val rightX = g.worldW * 0.58f
             val room = bottom - ui.safeTop - 120f
             val k = (room / BUTTON_STACK_H).coerceIn(0.7f, 1f)
-            drawTitle(c, leftCx, h * 0.24f + rise)
+            drawTitle(c, leftCx, h * 0.24f - titleSize() * 0.82f + rise)
             drawStage(c, leftCx, bottom - 40f)
             drawButtons(c, rightX, ui.safeTop + 120f + rise, rightW, k)
         } else {
@@ -68,7 +67,7 @@ class MenuScreen(private val g: Game) {
             val k = (room / BUTTON_STACK_H).coerceIn(0.7f, 1f)
             val stackH = BUTTON_STACK_H * k
             val btnTop = bottom - stackH
-            drawTitle(c, g.worldW * 0.5f, ui.safeTop + 190f + rise)
+            drawTitle(c, g.worldW * 0.5f, ui.safeTop + 190f - titleSize() * 0.82f + rise)
             drawStage(c, g.worldW * 0.5f, btnTop - 34f)
             drawButtons(c, (g.worldW - bw) * 0.5f, btnTop + rise, bw, k)
         }
@@ -77,14 +76,32 @@ class MenuScreen(private val g: Game) {
     /** Behind the native name-entry overlay: just Buddy, looking hopeful. */
     fun drawNamePrompt(c: Canvas) {
         val h = Theme.SCREEN_H
-        drawTitle(c, g.worldW * 0.5f, h * 0.20f)
+        drawTitle(c, g.worldW * 0.5f, h * 0.20f - titleSize() * 0.82f)
         g.drawMenuBuddy(c, g.worldW * 0.5f, h * 0.56f, 1.3f, Outfits.DEFAULT_ID)
     }
 
-    private fun drawTitle(c: Canvas, cx: Float, cy: Float) {
+    private fun titleSize(): Float = min(g.worldW * 0.22f, 168f)
+
+    /**
+     * The bottom of the header chips, which the title has to start below.
+     *
+     * The coin chip is always there; the halo chip only appears once Heaven is owned, and it is
+     * the one that got buried - the title was placed at a fixed offset from the safe area that
+     * had no idea a second chip had turned up underneath the first.
+     */
+    private fun headerBottom(): Float {
+        val ui = g.ui
+        val coin = ui.safeTop + 24f + 64f
+        return if (g.save.ownsScene(Scenes.HEAVEN_ID)) coin + 12f + 58f else coin
+    }
+
+    /** @param topY the TOP of the title block, not its baseline. */
+    private fun drawTitle(c: Canvas, cx: Float, topY: Float) {
         val ui = g.ui
         val bounce = sin(ui.time * 1.6f) * 8f
-        val size = min(g.worldW * 0.22f, 168f)
+        val size = titleSize()
+        // never under the chips, whether or not the halo one is showing
+        val cy = maxOf(topY, headerBottom() + 22f) + size * 0.82f
 
         // "BUDDY" sits above a slightly larger "BOUNCE!"
         titleWord(c, "BUDDY", cx, cy + bounce, size * 0.82f, Theme.TEXT)
@@ -148,7 +165,7 @@ class MenuScreen(private val g: Game) {
             g.tap(); g.goto(Game.Screen.WARDROBE)
         }
         val machineReady = g.save.coins >= Tuning.GACHA_COST
-        if (ui.button(c, Id.GACHA, x + halfW + 24f, cy, halfW, rowH, "MACHINE", Ui.ButtonStyle.SECONDARY,
+        if (ui.button(c, Id.GACHA, x + halfW + 24f, cy, halfW, rowH, "COIN MACHINE", Ui.ButtonStyle.SECONDARY,
                 sublabel = if (machineReady) "ready to pull!" else "${Tuning.GACHA_COST} coins a go")) {
             g.tap(); g.goto(Game.Screen.GACHA)
         }
@@ -171,22 +188,6 @@ class MenuScreen(private val g: Game) {
         if (ui.button(c, Id.SETTINGS, x, cy, w, 88f * k, "SETTINGS")) {
             g.tap(); g.goto(Game.Screen.SETTINGS)
         }
-    }
-
-    private fun drawNotice(c: Canvas) {
-        if (g.noticeT <= 0f) return
-        val ui = g.ui
-        val a = (g.noticeT / 0.7f).coerceAtMost(1f)
-        val room = g.worldW - ui.safeLeft - ui.safeRight - 40f
-        val w = (ui.measure(g.notice, ui.fitSize(g.notice, 40f, ui.title, room - 80f), ui.title) + 80f)
-            .coerceAtMost(room)
-        val x = (g.worldW - w) * 0.5f
-        val y = ui.safeTop + 110f
-        ui.pill(c, x, y, w, 68f, ColorX.withAlpha(Theme.GOOD, 0.3f * a))
-        ui.text(
-            c, g.notice, g.worldW * 0.5f, y + 46f, 40f, ColorX.withAlpha(Theme.TEXT, a), ui.title, false,
-            room - 40f
-        )
     }
 
     private fun drawPlayerChip(c: Canvas) {

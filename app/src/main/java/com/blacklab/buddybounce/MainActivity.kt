@@ -194,6 +194,10 @@ class MainActivity : Activity(), SensorEventListener, Game.Host {
         }
     }
 
+    override fun vibrateLater(delayMs: Long, ms: Long, amplitude: Int) {
+        surface.postDelayed({ vibrate(ms, amplitude) }, delayMs)
+    }
+
     override fun vibrate(ms: Long, amplitude: Int) {
         if (ms <= 0L) return
         val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

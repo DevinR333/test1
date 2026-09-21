@@ -156,6 +156,34 @@ fun main() {
     check("Anti-Buddy sits just before Eternal",
         Outfits.visible(false).let { it[it.size - 2].id } == "anti", true)
 
+    println("--- 7b. counting, ordering and the Developer rarity ---")
+    val fresh2 = Save(FakeCtx(FakePrefs()))
+    check("a fresh save owns exactly one outfit (Buddy)",
+        Outfits.visible(false).count { fresh2.owns(it.id) } == 1, true)
+    check("the total counts Buddy too",
+        Outfits.collectableCount(false) == Outfits.visible(false).size, true)
+    check("grid size and total agree",
+        Outfits.visible(false).size == Outfits.collectableCount(false), true)
+    check("the dev skin is one more, once owned",
+        Outfits.collectableCount(true) == Outfits.collectableCount(false) + 1, true)
+    check("the dev skin has its own rarity",
+        Outfits.of(Outfits.DEV_ID).rarity == Outfits.Rarity.DEVELOPER, true)
+    check("which is white", Outfits.Rarity.DEVELOPER.tint == 0xFFFFFFFF.toInt(), true)
+    check("and can never be rolled", Outfits.Rarity.DEVELOPER.weight == 0, true)
+    check("nothing else uses it",
+        Outfits.ALL.count { it.rarity == Outfits.Rarity.DEVELOPER } == 1, true)
+
+    println("--- 7c. the trails page is ordered by rarity, Heaven last ---")
+    check("display holds every trail", Trails.display.size == Trails.ALL.size, true)
+    check("Glory is last", Trails.display.last().id == Trails.HEAVEN_ONLY_ID, true)
+    check("rarity never goes backwards", run {
+        val body = Trails.display.filter { it.id != Trails.HEAVEN_ONLY_ID }
+        body.zipWithNext().all { (a, b) -> a.rarity <= b.rarity }
+    }, true)
+    check("eight new trails landed", Trails.ALL.size == 50, true)
+    check("every style is unique",
+        Trails.ALL.map { it.style }.toSet().size == Trails.ALL.size, true)
+
     println("--- 8. a save from the old build gets it taken back ---")
     val old = FakePrefs()
     old.map["owned"] = hashSetOf("fighter", ETERNAL)

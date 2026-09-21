@@ -197,6 +197,12 @@ object Tuning {
     /** Paid out when a pick-up duplicates a power-up that is already running. */
     const val REDUNDANT_PICKUP_COINS = 1
     const val DUPLICATE_REFUND = 35
+
+    /** The shelf only holds five of anything. */
+    const val POWERUP_MAX = 5
+
+    /** What a sixth one is worth instead, when the shelf is already full. */
+    const val POWERUP_OVERFLOW_REFUND = 2
     /** Points per coin awarded at the end of a run. */
     const val SCORE_PER_BONUS_COIN = 300
     /** In Heaven the ground currency is the ONLY currency, so it is placed more often. */

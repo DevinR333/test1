@@ -58,6 +58,9 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         fun setLandscape(landscape: Boolean)
         fun promptName(current: String, title: String)
         fun vibrate(ms: Long, amplitude: Int)
+
+        /** Same, but after a delay - used to land the second beat of a two-beat buzz. */
+        fun vibrateLater(delayMs: Long, ms: Long, amplitude: Int)
     }
 
     enum class Screen { NAME, MENU, PRERUN, PLAY, PAUSE, GAMEOVER, WARDROBE, GACHA, SCENES, SCORES, SETTINGS }
@@ -155,10 +158,6 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
     private var biomeToast = 0f
     private var biomeToastName = ""
 
-    /** A short confirmation banner on the menu (used by the unlock code). */
-    var notice = ""
-        private set
-    var noticeT = 0f
         private set
 
     private val pose = Pose()
@@ -223,6 +222,7 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
                 queueHeavenAnnounce()
             }
             // Opening on the menu skips goto(), which is what normally spends the queue.
+            if (screen == Screen.MENU) askControlsOnce()
             if (screen == Screen.MENU && heavenAnnouncePending) {
                 heavenAnnouncePending = false
                 save.heavenAnnounced = true
@@ -267,6 +267,19 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
      * spent the next time the player reaches the main menu. That is also the only screen where
      * the reveal makes sense: they are looking at the world list they are about to go and use.
      */
+    /**
+     * Asks once, the first time they reach the menu, how they want to steer.
+     *
+     * Tilt and drag feel completely different and neither is obviously right - tilt is hands-off
+     * but useless lying down, drag is exact but covers the glass. Guessing for them and burying
+     * the switch in Settings means most players never find out the other one exists.
+     */
+    private fun askControlsOnce() {
+        if (save.controlsAsked) return
+        save.controlsAsked = true
+        unlockPopup.queueControls()
+    }
+
     fun queueHeavenAnnounce() {
         heavenAnnouncePending = true
     }
@@ -276,7 +289,11 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
     }
 
     /** Called by the popup as each card comes up, so the fanfare lands with the reveal. */
-    fun onUnlockRevealed() {
+    fun onUnlockRevealed(prize: Boolean) {
+        if (!prize) {
+            audio.play(Audio.TAP, 0.6f)
+            return
+        }
         flashScreen(0.8f)
         shakeScreen(0.4f)
         audio.play(Audio.FANFARE, 1f)
@@ -287,6 +304,7 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         previousScreen = screen
         screen = s
         screenAnim = 0f
+        if (s == Screen.MENU) askControlsOnce()
         // queued from wherever the last unlock happened; spent here, on arrival at the menu
         if (s == Screen.MENU && heavenAnnouncePending) {
             heavenAnnouncePending = false
@@ -400,7 +418,11 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         when {
             t.equals(FREE_SPINS_CODE, ignoreCase = true) -> {
                 save.freeSpins = true
-                notice = "FREE SPINS ON"
+                unlockPopup.queueMessage(
+                    "BACK DOOR", "Free spins on",
+                    "Every pull at the coin machine is free from now on. Keep going until the " +
+                        "last thing you are missing turns up."
+                )
             }
             t.equals(DEV_SKIN_CODE, ignoreCase = true) -> {
                 save.unlock(Outfits.DEV_ID)
@@ -411,15 +433,16 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
                 // opens the world and nothing else - the other codes are there for the rest.
                 save.unlockScene(Scenes.HEAVEN_ID)
                 save.primeHalosForTest()
-                notice = "999 HALOS - ONE MORE UNLOCKS IT"
+                unlockPopup.queueMessage(
+                    "BACK DOOR", "999 halos",
+                    "Heaven is open and you are one halo short of everything it pays out. " +
+                        "Collect one more in there and watch both unlock."
+                )
             }
             t.equals(ALMOST_CODE, ignoreCase = true) -> unlockAllBut(1)
             else -> unlockAllBut(0)
         }
         if (!save.hasName) save.playerName = "TESTER"
-        noticeT = 3.6f
-        flashScreen(0.6f)
-        audio.play(Audio.FANFARE, 0.9f)
         if (screen == Screen.NAME) goto(Screen.MENU)
     }
 
@@ -440,13 +463,20 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         val pool = Trails.collectable
         val keep = pool.size - holdBackTrails.coerceIn(0, pool.size)
         for (i in 0 until keep) save.unlockTrail(pool[i].id)
-        for (pu in Powerups.ALL) save.grantPowerup(pu.id, 5)
+        for (pu in Powerups.ALL) save.grantPowerupCapped(pu.id, Tuning.POWERUP_MAX)
         save.grantCoins(1000)
 
-        notice = if (holdBackTrails > 0) {
-            "ALL BUT $holdBackTrails TRAIL UNLOCKED"
+        if (holdBackTrails > 0) {
+            unlockPopup.queueMessage(
+                "BACK DOOR", "Almost everything",
+                "Every outfit, world and trail is yours except $holdBackTrails. Win the last " +
+                    "one from the coin machine and see what it opens."
+            )
         } else {
-            "EVERYTHING UNLOCKED"
+            unlockPopup.queueMessage(
+                "BACK DOOR", "Everything unlocked",
+                "Every outfit, trail and world, plus five of each power-up and a thousand coins."
+            )
         }
         if (save.refreshHeaven()) queueHeavenAnnounce()
     }
@@ -483,7 +513,6 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         shake = MathX.approach(shake, 0f, 6f, dt)
         flash = MathX.approach(flash, 0f, 5f, dt)
         if (biomeToast > 0f) biomeToast -= dt
-        if (noticeT > 0f) noticeT -= dt
         if (coinFlashT > 0f) coinFlashT -= dt
         unlockPopup.update(dt)
         ui.beginFrame(dt)
@@ -1122,9 +1151,37 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         biomeToast = 2.6f
     }
 
-    private fun haptic(ms: Long) {
-        if (save.hapticsOn) host.vibrate(ms, -1)
+    private fun haptic(ms: Long, amplitude: Int = -1) {
+        if (save.hapticsOn) host.vibrate(ms, amplitude)
     }
+
+    /**
+     * The prize machine's feel.
+     *
+     * A pull should land in the hand, and how hard it lands is how the machine tells you what
+     * you got before you have read a word of the card. The ladder is the drop ladder: a
+     * power-up is a tap, a trail a little more, an outfit more again, and a world - the rarest
+     * thing in the pool - is unmistakable.
+     */
+    inner class Haptics {
+        /** @param level 0 power-up, 1 trail, 2 outfit, 3 world and everything above the pool. */
+        fun prize(level: Int) = when (level.coerceIn(0, 3)) {
+            0 -> haptic(18L, 70)
+            1 -> haptic(34L, 120)
+            2 -> haptic(60L, 180)
+            else -> {
+                // Two beats rather than one long buzz: a long buzz on a phone just reads as an
+                // error. A thump and a heavier thump reads as something landing.
+                haptic(45L, 160)
+                host.vibrateLater(110L, 130L, 255)
+            }
+        }
+
+        /** While the capsules tumble: a light, repeated knock, one per capsule strike. */
+        fun juggle() = haptic(12L, 55)
+    }
+
+    val haptics = Haptics()
 
     fun shakeScreen(amount: Float) { shake = amount.coerceIn(0f, 1.2f) }
 
@@ -1142,6 +1199,9 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
 
     private fun isHeavenSecret(id: String): Boolean =
         id == Outfits.HEAVEN_ONLY_ID || id == Trails.HEAVEN_ONLY_ID
+
+    /** True while this item is still shown as "???" - Heaven's, and Heaven not yet open. */
+    fun isHiddenSecret(id: String): Boolean = isHeavenSecret(id) && !heavenOpen()
 
     fun displayName(id: String, name: String): String =
         if (isHeavenSecret(id) && !heavenOpen()) "???" else name
@@ -1174,7 +1234,18 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
 
     fun outfitOwned(id: String) = save.owns(id)
 
-    fun ownedCount() = save.ownedOutfits().count { it != Outfits.DEFAULT_ID }
+    /**
+     * Outfits owned, counting Buddy's own collar.
+     *
+     * It used to exclude the default and read "0 of 44" on a fresh save, which is wrong twice
+     * over: he is wearing one, and the grid below it showed a card for it. Owned and total now
+     * count the same set - the visible one, which leaves the developer skin out until it is
+     * earned so the two never disagree about how many outfits exist.
+     */
+    fun ownedCount(): Int {
+        val owned = save.ownedOutfits()
+        return Outfits.visible(save.owns(Outfits.DEV_ID)).count { owned.contains(it.id) }
+    }
 
     fun ownedSceneCount() = save.ownedScenes().size
 

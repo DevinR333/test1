@@ -770,6 +770,19 @@ class World(worldWidth: Float, private val events: Events) {
             maybeDecorate(sib, s)
         }
 
+        // A crumbling platform is a ROUTE THAT EXPIRES. It gives one bounce and then it is gone
+        // for good, so a row whose only platform is a crumble stops existing the moment it is
+        // used - and if the player falls back afterwards, the hole left behind is two gaps tall
+        // and nothing can cross it. Fragiles were already handled this way (see below); crumbles
+        // were not, because they do at least bounce you once, which misses the point. Pair every
+        // crumble with a solid one in the same row so the row survives being used.
+        if (p.kind == PlatKind.CRUMBLE && extraCount == 0) {
+            val wb = metrics.platWidthAt(s)
+            val bx = pickX(wb, avoid = p.x, avoidSpan = width * 0.5f + wb * 0.5f + 200f)
+            val backup = spawnPlatformAt(bx, genY + rand(-20f, 20f), wb, s, forceSafe = true)
+            maybeDecorate(backup, s)
+        }
+
         // A fragile platform is a trap set beside a real route, never the route itself.
         if (rand(0f, 1f) < Tuning.fragileShare(s)) {
             val wf = metrics.platWidthAt(s)
@@ -785,7 +798,13 @@ class World(worldWidth: Float, private val events: Events) {
         enemyCredit += Tuning.enemyDensity(s) * gap / Tuning.VIEW_H
         if (enemyCredit >= 1f) {
             enemyCredit -= 1f
-            spawnEnemy(genY - gap * 0.45f, s, p)
+            // Never over the widest gaps. A stomp carries further than a bounce, so on a gap
+            // near the limit the enemy quietly becomes the route - and a route that dies when
+            // you use it is the same trap as a crumble that is the only platform in its row.
+            val stretch = (gap - Tuning.gapMin(s)) /
+                (Tuning.gapMax(s) - Tuning.gapMin(s)).coerceAtLeast(1f)
+            if (stretch < 0.8f) spawnEnemy(genY - gap * 0.45f, s, p)
+            else enemyCredit += 1f
         }
     }
 

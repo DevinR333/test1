@@ -82,6 +82,10 @@ class GachaScreen(private val g: Game) {
     private var prizeId = ""
     private var duplicate = false
     private var revealAnim = 0f
+    private var juggleT = 0f
+
+    /** Set when the prize was a power-up the shelf had no room for. */
+    private var powerupFull = false
     private var crankAngle = 0f
 
     // -------------------------------------------------------------------------------------
@@ -91,6 +95,14 @@ class GachaScreen(private val g: Game) {
             State.CRANK -> {
                 crankAngle += dt * 520f
                 timer -= dt
+                // A knock per capsule strike while they tumble, so the machine has a feel as
+                // well as a sound. Metered rather than per-frame - a buzz every frame is just
+                // a buzz.
+                juggleT -= dt
+                if (juggleT <= 0f) {
+                    juggleT = 0.085f
+                    g.haptics.juggle()
+                }
                 if (timer <= 0f) { state = State.DROP; timer = 0.75f }
             }
             State.DROP -> {
@@ -99,6 +111,7 @@ class GachaScreen(private val g: Game) {
                     state = State.REVEAL
                     revealAnim = 0f
                     g.audio.play(Audio.GACHA_REVEAL, 0.9f)
+                    g.haptics.prize(hapticLevel())
                     if (isBigPrize()) {
                         g.shakeScreen(if (prizeKind == Kind.SCENE) 0.9f else 0.5f)
                         g.flashScreen(if (prizeKind == Kind.SCENE) 0.6f else 0.35f)
@@ -110,6 +123,19 @@ class GachaScreen(private val g: Game) {
             State.IDLE -> {}
         }
         if (coinDropT > 0f) coinDropT -= dt
+    }
+
+    /**
+     * How hard the reveal should land: the ladder runs with rarity, so the phone tells you what
+     * you got before the card does. A duplicate is only ever a coin refund, so it stays light
+     * whatever it was a duplicate of.
+     */
+    private fun hapticLevel(): Int = when {
+        duplicate -> 0
+        prizeKind == Kind.SCENE -> 3
+        prizeKind == Kind.OUTFIT -> 2
+        prizeKind == Kind.TRAIL -> 1
+        else -> 0
     }
 
     private fun isBigPrize(): Boolean = when (prizeKind) {
@@ -236,6 +262,7 @@ class GachaScreen(private val g: Game) {
         coinDropT = 0f
         prizeId = ""
         duplicate = false
+        powerupFull = false
         revealAnim = 0f
     }
 
@@ -337,7 +364,15 @@ class GachaScreen(private val g: Game) {
     private fun grantPrize() {
         when (prizeKind) {
             Kind.SCENE -> g.save.unlockScene(prizeId)
-            Kind.POWERUP -> g.save.grantPowerup(prizeId, 1)
+            Kind.POWERUP -> {
+                // Five of anything is as many as the pre-run picker will ever let you spend, so
+                // a sixth is dead weight. Pay it out instead.
+                val overflow = g.save.grantPowerupCapped(prizeId, 1)
+                if (overflow > 0) {
+                    g.save.grantCoins(Tuning.POWERUP_OVERFLOW_REFUND * overflow)
+                    powerupFull = true
+                }
+            }
             Kind.TRAIL ->
                 if (duplicate) g.save.grantCoins(Tuning.DUPLICATE_REFUND) else g.save.unlockTrail(prizeId)
             else -> if (duplicate) g.save.grantCoins(Tuning.DUPLICATE_REFUND) else g.save.unlock(prizeId)
@@ -541,24 +576,30 @@ class GachaScreen(private val g: Game) {
         ui.pill(c, g.worldW * 0.5f - 110f, y + 122f, 220f, 52f, ColorX.withAlpha(tint, 0.25f))
         ui.text(c, prizeRarityLabel(), g.worldW * 0.5f, y + 158f, 28f, tint, ui.title, false, 210f)
 
+        // Laid out UP from the button row, so the name and blurb can never end up behind it on
+        // a short panel - the same trap the wardrobe's preview fell into - and the artwork is
+        // held above that band rather than free to grow into it.
+        val textBottom = y + h - 96f
         when (prizeKind) {
             Kind.OUTFIT -> g.drawPosedBuddy(
-                c, g.worldW * 0.5f, y + h * 0.72f, min(w / 300f, h / 620f) * 1.05f, prizeId, ui.time
+                c, g.worldW * 0.5f, minOf(y + h * 0.72f, textBottom - 118f),
+                min(w / 300f, h / 620f) * 1.05f, prizeId, ui.time
             )
             Kind.POWERUP -> icons.draw(c, g.art, prizeId, g.worldW * 0.5f, y + h * 0.46f, h * 0.13f, tint)
             Kind.TRAIL -> g.drawTrailPreview(c, g.worldW * 0.5f, y + h * 0.46f, w * 0.52f, h * 0.22f, prizeId, ui.time)
             else -> drawScenePreview(c, g.worldW * 0.5f, y + h * 0.46f, w * 0.52f, h * 0.30f)
         }
 
-        ui.text(c, prizeName().uppercase(), g.worldW * 0.5f, y + h - 168f, 48f, Theme.TEXT, ui.title, true, w - 60f)
-        val blurb = if (duplicate && prizeKind != Kind.SCENE) {
-            "+${Tuning.DUPLICATE_REFUND} coins back"
-        } else {
-            prizeBlurb()
+        ui.text(c, prizeName().uppercase(), g.worldW * 0.5f, textBottom - 72f, 48f, Theme.TEXT, ui.title, true, w - 60f)
+        val blurb = when {
+            powerupFull -> "Shelf full at ${Tuning.POWERUP_MAX} - +${Tuning.POWERUP_OVERFLOW_REFUND} coins instead"
+            duplicate && prizeKind != Kind.SCENE -> "+${Tuning.DUPLICATE_REFUND} coins back"
+            else -> prizeBlurb()
         }
         ui.text(
-            c, blurb, g.worldW * 0.5f, y + h - 124f, 30f,
-            if (duplicate && prizeKind != Kind.SCENE) Theme.ACCENT else Theme.TEXT_DIM, ui.body, false, w - 60f
+            c, blurb, g.worldW * 0.5f, textBottom - 28f, 30f,
+            if (powerupFull || (duplicate && prizeKind != Kind.SCENE)) Theme.ACCENT else Theme.TEXT_DIM,
+            ui.body, false, w - 60f
         )
 
         val by = y + h - 96f

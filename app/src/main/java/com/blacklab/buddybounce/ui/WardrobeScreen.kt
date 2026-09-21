@@ -61,7 +61,7 @@ class WardrobeScreen(private val g: Game) {
         if (trailSelected == 0 && g.save.equippedTrail != Trails.NONE_ID) {
             // +1 because card 0 of the trail grid is the "no trail" entry, so the catalogue
             // index and the card index are off by one.
-            val idx = Trails.ALL.indexOfFirst { it.id == g.save.equippedTrail }
+            val idx = Trails.display.indexOfFirst { it.id == g.save.equippedTrail }
             if (idx >= 0) trailSelected = idx + 1
         }
 
@@ -154,16 +154,17 @@ class WardrobeScreen(private val g: Game) {
             ui.text(c, "?", x + w * 0.5f, buddyY - 72f, 130f, 0xFF4A5675.toInt(), ui.title, false)
         }
 
-        ui.text(c, g.displayName(outfit.id, outfit.name).uppercase(),
-            x + w * 0.5f, y + h - 108f, 44f, Theme.TEXT, ui.title, false, w - 50f)
-        val lockLine = g.displayBlurb(outfit.id, outfit.blurb, owned)
-        var blurbSize = 27f
-        while (ui.measure(lockLine, blurbSize, ui.body) > w - 50f && blurbSize > 17f) blurbSize -= 1f
-        ui.text(c, lockLine, x + w * 0.5f, y + h - 68f, blurbSize, Theme.TEXT_DIM, ui.body, false)
-
+        // Laid out UP from the button rather than down from the panel: the blurb's baseline
+        // used to land two units BELOW the button's top edge, so on every locked card the line
+        // telling you how to get the outfit was painted over by the button under it.
         val bw = min(w - 80f, 420f)
         val bx = x + (w - bw) * 0.5f
         val by = y + h - 56f
+        val ctaTop = by - 14f
+        ui.text(c, g.displayName(outfit.id, outfit.name).uppercase(),
+            x + w * 0.5f, ctaTop - 54f, 44f, Theme.TEXT, ui.title, false, w - 50f)
+        ui.text(c, g.displayBlurb(outfit.id, outfit.blurb, owned),
+            x + w * 0.5f, ctaTop - 16f, 27f, Theme.TEXT_DIM, ui.body, false, w - 50f)
         if (owned) {
             if (equipped) {
                 ui.pill(c, bx, by - 6f, bw, 62f, 0x332AE08A)
@@ -183,6 +184,13 @@ class WardrobeScreen(private val g: Game) {
      */
     private fun lockedCta(c: Canvas, bx: Float, by: Float, bw: Float, id: String) {
         val ui = g.ui
+        if (g.isHiddenSecret(id)) {
+            // Still "???" - so the button says nothing either. "TO THE MACHINE" under a hidden
+            // item is worse than unhelpful: it sends the player somewhere it will never appear.
+            ui.pill(c, bx, by - 6f, bw, 62f, 0x22FFFFFF)
+            ui.text(c, "???", bx + bw * 0.5f, by + 36f, 34f, Theme.TEXT_DIM, ui.title, false, bw - 30f)
+            return
+        }
         if (g.canGoToHeavenFor(id)) {
             if (ui.button(c, Id.EQUIP, bx, by - 14f, bw, 78f, "GO TO HEAVEN!", Ui.ButtonStyle.PRIMARY)) {
                 g.tap(); g.goToHeaven()
@@ -196,7 +204,7 @@ class WardrobeScreen(private val g: Game) {
         val gap = 16f
         val cardW = (w - gap * (cols - 1)) / cols
         val cardH = cardW * 1.16f
-        val count = if (tab == Tab.OUTFITS) outfits().size else Trails.ALL.size + 1
+        val count = if (tab == Tab.OUTFITS) outfits().size else Trails.display.size + 1
         val rows = ceil(count / cols.toFloat()).toInt()
         maxScroll = (rows * (cardH + gap) - gap - h).coerceAtLeast(0f)
         val scrollY = scroll.y
@@ -314,9 +322,9 @@ class WardrobeScreen(private val g: Game) {
     // trails
     // -------------------------------------------------------------------------------------
 
-    /** Index 0 of the trail grid is "no trail"; the rest map onto [Trails.ALL]. */
+    /** Index 0 of the trail grid is "no trail"; the rest map onto [Trails.display]. */
     private fun trailAt(index: Int): Trails.Trail? =
-        if (index <= 0) null else Trails.ALL.getOrNull(index - 1)
+        if (index <= 0) null else Trails.display.getOrNull(index - 1)
 
     private fun rarityTint(rarity: Int): Int = when (rarity) {
         Trails.Rarity.COMMON -> 0xFF9FB2CC.toInt()
@@ -360,19 +368,17 @@ class WardrobeScreen(private val g: Game) {
             ui.text(c, "?", x + w * 0.5f, buddyY - 64f, 120f, 0xFF4A5675.toInt(), ui.title, false)
         }
 
+        val bw = min(w - 80f, 420f)
+        val bx = x + (w - bw) * 0.5f
+        val by = y + h - 56f
+        val ctaTop = by - 14f
         val name = if (trail == null) "No Trail" else g.displayName(trail.id, trail.name)
-        ui.text(c, name.uppercase(), x + w * 0.5f, y + h - 108f, 42f, Theme.TEXT, ui.title, false, w - 50f)
+        ui.text(c, name.uppercase(), x + w * 0.5f, ctaTop - 54f, 42f, Theme.TEXT, ui.title, false, w - 50f)
         val blurb = when {
             trail == null -> "Clean paws. Nothing behind him."
             else -> g.displayBlurb(trail.id, trail.blurb, owned)
         }
-        var size = 27f
-        while (ui.measure(blurb, size, ui.body) > w - 50f && size > 17f) size -= 1f
-        ui.text(c, blurb, x + w * 0.5f, y + h - 68f, size, Theme.TEXT_DIM, ui.body, false)
-
-        val bw = min(w - 80f, 420f)
-        val bx = x + (w - bw) * 0.5f
-        val by = y + h - 56f
+        ui.text(c, blurb, x + w * 0.5f, ctaTop - 16f, 27f, Theme.TEXT_DIM, ui.body, false, w - 50f)
         if (owned) {
             if (equipped) {
                 ui.pill(c, bx, by - 6f, bw, 62f, 0x332AE08A)
@@ -534,7 +540,7 @@ class WardrobeScreen(private val g: Game) {
         if (oi >= 0) selected = oi
         val trailId = g.save.equippedTrail
         trailSelected = if (trailId == Trails.NONE_ID) 0
-        else Trails.ALL.indexOfFirst { it.id == trailId }.let { if (it >= 0) it + 1 else 0 }
+        else Trails.display.indexOfFirst { it.id == trailId }.let { if (it >= 0) it + 1 else 0 }
         scroll.reset()
     }
 }

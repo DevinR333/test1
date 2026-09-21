@@ -300,6 +300,11 @@ class Save(ctx: Context) {
     /** True once the halo total has paid for it, whether or not it has been collected yet. */
     fun gloryEarned(): Boolean = halos >= Tuning.HALOS_FOR_GLORY
 
+    /** Has the player been asked how they want to steer? Asked once, on the first menu. */
+    var controlsAsked: Boolean
+        get() = prefs.getBoolean(KEY_CONTROLS_ASKED, false)
+        set(value) = editSync { it.putBoolean(KEY_CONTROLS_ASKED, value) }
+
     /** Has the Heaven reveal already been shown? Kept so it plays exactly once, ever. */
     var heavenAnnounced: Boolean
         get() = prefs.getBoolean(KEY_HEAVEN_SEEN, false)
@@ -378,6 +383,20 @@ class Save(ctx: Context) {
     // ---- consumable power-ups ---------------------------------------------------------------
 
     fun powerupCount(id: String): Int = prefs.getInt(KEY_POWERUP_PREFIX + id, 0)
+
+    /**
+     * Adds power-ups, up to the shelf limit.
+     *
+     * @return how many did NOT fit, so the caller can pay for them some other way.
+     */
+    fun grantPowerupCapped(id: String, count: Int = 1): Int {
+        if (count <= 0) return 0
+        val have = powerupCount(id)
+        val room = (Tuning.POWERUP_MAX - have).coerceAtLeast(0)
+        val taken = minOf(room, count)
+        if (taken > 0) editSync { it.putInt(KEY_POWERUP_PREFIX + id, have + taken) }
+        return count - taken
+    }
 
     fun grantPowerup(id: String, count: Int = 1) {
         if (count <= 0) return
@@ -473,6 +492,7 @@ class Save(ctx: Context) {
         private const val KEY_TRAIL_PICK = "trailPick"
         private const val KEY_HALOS = "halos"
         private const val KEY_HEAVEN_SEEN = "heavenAnnounced"
+        private const val KEY_CONTROLS_ASKED = "controlsAsked"
         private const val KEY_GHOST_ON = "ghostOn"
         private const val KEY_FREE_SPINS = "freeSpins"
         private const val KEY_POWERUP_PREFIX = "pu_"

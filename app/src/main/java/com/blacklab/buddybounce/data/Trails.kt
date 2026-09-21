@@ -78,6 +78,15 @@ object Trails {
         const val NOTE = 39          // a quaver
         const val BLAST = 40         // a beam core inside an expanding shock ring
         const val GLORY = 41         // a shaft of golden light with motes drifting up it
+        // ---- the second batch ----
+        const val TACO = 42          // a folded shell with fillings spilling out of it
+        const val VINYL = 43         // a spinning record with its label and a grooved edge
+        const val DOMINO = 44        // a tile with a pip count, tumbling end over end
+        const val ORIGAMI = 45       // a folded paper crane with creased wings
+        const val BOOMERANG = 46     // a bent V that spins about its elbow
+        const val DICE = 47          // a twenty-sided die showing one numbered face
+        const val HORSESHOE = 48     // an iron U with nail holes, ringing as it falls
+        const val INKBLOT = 49       // a wet splat that spreads and runs
 
         const val COUNT = 41
     }
@@ -223,6 +232,24 @@ object Trails {
             0xFFBFF4FF, 0xFF1E5FD6, 0xFFFFFFFF,
             "A white-hot beam with the shock ring still catching up."),
 
+        // ---- the second batch ---------------------------------------------------------------
+        t("taco", "Taco Trail", Rarity.COMMON, Style.TACO, Motion.FALL,
+            0xFFFFCC66, 0xFFB5651E, 0xFF5FBF54, "He is not sharing. Do not ask."),
+        t("vinyl", "Vinyl Trail", Rarity.RARE, Style.VINYL, Motion.DRIFT,
+            0xFF2A2E38, 0xFF12141A, 0xFFE8654F, "Every bounce drops a beat."),
+        t("domino", "Domino Trail", Rarity.COMMON, Style.DOMINO, Motion.FLUTTER,
+            0xFFF6F8FC, 0xFFB8C0CE, 0xFF23262F, "One thing leads to another."),
+        t("origami", "Origami Trail", Rarity.EPIC, Style.ORIGAMI, Motion.FLUTTER,
+            0xFFFFF0F6, 0xFFE07AA8, 0xFFB5537E, "A thousand of them, and then a wish."),
+        t("boomerang", "Boomerang Trail", Rarity.RARE, Style.BOOMERANG, Motion.DRIFT,
+            0xFFD9A35B, 0xFF7A4B1E, 0xFFF2E3B3, "It comes back. He does not."),
+        t("dice", "Dice Trail", Rarity.EPIC, Style.DICE, Motion.FLUTTER,
+            0xFFE8433C, 0xFF7A1F1B, 0xFFFFF6DC, "Every jump is a saving throw."),
+        t("horseshoe", "Horseshoe Trail", Rarity.RARE, Style.HORSESHOE, Motion.FALL,
+            0xFFD8DEE9, 0xFF6B7180, 0xFFFFD86B, "Luck, and about a pound of iron."),
+        t("inkblot", "Inkblot Trail", Rarity.COMMON, Style.INKBLOT, Motion.FALL,
+            0xFF3A4152, 0xFF10131A, 0xFF6F7A91, "Tell me what you see."),
+
         // ---- the one that only Heaven hands out --------------------------------------------
         // Earned at 500 halos, half the price of the outfit, so the trail lands first and the
         // player knows what the halos are for before the big one arrives.
@@ -237,6 +264,17 @@ object Trails {
      * Heaven, and a collectable locked inside the world it gates could never be reached.
      */
     const val HEAVEN_ONLY_ID = "glory"
+
+    /**
+     * The trails page, ordered the way the wardrobe orders outfits: common first, legendary
+     * last, and the one Heaven pays out after all of them.
+     *
+     * [ALL] stays in catalogue order - it is grouped by theme, which is how the file is written
+     * and read - so the display order lives here rather than being baked into the list.
+     */
+    val display: List<Trail> = ALL.sortedWith(
+        compareBy({ if (it.id == HEAVEN_ONLY_ID) 1 else 0 }, { it.rarity })
+    )
 
     val byId: Map<String, Trail> = ALL.associateBy { it.id }
 

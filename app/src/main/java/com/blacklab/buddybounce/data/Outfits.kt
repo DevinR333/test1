@@ -18,7 +18,14 @@ object Outfits {
         COMMON("Common", 60, 0xFF8FA7C4.toInt(), 0x408FA7C4, 2),
         RARE("Rare", 27, 0xFF4FC3F7.toInt(), 0x554FC3F7, 3),
         EPIC("Epic", 10, 0xFFB388FF.toInt(), 0x66B388FF, 4),
-        LEGENDARY("Legendary", 3, 0xFFFFC24B.toInt(), 0x77FFC24B, 6)
+        LEGENDARY("Legendary", 3, 0xFFFFC24B.toInt(), 0x77FFC24B, 6),
+
+        /**
+         * One outfit, one way in, and the machine has never heard of it. Its weight is 0 so it
+         * can never be rolled even if it somehow reached a pool, and it is plain white because
+         * it sits outside the common-to-legendary ladder rather than above it.
+         */
+        DEVELOPER("Developer", 0, 0xFFFFFFFF.toInt(), 0x88FFFFFF.toInt(), 6)
     }
 
     data class Outfit(
@@ -83,7 +90,7 @@ object Outfits {
         Outfit("anti", "Anti-Buddy", Rarity.LEGENDARY, "Same dog. Opposite dog."),
         Outfit(HEAVEN_ONLY_ID, "Good Boy Eternal", Rarity.LEGENDARY, "Wings, a halo, and absolutely nothing left to prove."),
         // Last of all, and absent from the list entirely until the back door hands it over.
-        Outfit(DEV_ID, "Developer Approved", Rarity.LEGENDARY, "Shipped it. Mostly.")
+        Outfit(DEV_ID, "Developer Approved", Rarity.DEVELOPER, "Shipped it. Mostly.")
     )
 
     private val index: Map<String, Outfit> = ALL.associateBy { it.id }
@@ -123,8 +130,8 @@ object Outfits {
     fun visible(devOwned: Boolean): List<Outfit> =
         if (devOwned) ALL else ALL.filter { it.id != DEV_ID }
 
-    fun collectableCount(devOwned: Boolean): Int =
-        visible(devOwned).count { it.id != DEFAULT_ID }
+    /** Every outfit the wardrobe admits exists, Buddy's own collar included. */
+    fun collectableCount(devOwned: Boolean): Int = visible(devOwned).size
 
     /**
      * Is Buddy wearing the blessed look - translucent, with wings and a halo?

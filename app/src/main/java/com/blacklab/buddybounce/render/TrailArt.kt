@@ -87,6 +87,14 @@ class TrailArt(private val art: Art) {
             Trails.Style.HEART -> heart(c, size, rot, col, accent, a)
             Trails.Style.BLAST -> blast(c, size, rot, col, accent, a)
             Trails.Style.GLORY -> glory(c, size, rot, col, accent, a)
+            Trails.Style.TACO -> taco(c, size, rot, col, accent, a)
+            Trails.Style.VINYL -> vinyl(c, size, rot, col, accent, a)
+            Trails.Style.DOMINO -> domino(c, size, rot, col, accent, a)
+            Trails.Style.ORIGAMI -> origami(c, size, rot, col, accent, a)
+            Trails.Style.BOOMERANG -> boomerang(c, size, rot, col, accent, a)
+            Trails.Style.DICE -> dice(c, size, rot, col, accent, a)
+            Trails.Style.HORSESHOE -> horseshoe(c, size, rot, col, accent, a)
+            Trails.Style.INKBLOT -> inkblot(c, size, rot, col, accent, a)
             else -> note(c, size, rot, col, accent, a)
         }
         c.restore()
@@ -886,8 +894,10 @@ class TrailArt(private val art: Art) {
      * him rather than as sparks coming off him.
      */
     private fun glory(c: Canvas, size: Float, rot: Float, col: Int, accent: Int, a: Float) {
-        val hgt = size * 3.4f
-        val halfW = size * 0.62f
+        // The longest and widest thing in the catalogue, deliberately - it is the reward for a
+        // thousand halos and it should look like a shaft of light falling on him, not a spark.
+        val hgt = size * 5.6f
+        val halfW = size * 0.95f
 
         // the outer shaft, widening as it falls
         p.reset(); p.isAntiAlias = true
@@ -919,8 +929,8 @@ class TrailArt(private val art: Art) {
         c.drawPath(path, p)
 
         // motes riding up the beam, each a four-point sparkle rather than a dot
-        for (i in 0 until 5) {
-            val t = ((rot * 0.16f + i * 0.2f) % 1f)
+        for (i in 0 until 8) {
+            val t = ((rot * 0.16f + i * 0.125f) % 1f)
             val my = hgt * 0.24f - t * hgt * 1.15f
             val mx = sin(rot * 1.6f + i * 2.1f) * halfW * 0.5f * (1f - t)
             val ms = size * (0.30f - t * 0.16f)
@@ -943,5 +953,248 @@ class TrailArt(private val art: Art) {
         p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), a * 0.34f)
         r.set(-halfW * 0.52f, hgt * 0.21f, halfW * 0.52f, hgt * 0.33f)
         c.drawOval(r, p)
+    }
+
+    /** A folded shell seen end-on, with the filling spilling over the near lip. */
+    private fun taco(c: Canvas, size: Float, rot: Float, col: Int, accent: Int, a: Float) {
+        c.save()
+        c.rotate(rot * 12f)
+        val w = size * 1.25f
+        val h = size * 0.95f
+        // the shell: a horseshoe of tortilla, open at the top
+        p.reset(); p.isAntiAlias = true
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = size * 0.34f
+        p.strokeCap = Paint.Cap.ROUND
+        p.color = ColorX.withAlpha(col, a)
+        r.set(-w * 0.5f, -h * 0.5f, w * 0.5f, h * 0.9f)
+        c.drawArc(r, 10f, 160f, false, p)
+        p.strokeWidth = size * 0.12f
+        p.color = ColorX.withAlpha(ColorX.shade(col, 0.72f), a * 0.8f)
+        r.set(-w * 0.44f, -h * 0.4f, w * 0.44f, h * 0.76f)
+        c.drawArc(r, 16f, 148f, false, p)
+        p.style = Paint.Style.FILL
+        // the filling, heaped along the opening
+        p.color = ColorX.withAlpha(accent, a * 0.95f)
+        for (i in 0 until 3) {
+            val t = i / 2f
+            c.drawCircle(-w * 0.3f + t * w * 0.6f, -h * 0.34f + sin(t * 3f + rot) * size * 0.06f,
+                size * 0.18f, p)
+        }
+        p.color = ColorX.withAlpha(0xFFE04A3C.toInt(), a * 0.9f)
+        c.drawCircle(-w * 0.06f, -h * 0.42f, size * 0.12f, p)
+        c.restore()
+    }
+
+    /** A record, spinning. Grooved rim, bright label, one highlight sweeping round it. */
+    private fun vinyl(c: Canvas, size: Float, rot: Float, col: Int, accent: Int, a: Float) {
+        val rad = size * 0.85f
+        p.reset(); p.isAntiAlias = true
+        p.color = ColorX.withAlpha(col, a)
+        c.drawCircle(0f, 0f, rad, p)
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = size * 0.045f
+        p.color = ColorX.withAlpha(ColorX.tint(col, 0.35f), a * 0.5f)
+        for (i in 0 until 3) c.drawCircle(0f, 0f, rad * (0.55f + i * 0.14f), p)
+        // the highlight, a short arc that rotates - what makes it read as spinning
+        p.strokeWidth = size * 0.1f
+        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), a * 0.4f)
+        r.set(-rad * 0.88f, -rad * 0.88f, rad * 0.88f, rad * 0.88f)
+        c.drawArc(r, rot * 90f, 44f, false, p)
+        p.style = Paint.Style.FILL
+        p.color = ColorX.withAlpha(accent, a)
+        c.drawCircle(0f, 0f, rad * 0.34f, p)
+        p.color = ColorX.withAlpha(0xFF000000.toInt(), a * 0.6f)
+        c.drawCircle(0f, 0f, rad * 0.08f, p)
+    }
+
+    /** A domino tile: two halves split by a bar, pips on both, tumbling end over end. */
+    private fun domino(c: Canvas, size: Float, rot: Float, col: Int, accent: Int, a: Float) {
+        c.save()
+        c.rotate(rot * 55f)
+        val w = size * 0.72f
+        val h = size * 1.35f
+        p.reset(); p.isAntiAlias = true
+        p.color = ColorX.withAlpha(ColorX.shade(col, 0.8f), a)
+        r.set(-w * 0.5f, -h * 0.5f, w * 0.5f, h * 0.5f)
+        c.drawRoundRect(r, size * 0.14f, size * 0.14f, p)
+        p.color = ColorX.withAlpha(col, a)
+        r.set(-w * 0.44f, -h * 0.46f, w * 0.44f, h * 0.42f)
+        c.drawRoundRect(r, size * 0.12f, size * 0.12f, p)
+        p.color = ColorX.withAlpha(accent, a * 0.9f)
+        r.set(-w * 0.44f, -h * 0.035f, w * 0.44f, h * 0.035f)
+        c.drawRect(r, p)
+        // three pips above the bar, two below - a real tile, not a blank
+        val pr = size * 0.09f
+        for (i in 0 until 3) c.drawCircle((i - 1) * w * 0.26f, -h * 0.26f, pr, p)
+        c.drawCircle(-w * 0.2f, h * 0.24f, pr, p)
+        c.drawCircle(w * 0.2f, h * 0.24f, pr, p)
+        c.restore()
+    }
+
+    /** A paper crane: two swept wings, a beak and a tail, with a hard crease down the middle. */
+    private fun origami(c: Canvas, size: Float, rot: Float, col: Int, accent: Int, a: Float) {
+        c.save()
+        c.rotate(sin(rot * 1.6f) * 26f)
+        val flap = sin(rot * 3.2f) * 0.3f
+        p.reset(); p.isAntiAlias = true
+        // far wing, folded down
+        p.color = ColorX.withAlpha(ColorX.shade(col, 0.74f), a)
+        path.reset()
+        path.moveTo(0f, 0f)
+        path.lineTo(-size * 1.1f, -size * (0.42f - flap * 0.4f))
+        path.lineTo(-size * 0.3f, size * 0.34f)
+        path.close()
+        c.drawPath(path, p)
+        // body and neck
+        p.color = ColorX.withAlpha(col, a)
+        path.reset()
+        path.moveTo(size * 1.0f, -size * 0.48f)      // beak
+        path.lineTo(size * 0.2f, size * 0.06f)
+        path.lineTo(-size * 0.95f, size * 0.5f)      // tail
+        path.lineTo(-size * 0.2f, size * 0.42f)
+        path.close()
+        c.drawPath(path, p)
+        // near wing, raised
+        p.color = ColorX.withAlpha(ColorX.tint(col, 0.2f), a)
+        path.reset()
+        path.moveTo(0f, 0f)
+        path.lineTo(size * 0.2f, -size * (0.95f + flap * 0.5f))
+        path.lineTo(size * 0.62f, size * 0.2f)
+        path.close()
+        c.drawPath(path, p)
+        // the crease
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = size * 0.05f
+        p.color = ColorX.withAlpha(accent, a * 0.75f)
+        c.drawLine(size * 0.2f, -size * (0.95f + flap * 0.5f), size * 0.1f, size * 0.12f, p)
+        p.style = Paint.Style.FILL
+        c.restore()
+    }
+
+    /** A boomerang: a bent V with a rounded elbow, spinning flat about its middle. */
+    private fun boomerang(c: Canvas, size: Float, rot: Float, col: Int, accent: Int, a: Float) {
+        c.save()
+        c.rotate(rot * 140f)                       // it spins fast - that is the whole read
+        p.reset(); p.isAntiAlias = true
+        p.style = Paint.Style.STROKE
+        p.strokeCap = Paint.Cap.ROUND
+        p.strokeJoin = Paint.Join.ROUND
+        p.strokeWidth = size * 0.3f
+        p.color = ColorX.withAlpha(col, a)
+        path.reset()
+        path.moveTo(-size * 0.9f, size * 0.42f)
+        path.quadTo(0f, -size * 0.62f, size * 0.9f, size * 0.42f)
+        c.drawPath(path, p)
+        // the painted stripes across each arm
+        p.strokeWidth = size * 0.08f
+        p.color = ColorX.withAlpha(accent, a * 0.85f)
+        path.reset()
+        path.moveTo(-size * 0.62f, size * 0.12f)
+        path.quadTo(0f, -size * 0.42f, size * 0.62f, size * 0.12f)
+        c.drawPath(path, p)
+        p.style = Paint.Style.FILL
+        c.restore()
+    }
+
+    /** A twenty-sided die: a hexagonal outline with the top facet and a number on it. */
+    private fun dice(c: Canvas, size: Float, rot: Float, col: Int, accent: Int, a: Float) {
+        c.save()
+        c.rotate(rot * 48f)
+        p.reset(); p.isAntiAlias = true
+        // the silhouette: a hexagon, which is what a d20 reads as from any angle
+        p.color = ColorX.withAlpha(col, a)
+        path.reset()
+        for (i in 0 until 6) {
+            val ang = i / 6f * 6.2832f + 0.5236f
+            val x = cos(ang) * size * 0.92f
+            val y = sin(ang) * size * 0.92f
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        path.close()
+        c.drawPath(path, p)
+        // three facets meeting in the middle, lit differently so it looks solid
+        for (i in 0 until 3) {
+            val a0 = i / 3f * 6.2832f + 0.5236f
+            val a1 = (i + 1) / 3f * 6.2832f + 0.5236f
+            p.color = ColorX.withAlpha(ColorX.shade(col, 0.72f + i * 0.2f), a * 0.9f)
+            path.reset()
+            path.moveTo(0f, 0f)
+            path.lineTo(cos(a0) * size * 0.92f, sin(a0) * size * 0.92f)
+            path.lineTo(cos(a0 + 0.5236f) * size * 0.8f, sin(a0 + 0.5236f) * size * 0.8f)
+            path.lineTo(cos(a1) * size * 0.92f, sin(a1) * size * 0.92f)
+            path.close()
+            c.drawPath(path, p)
+        }
+        // the numbered face
+        p.color = ColorX.withAlpha(accent, a)
+        path.reset()
+        path.moveTo(0f, -size * 0.34f)
+        path.lineTo(size * 0.3f, size * 0.2f)
+        path.lineTo(-size * 0.3f, size * 0.2f)
+        path.close()
+        c.drawPath(path, p)
+        c.restore()
+    }
+
+    /** An iron horseshoe: a thick U, open at the bottom, with nail holes punched through it. */
+    private fun horseshoe(c: Canvas, size: Float, rot: Float, col: Int, accent: Int, a: Float) {
+        c.save()
+        c.rotate(rot * 34f)
+        p.reset(); p.isAntiAlias = true
+        p.style = Paint.Style.STROKE
+        p.strokeCap = Paint.Cap.BUTT
+        p.strokeWidth = size * 0.34f
+        p.color = ColorX.withAlpha(col, a)
+        r.set(-size * 0.62f, -size * 0.68f, size * 0.62f, size * 0.62f)
+        c.drawArc(r, 200f, 230f, false, p)
+        // a lit edge along the outside of the bend
+        p.strokeWidth = size * 0.09f
+        p.color = ColorX.withAlpha(accent, a * 0.8f)
+        r.set(-size * 0.7f, -size * 0.76f, size * 0.7f, size * 0.7f)
+        c.drawArc(r, 210f, 210f, false, p)
+        p.style = Paint.Style.FILL
+        // nail holes
+        p.color = ColorX.withAlpha(0xFF15171D.toInt(), a * 0.7f)
+        for (i in 0 until 4) {
+            val ang = (215f + i * 70f) * 0.01745f
+            c.drawCircle(cos(ang) * size * 0.62f, sin(ang) * size * 0.62f, size * 0.07f, p)
+        }
+        c.restore()
+    }
+
+    /** A wet splat: one heavy blob, a ring of satellites, and a run dripping off the bottom. */
+    private fun inkblot(c: Canvas, size: Float, rot: Float, col: Int, accent: Int, a: Float) {
+        p.reset(); p.isAntiAlias = true
+        val spread = 0.8f + ((rot * 0.3f) % 1f) * 0.5f
+        p.color = ColorX.withAlpha(col, a)
+        path.reset()
+        // a lobed blob rather than a circle, so it reads as spilled
+        val lobes = 7
+        for (i in 0 until lobes) {
+            val ang = i / lobes.toFloat() * 6.2832f
+            val rad = size * spread * (0.52f + ((i * 37) % 5) * 0.06f)
+            val x = cos(ang) * rad
+            val y = sin(ang) * rad * 0.86f
+            if (i == 0) path.moveTo(x, y) else {
+                val pang = (i - 0.5f) / lobes * 6.2832f
+                val prad = size * spread * 0.76f
+                path.quadTo(cos(pang) * prad, sin(pang) * prad * 0.86f, x, y)
+            }
+        }
+        path.close()
+        c.drawPath(path, p)
+        // the run
+        p.color = ColorX.withAlpha(ColorX.shade(col, 0.8f), a * 0.9f)
+        r.set(-size * 0.09f, size * spread * 0.4f, size * 0.09f, size * spread * 1.05f)
+        c.drawRoundRect(r, size * 0.09f, size * 0.09f, p)
+        c.drawCircle(0f, size * spread * 1.05f, size * 0.11f, p)
+        // satellites
+        p.color = ColorX.withAlpha(accent, a * 0.7f)
+        for (i in 0 until 4) {
+            val ang = i * 1.5708f + rot * 0.2f
+            c.drawCircle(cos(ang) * size * spread * 1.0f, sin(ang) * size * spread * 0.9f,
+                size * (0.09f + ((i * 13) % 3) * 0.03f), p)
+        }
     }
 }

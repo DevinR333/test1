@@ -36,9 +36,20 @@ class UnlockPopup(private val g: Game) {
         const val SCENE = 0
         const val OUTFIT = 1
         const val TRAIL = 2
+        /** No artwork - just something to say, and one button to say it back. */
+        const val MESSAGE = 3
+        /** The one-off "how do you want to steer him" card. */
+        const val CONTROLS = 4
     }
 
-    private class Entry(val kind: Int, val id: String, val banner: String)
+    private class Entry(
+        val kind: Int,
+        val id: String,
+        val banner: String,
+        val title: String = "",
+        val body: String = "",
+        val button: String = "NICE"
+    )
 
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rect = RectF()
@@ -47,6 +58,7 @@ class UnlockPopup(private val g: Game) {
     private object Id {
         const val DONE = 7701
         const val EQUIP = 7702
+        const val OPTIONS = 7703
     }
 
     private val queue = ArrayList<Entry>()
@@ -60,13 +72,43 @@ class UnlockPopup(private val g: Game) {
         queue.add(Entry(kind, id, banner))
     }
 
+    /**
+     * A card with no prize in it - what the cheat codes use.
+     *
+     * They used to slide a green pill across the top of the menu, which looks exactly like a
+     * transient status message and disappears whether or not you read it. Anything worth
+     * telling the player gets a card they have to dismiss.
+     */
+    fun queueMessage(banner: String, title: String, body: String, button: String = "NICE") {
+        queue.add(Entry(Kind.MESSAGE, "", banner, title, body, button))
+    }
+
+    fun queueControls() {
+        queue.add(Entry(Kind.CONTROLS, "", "HOW DO YOU WANT TO PLAY?", button = "GOT IT!"))
+    }
+
     fun update(dt: Float) {
         if (showing == null && queue.isNotEmpty()) {
-            showing = queue.removeAt(0)
+            val next = queue.removeAt(0)
+            showing = next
             anim = 0f
-            g.onUnlockRevealed()
+            val prize = next.kind == Kind.SCENE || next.kind == Kind.OUTFIT || next.kind == Kind.TRAIL
+            g.onUnlockRevealed(prize)
+            if (prize) g.haptics.prize(hapticLevel(next))
         }
         if (showing != null && anim < 1f) anim = (anim + dt * 2.6f).coerceAtMost(1f)
+    }
+
+    /**
+     * How hard the phone should buzz for this. The ladder runs with how rare the thing is -
+     * a world is the rarest thing the machine gives out, and Heaven's own two, plus the
+     * developer skin, sit at the top with it because they are not in the machine at all.
+     */
+    private fun hapticLevel(e: Entry): Int = when {
+        e.kind == Kind.SCENE -> 3
+        e.id == Outfits.HEAVEN_ONLY_ID || e.id == Trails.HEAVEN_ONLY_ID || e.id == Outfits.DEV_ID -> 3
+        e.kind == Kind.OUTFIT -> 2
+        else -> 1
     }
 
     private fun dismiss() {
@@ -77,7 +119,8 @@ class UnlockPopup(private val g: Game) {
     private fun tintOf(e: Entry): Int = when (e.kind) {
         Kind.SCENE -> Scenes.of(e.id).cardTint
         Kind.TRAIL -> Trails.of(e.id)?.hot ?: Theme.ACCENT
-        else -> Outfits.of(e.id).rarity.tint
+        Kind.OUTFIT -> Outfits.of(e.id).rarity.tint
+        else -> Theme.ACCENT
     }
 
     private fun nameOf(e: Entry): String = when (e.kind) {
@@ -131,42 +174,111 @@ class UnlockPopup(private val g: Game) {
         ui.shimmer(c, x, y, w, h, Theme.RADIUS, 1f)
 
         ui.text(c, e.banner, g.worldW * 0.5f, y + 96f, 52f, Theme.ACCENT, ui.title, true, w - 48f)
+        // Only a prize gets the category pill - a message or the chooser has no category.
         val label = when (e.kind) {
             Kind.SCENE -> "NEW WORLD"
             Kind.TRAIL -> "NEW TRAIL"
-            else -> "NEW OUTFIT"
+            Kind.OUTFIT -> "NEW OUTFIT"
+            else -> ""
         }
-        ui.pill(c, g.worldW * 0.5f - 110f, y + 122f, 220f, 52f, ColorX.withAlpha(tint, 0.25f))
-        ui.text(c, label, g.worldW * 0.5f, y + 158f, 28f, tint, ui.title, false, 210f)
+        if (label.isNotEmpty()) {
+            ui.pill(c, g.worldW * 0.5f - 110f, y + 122f, 220f, 52f, ColorX.withAlpha(tint, 0.25f))
+            ui.text(c, label, g.worldW * 0.5f, y + 158f, 28f, tint, ui.title, false, 210f)
+        }
 
+        val by = y + h - 96f
         when (e.kind) {
             Kind.OUTFIT -> g.drawPosedBuddy(
                 c, g.worldW * 0.5f, y + h * 0.72f, min(w / 300f, h / 620f) * 1.05f, e.id, ui.time
             )
             Kind.TRAIL -> g.drawTrailPreview(c, g.worldW * 0.5f, y + h * 0.46f, w * 0.52f, h * 0.22f, e.id, ui.time)
-            else -> scenePreview(c, e.id, g.worldW * 0.5f, y + h * 0.46f, w * 0.52f, h * 0.30f)
+            Kind.SCENE -> scenePreview(c, e.id, g.worldW * 0.5f, y + h * 0.46f, w * 0.52f, h * 0.30f)
+            Kind.CONTROLS -> controlChooser(c, x, y, w, h)
+            else -> {}
         }
 
-        ui.text(c, nameOf(e).uppercase(), g.worldW * 0.5f, y + h - 168f, 48f, Theme.TEXT, ui.title, true, w - 60f)
-        ui.text(
-            c, blurbOf(e), g.worldW * 0.5f, y + h - 124f, 30f,
-            Theme.TEXT_DIM, ui.body, false, w - 60f
-        )
-
-        val by = y + h - 96f
-        val cw = (w - 80f - 20f) / 2f
-        val equipLabel = if (e.kind == Kind.SCENE) "PLAY IT" else "EQUIP"
-        if (ui.button(c, Id.EQUIP, x + 40f, by, cw, 78f, equipLabel, Ui.ButtonStyle.SECONDARY)) {
-            g.tap()
-            equip(e)
-            dismiss()
+        if (e.kind == Kind.MESSAGE) {
+            ui.text(c, e.title.uppercase(), g.worldW * 0.5f, y + h * 0.44f, 48f, Theme.TEXT, ui.title, true, w - 60f)
+            paragraph(c, e.body, g.worldW * 0.5f, y + h * 0.52f, w - 96f, 30f, Theme.TEXT_DIM)
+        } else if (e.kind != Kind.CONTROLS) {
+            ui.text(c, nameOf(e).uppercase(), g.worldW * 0.5f, y + h - 168f, 48f, Theme.TEXT, ui.title, true, w - 60f)
+            ui.text(
+                c, blurbOf(e), g.worldW * 0.5f, y + h - 124f, 30f,
+                Theme.TEXT_DIM, ui.body, false, w - 60f
+            )
         }
-        if (ui.button(c, Id.DONE, x + 40f + cw + 20f, by, cw, 78f, "NICE")) {
+
+        // A prize can be put on from here; a message or a chooser only needs acknowledging.
+        val canEquip = e.kind == Kind.SCENE || e.kind == Kind.OUTFIT || e.kind == Kind.TRAIL
+        if (canEquip) {
+            val cw = (w - 80f - 20f) / 2f
+            val equipLabel = if (e.kind == Kind.SCENE) "PLAY IT" else "EQUIP"
+            if (ui.button(c, Id.EQUIP, x + 40f, by, cw, 78f, equipLabel, Ui.ButtonStyle.SECONDARY)) {
+                g.tap()
+                equip(e)
+                dismiss()
+            }
+            if (ui.button(c, Id.DONE, x + 40f + cw + 20f, by, cw, 78f, e.button)) {
+                g.tap()
+                dismiss()
+            }
+        } else if (ui.button(c, Id.DONE, x + 40f, by, w - 80f, 78f, e.button, Ui.ButtonStyle.PRIMARY)) {
             g.tap()
             dismiss()
         }
         c.restore()
         ui.clearInputClip()
+    }
+
+    /** Wraps [text] to [maxW] and draws it as centred lines from [topY] down. */
+    private fun paragraph(
+        c: Canvas, text: String, cx: Float, topY: Float, maxW: Float, size: Float, color: Int
+    ) {
+        val ui = g.ui
+        val words = text.split(' ')
+        val line = StringBuilder()
+        var y = topY
+        for (word in words) {
+            val candidate = if (line.isEmpty()) word else "$line $word"
+            if (ui.measure(candidate, size, ui.body) > maxW && line.isNotEmpty()) {
+                ui.text(c, line.toString(), cx, y, size, color, ui.body, false, maxW)
+                y += size * 1.34f
+                line.setLength(0)
+                line.append(word)
+            } else {
+                line.setLength(0)
+                line.append(candidate)
+            }
+        }
+        if (line.isNotEmpty()) ui.text(c, line.toString(), cx, y, size, color, ui.body, false, maxW)
+    }
+
+    /** The three ways to steer him, with what each one actually feels like. */
+    private fun controlChooser(c: Canvas, x: Float, y: Float, w: Float, h: Float) {
+        val ui = g.ui
+        val labels = arrayOf("TILT", "SWIPE", "BOTH")
+        val blurbs = arrayOf(
+            "Lean the phone the way you want him to go. Hands stay clear of the screen, so you " +
+                "can see everything you are about to land on.",
+            "Drag anywhere on the glass and he follows your thumb. Exact, and it works lying " +
+                "down or on a table, where tilt does not.",
+            "Both at once. Tilt for the long drifts, a thumb on the glass when you need to be " +
+                "precise about a platform."
+        )
+        val picked = g.save.controlMode.coerceIn(0, 2)
+        val sw = w - 96f
+        val sx = x + 48f
+        val sy = y + h * 0.28f
+        val chosen = ui.segmented(c, Id.OPTIONS, sx, sy, sw, 76f, labels, picked)
+        if (chosen != picked) {
+            g.tap()
+            g.save.controlMode = chosen
+        }
+        paragraph(c, blurbs[chosen], g.worldW * 0.5f, sy + 140f, sw - 24f, 30f, Theme.TEXT_DIM)
+        ui.text(
+            c, "You can change this any time in Settings.", g.worldW * 0.5f, y + h - 150f, 26f,
+            ColorX.withAlpha(Theme.TEXT_DIM, 0.8f), ui.body, false, sw
+        )
     }
 
     private fun equip(e: Entry) {
