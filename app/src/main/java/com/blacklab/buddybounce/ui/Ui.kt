@@ -128,7 +128,12 @@ class Ui(private val art: Art) {
         justReleased = true
     }
 
+    /** Seconds in the frame being drawn. Screens with their own animation need it. */
+    var frameDt = 0f
+        private set
+
     fun beginFrame(dt: Float) {
+        frameDt = dt
         time += dt
         for (entry in press.entries) {
             val target = if (pressedId == entry.key) 1f else 0f

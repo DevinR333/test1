@@ -42,6 +42,7 @@ class GachaScreen(private val g: Game) {
         const val PULL = 4002
         const val AGAIN = 4003
         const val DONE = 4004
+        const val EQUIP = 4005
     }
 
     private object Kind {
@@ -60,7 +61,20 @@ class GachaScreen(private val g: Game) {
         const val SCENE_CHANCE = 0.01f
         const val TRAIL_CHANCE = 0.15f
         const val OUTFIT_CHANCE = 0.10f
+        /** Seconds the coin takes to fall into the slot. */
+        const val COIN_DROP_TIME = 0.55f
     }
+
+    // Where drawMachine put the controls this frame. The crank IS the button, so the press
+    // target has to follow the machine's layout rather than being a bar at the bottom of the
+    // screen - pressing the thing you are looking at is the whole point of a gachapon.
+    private var crankX = 0f
+    private var crankY = 0f
+    private var crankR = 0f
+    private var slotX = 0f
+    private var slotY = 0f
+    /** Counts down while a coin is visibly dropping into the slot. */
+    private var coinDropT = 0f
 
     private var state = State.IDLE
     private var timer = 0f
@@ -95,6 +109,7 @@ class GachaScreen(private val g: Game) {
             State.REVEAL -> revealAnim = (revealAnim + dt * 2.2f).coerceAtMost(1f)
             State.IDLE -> {}
         }
+        if (coinDropT > 0f) coinDropT -= dt
     }
 
     private fun isBigPrize(): Boolean = when (prizeKind) {
@@ -160,7 +175,7 @@ class GachaScreen(private val g: Game) {
         )
 
         val areaTop = ui.safeTop + 176f
-        val areaBottom = Theme.SCREEN_H - ui.safeBottom - 200f
+        val areaBottom = Theme.SCREEN_H - ui.safeBottom - 150f
         val machineH = (areaBottom - areaTop).coerceAtLeast(320f)
         val machineW = min(g.worldW * (if (wide) 0.42f else 0.86f), machineH * 0.72f)
         val cx = if (wide) g.worldW * 0.32f else g.worldW * 0.5f
@@ -168,35 +183,56 @@ class GachaScreen(private val g: Game) {
 
         drawMachine(c, cx, top, machineW, machineW / 0.72f)
 
-        val btnW = min(g.worldW - ui.safeLeft - ui.safeRight - 100f, 560f)
-        val btnX = if (wide) g.worldW * 0.60f else (g.worldW - btnW) * 0.5f
-        val btnY = if (wide) Theme.SCREEN_H * 0.5f else Theme.SCREEN_H - ui.safeBottom - 168f
-
         if (state == State.REVEAL) {
             drawReveal(c)
         } else {
             val canPull = coins >= Tuning.GACHA_COST && state == State.IDLE
-            val label = when {
+
+            // The crank itself is the press target. A ghost button laid over wherever
+            // drawMachine just put it, so it lines up whatever size the machine came out.
+            // Pressing the thing you are looking at is the whole point of a gachapon; a bar at
+            // the bottom of the screen was both a stretch for the thumb and less fun.
+            if (crankR > 0f) {
+                if (canPull) {
+                    val pulse = 0.45f + 0.35f * sin(ui.time * 3.4f)
+                    g.art.drawGlow(c, crankX, crankY, crankR * 4.4f, Theme.ACCENT, 0.38f * pulse)
+                    p.reset(); p.isAntiAlias = true
+                    p.style = Paint.Style.STROKE
+                    p.strokeWidth = 5f
+                    p.color = ColorX.withAlpha(Theme.ACCENT, 0.5f + 0.4f * pulse)
+                    c.drawCircle(crankX, crankY, crankR * (1.12f + 0.1f * pulse), p)
+                    p.style = Paint.Style.FILL
+                }
+                if (ui.button(
+                        c, Id.PULL, crankX - crankR, crankY - crankR, crankR * 2f, crankR * 2f,
+                        "", Ui.ButtonStyle.GHOST, canPull
+                    )
+                ) {
+                    pull()
+                }
+            }
+
+            val hint = when {
                 state != State.IDLE -> "..."
-                canPull -> "PULL THE CRANK"
-                else -> "NOT ENOUGH COINS"
+                canPull -> "turn the crank"
+                else -> "collect ${Tuning.GACHA_COST - coins} more coins"
             }
-            val sub = if (canPull) "-${Tuning.GACHA_COST} coins" else "collect ${Tuning.GACHA_COST - coins} more"
-            val pullW = if (wide) min(btnW, g.worldW - btnX - ui.safeRight - 40f) else btnW
-            if (ui.button(c, Id.PULL, btnX, btnY, pullW, 118f, label, Ui.ButtonStyle.PRIMARY, canPull, sub)) {
-                pull()
-            }
-            if (wide || btnY > Theme.SCREEN_H * 0.6f) {
-                ui.text(
-                    c, "power-ups • trails • outfits • and very rarely, a new world",
-                    btnX + pullW * 0.5f, btnY + 148f, 26f, Theme.TEXT_DIM, ui.body, false
-                )
-            }
+            val room = g.worldW - ui.safeLeft - ui.safeRight - 60f
+            val hintY = Theme.SCREEN_H - ui.safeBottom - 92f
+            ui.text(
+                c, hint, g.worldW * 0.5f, hintY, 38f,
+                if (canPull) Theme.ACCENT else Theme.TEXT_DIM, ui.title, true, room
+            )
+            ui.text(
+                c, "power-ups \u2022 trails \u2022 outfits \u2022 and very rarely, a new world",
+                g.worldW * 0.5f, hintY + 42f, 26f, Theme.TEXT_DIM, ui.body, false, room
+            )
         }
     }
 
     private fun reset() {
         state = State.IDLE
+        coinDropT = 0f
         prizeId = ""
         duplicate = false
         revealAnim = 0f
@@ -208,6 +244,8 @@ class GachaScreen(private val g: Game) {
 
     private fun pull() {
         if (!g.save.spendCoins(Tuning.GACHA_COST)) return
+        coinDropT = COIN_DROP_TIME
+        g.audio.play(Audio.COIN, 0.7f, 0.8f)
         g.audio.play(Audio.GACHA_SPIN, 0.8f)
         rollPrize()
         grantPrize()
@@ -368,6 +406,7 @@ class GachaScreen(private val g: Game) {
 
         val crankCX = cx + w * 0.26f
         val crankCY = bodyTop + w * 0.36f
+        crankX = crankCX; crankY = crankCY; crankR = w * 0.16f
         p.color = 0xFFD8DEE9.toInt()
         c.drawCircle(crankCX, crankCY, w * 0.12f, p)
         p.color = 0xFF98A2B3.toInt()
@@ -381,9 +420,37 @@ class GachaScreen(private val g: Game) {
         c.drawCircle(crankCX, crankCY - w * 0.085f, w * 0.028f, p)
         c.restore()
 
+        // coin slot
+        val slotCX = cx - w * 0.26f
+        val slotCY = bodyTop + w * 0.33f
+        slotX = slotCX; slotY = slotCY
+        p.color = 0xFF8E9AAE.toInt()
+        rect.set(cx - w * 0.38f, bodyTop + w * 0.27f, cx - w * 0.14f, bodyTop + w * 0.39f)
+        c.drawRoundRect(rect, w * 0.03f, w * 0.03f, p)
         p.color = 0xFF3A2320.toInt()
         rect.set(cx - w * 0.36f, bodyTop + w * 0.30f, cx - w * 0.16f, bodyTop + w * 0.36f)
         c.drawRoundRect(rect, w * 0.03f, w * 0.03f, p)
+
+        // the coin going in, on its way to buying this pull
+        if (coinDropT > 0f) {
+            val k = clamp01(1f - coinDropT / COIN_DROP_TIME)
+            val fall = smoothstep(0f, 1f, k)
+            val coinY = slotCY - w * 0.42f + w * 0.42f * fall
+            // it narrows to an edge as it turns into the slot, then vanishes inside
+            val squeeze = if (k > 0.72f) (1f - (k - 0.72f) / 0.28f).coerceAtLeast(0.05f) else 1f
+            val alpha = if (k > 0.86f) (1f - (k - 0.86f) / 0.14f).coerceAtLeast(0f) else 1f
+            c.save()
+            c.translate(slotCX, coinY)
+            c.scale(squeeze, 1f)
+            c.rotate(k * 260f)
+            p.color = ColorX.withAlpha(Theme.ACCENT_DEEP, alpha)
+            c.drawCircle(0f, 0f, w * 0.055f, p)
+            p.color = ColorX.withAlpha(Theme.ACCENT, alpha)
+            c.drawCircle(0f, 0f, w * 0.045f, p)
+            p.color = ColorX.withAlpha(Theme.ACCENT_DEEP, alpha)
+            c.drawCircle(0f, w * 0.008f, w * 0.015f, p)
+            c.restore()
+        }
 
         val chuteY = bodyBottom - h * 0.19f
         p.color = 0xFF7E241F.toInt()
@@ -489,33 +556,46 @@ class GachaScreen(private val g: Game) {
             if (duplicate && prizeKind != Kind.SCENE) Theme.ACCENT else Theme.TEXT_DIM, ui.body, false, w - 60f
         )
 
-        val bw = (w - 120f) * 0.5f
         val by = y + h - 96f
         val canAgain = g.save.coins >= Tuning.GACHA_COST
-        if (ui.button(c, Id.AGAIN, x + 40f, by, bw, 78f, "AGAIN", Ui.ButtonStyle.PRIMARY, canAgain,
+        // Three buttons when there is something to put on, two when there is not. Winning a
+        // trail you like and then having to go and find it in the wardrobe to wear it was silly.
+        val canEquip = !duplicate && (prizeKind == Kind.OUTFIT || prizeKind == Kind.TRAIL ||
+            prizeKind == Kind.SCENE)
+        val cols = if (canEquip) 3 else 2
+        val cw = (w - 80f - 20f * (cols - 1)) / cols
+
+        if (ui.button(c, Id.AGAIN, x + 40f, by, cw, 78f, "AGAIN", Ui.ButtonStyle.PRIMARY, canAgain,
                 sublabel = "-${Tuning.GACHA_COST}")) {
             reset(); pull()
         }
-        val doneLabel = when {
-            prizeKind == Kind.SCENE -> "PLAY IT"
-            prizeKind == Kind.POWERUP -> "NICE"
-            duplicate -> "OK"
-            prizeKind == Kind.TRAIL -> "WEAR IT"
-            else -> "WEAR IT"
-        }
-        if (ui.button(c, Id.DONE, x + 80f + bw, by, bw, 78f, doneLabel)) {
-            g.tap()
-            when {
-                prizeKind == Kind.SCENE -> {
-                    g.save.selectedScene = prizeId
-                    g.applyScene()
-                }
-                prizeKind == Kind.OUTFIT && !duplicate -> g.save.equippedOutfit = prizeId
-                prizeKind == Kind.TRAIL && !duplicate -> g.save.equippedTrail = prizeId
+        if (canEquip) {
+            val equipLabel = if (prizeKind == Kind.SCENE) "PLAY IT" else "EQUIP"
+            if (ui.button(c, Id.EQUIP, x + 40f + cw + 20f, by, cw, 78f, equipLabel,
+                    Ui.ButtonStyle.SECONDARY)) {
+                g.tap()
+                equipPrize()
+                reset()
             }
+        }
+        val doneLabel = if (duplicate) "OK" else "NICE"
+        if (ui.button(c, Id.DONE, x + 40f + (cw + 20f) * (cols - 1), by, cw, 78f, doneLabel)) {
+            g.tap()
             reset()
         }
         c.restore()
+    }
+
+    /** Puts the prize on straight from the reveal. */
+    private fun equipPrize() {
+        when (prizeKind) {
+            Kind.SCENE -> {
+                g.save.selectedScene = prizeId
+                g.applyScene()
+            }
+            Kind.OUTFIT -> g.save.equippedOutfit = prizeId
+            Kind.TRAIL -> g.save.equippedTrail = prizeId
+        }
     }
 
     /** The won world, as a stack of its skies. */

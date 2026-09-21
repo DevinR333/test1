@@ -5,6 +5,7 @@ import android.graphics.Paint
 import android.graphics.RectF
 import com.blacklab.buddybounce.Game
 import com.blacklab.buddybounce.data.Outfits
+import com.blacklab.buddybounce.data.Trails
 import com.blacklab.buddybounce.game.Tuning
 import com.blacklab.buddybounce.render.ColorX
 import com.blacklab.buddybounce.render.Scenes
@@ -123,6 +124,10 @@ class MenuScreen(private val g: Game) {
             val x = cx - w * 0.42f + i * (w * 0.21f)
             rect.set(x - 8f, groundY - 18f, x + 8f, groundY + 2f)
             c.drawRoundRect(rect, 8f, 8f, p)
+        }
+        // The whole look, trail included - this is the shop window for everything you own.
+        if (g.save.equippedTrail != Trails.NONE_ID) {
+            g.drawTrailSample(c, cx - 150f, groundY - 150f, 300f, 110f, g.save.equippedTrail, g.ui.time)
         }
         g.drawMenuBuddy(c, cx, groundY - 2f, 1.15f, g.equippedOutfit)
     }

@@ -6,9 +6,7 @@ import android.graphics.RectF
 import com.blacklab.buddybounce.Game
 import com.blacklab.buddybounce.data.Outfits
 import com.blacklab.buddybounce.data.Trails
-import com.blacklab.buddybounce.game.MathX.clamp
 import com.blacklab.buddybounce.render.ColorX
-import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.min
 
@@ -38,11 +36,8 @@ class WardrobeScreen(private val g: Game) {
     private var tab = Tab.OUTFITS
     private var selected = 0
     private var trailSelected = 0
-    private var scrollY = 0f
+    private val scroll = Scroller()
     private var maxScroll = 0f
-    private var wasDown = false
-    private var dragAccum = 0f
-    private var dragged = false
 
     fun draw(c: Canvas) {
         val ui = g.ui
@@ -61,7 +56,7 @@ class WardrobeScreen(private val g: Game) {
             if (idx >= 0) trailSelected = idx + 1
         }
 
-        handleDrag()
+        handleDrag(g.ui.frameDt)
 
         if (ui.backButton(c, Id.BACK, ui.safeLeft + 78f, ui.safeTop + 78f, 52f)) {
             g.tap(); g.goto(Game.Screen.MENU)
@@ -80,7 +75,7 @@ class WardrobeScreen(private val g: Game) {
         if (picked != tab) {
             g.tap()
             tab = picked
-            scrollY = 0f
+            scroll.reset()
         }
 
         val randY = ui.safeTop + 230f
@@ -107,16 +102,9 @@ class WardrobeScreen(private val g: Game) {
         }
     }
 
-    private fun handleDrag() {
+    private fun handleDrag(dt: Float) {
         val ui = g.ui
-        val down = ui.pointerDown
-        if (down && !wasDown) { dragAccum = 0f; dragged = false }
-        if (down) {
-            dragAccum += abs(ui.scrollDrag)
-            if (dragAccum > 26f) dragged = true
-            scrollY = clamp(scrollY - ui.scrollDrag, 0f, maxScroll)
-        }
-        wasDown = down
+        scroll.update(dt, ui.pointerDown, ui.scrollDrag, maxScroll)
     }
 
     private fun drawPreview(c: Canvas, x: Float, y: Float, w: Float, h: Float) {
@@ -141,6 +129,15 @@ class WardrobeScreen(private val g: Game) {
         val buddyY = y + h * 0.70f
         if (owned) {
             g.art.drawGlow(c, x + w * 0.5f, buddyY - 90f, 260f, outfit.rarity.glow or 0xFF000000.toInt(), 0.22f)
+            // The equipped trail belongs in the OUTFIT preview too. Without it "randomize all"
+            // looked broken: it rolled a new trail, but the dog you were looking at never showed
+            // one, because trails were only drawn on the trails tab.
+            if (g.save.equippedTrail != Trails.NONE_ID) {
+                g.drawTrailSample(
+                    c, x + w * 0.5f - w * 0.1f, buddyY - h * 0.34f, w * 0.62f, h * 0.2f,
+                    g.save.equippedTrail, ui.time
+                )
+            }
             g.drawPosedBuddy(c, x + w * 0.5f, buddyY, min(w / 300f, h / 430f) * 1.5f, outfit.id, ui.time)
         } else {
             p.color = 0xFF2A3350.toInt()
@@ -177,7 +174,7 @@ class WardrobeScreen(private val g: Game) {
         val count = if (tab == Tab.OUTFITS) Outfits.ALL.size else Trails.ALL.size + 1
         val rows = ceil(count / cols.toFloat()).toInt()
         maxScroll = (rows * (cardH + gap) - gap - h).coerceAtLeast(0f)
-        scrollY = clamp(scrollY, 0f, maxScroll)
+        val scrollY = scroll.y
 
         c.save()
         c.clipRect(x - 4f, y, x + w + 4f, y + h)
@@ -216,7 +213,7 @@ class WardrobeScreen(private val g: Game) {
         val isSelected = index == selected
 
         val clicked = ui.button(c, Id.CARD + index, x, y, w, h, "", Ui.ButtonStyle.GHOST)
-        if (clicked && !dragged) {
+        if (clicked && !scroll.suppressTap) {
             g.tap()
             selected = index
             if (owned) g.save.equippedOutfit = outfit.id
@@ -318,7 +315,7 @@ class WardrobeScreen(private val g: Game) {
         val buddyY = y + h * 0.62f
         if (owned) {
             if (trail != null) {
-                g.drawTrailSample(c, x + w * 0.5f - w * 0.06f, buddyY - 96f, w * 0.68f, h * 0.24f, id, ui.time)
+                g.drawTrailSample(c, x + w * 0.5f, buddyY - h * 0.3f, w * 0.8f, h * 0.3f, id, ui.time)
             }
             g.drawPosedBuddy(c, x + w * 0.5f, buddyY, min(w / 300f, h / 430f) * 1.25f, g.equippedOutfit, ui.time)
         } else {
@@ -364,7 +361,7 @@ class WardrobeScreen(private val g: Game) {
         val tint = if (trail == null) Theme.TEXT_DIM else rarityTint(trail.rarity)
 
         val clicked = ui.button(c, Id.CARD + index, x, y, w, h, "", Ui.ButtonStyle.GHOST)
-        if (clicked && !dragged) {
+        if (clicked && !scroll.suppressTap) {
             g.tap()
             trailSelected = index
             if (owned) g.save.equippedTrail = id
@@ -390,7 +387,7 @@ class WardrobeScreen(private val g: Game) {
             c.save()
             c.clipRect(x + 3f, y + 3f, x + w - 3f, y + h - 34f)
             g.drawTrailSample(
-                c, x + w * 0.5f, y + h * 0.45f, w * 0.82f, h * 0.36f, id,
+                c, x + w * 0.5f, y + h * 0.42f, w * 0.9f, h * 0.46f, id,
                 ui.time * 0.7f + index * 0.5f
             )
             c.restore()
@@ -479,6 +476,6 @@ class WardrobeScreen(private val g: Game) {
         val trailId = g.save.equippedTrail
         trailSelected = if (trailId == Trails.NONE_ID) 0
         else Trails.ALL.indexOfFirst { it.id == trailId }.let { if (it >= 0) it + 1 else 0 }
-        scrollY = 0f
+        scroll.reset()
     }
 }

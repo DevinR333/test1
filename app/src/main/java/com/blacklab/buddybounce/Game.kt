@@ -632,14 +632,17 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
             trailArtFor = art
         }
         val ta = trailArt ?: return
-        val n = 11
+        // Fewer, BIGGER particles than the in-game emitter uses. In a run a trail is read in
+        // peripheral vision and wants to be small; on a card it has to be identifiable, and at
+        // the old size you genuinely could not tell a snowflake from a star.
+        val n = 8
         for (i in 0 until n) {
             val k = i / (n - 1f)                 // 0 at the tail, 1 at the head
-            val life = 0.18f + 0.82f * k          // head is freshest
+            val life = 0.28f + 0.72f * k          // head is freshest
             val px = cx - w * 0.5f + w * k
-            val py = cy + sin(k * 3.4f - phase * 1.8f) * h * 0.42f
+            val py = cy + sin(k * 3.4f - phase * 1.8f) * h * 0.34f
             val col = ColorX.lerp(trail.cool, trail.hot, life)
-            ta.draw(c, trail.style, px, py, h * 0.9f * (0.6f + 0.4f * life),
+            ta.draw(c, trail.style, px, py, h * 1.9f * (0.72f + 0.28f * life),
                 k * 5.1f + phase, col, trail.accent, life)
         }
     }

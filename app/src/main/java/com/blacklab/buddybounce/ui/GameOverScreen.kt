@@ -16,6 +16,7 @@ class GameOverScreen(private val g: Game) {
         const val RETRY = 7001
         const val MENU = 7002
         const val WARDROBE = 7003
+        const val GACHA = 7004
     }
 
     fun draw(c: Canvas) {
@@ -75,11 +76,23 @@ class GameOverScreen(private val g: Game) {
             g.tap(); g.startRun()
         }
         by += 132f
-        val halfW = (bw - 20f) * 0.5f
-        if (ui.button(c, Id.MENU, bx, by, halfW, 92f, "MENU")) {
+        // Three across: the end of a run is exactly when you have coins burning a hole, so the
+        // machine gets a place here rather than making you go back to the menu for it.
+        val thirdW = (bw - 40f) * (1f / 3f)
+        if (ui.button(c, Id.MENU, bx, by, thirdW, 92f, "MENU")) {
             g.tap(); g.goto(Game.Screen.MENU)
         }
-        if (ui.button(c, Id.WARDROBE, bx + halfW + 20f, by, halfW, 92f, "WARDROBE")) {
+        val machineReady = g.save.coins >= Tuning.GACHA_COST
+        if (ui.button(c, Id.GACHA, bx + thirdW + 20f, by, thirdW, 92f, "MACHINE",
+                Ui.ButtonStyle.SECONDARY,
+                sublabel = if (machineReady) "ready!" else "${g.save.coins}/${Tuning.GACHA_COST}")) {
+            g.tap(); g.goto(Game.Screen.GACHA)
+        }
+        if (machineReady) {
+            val pulse = 0.4f + 0.35f * sin(ui.time * 3.2f)
+            ui.shimmer(c, bx + thirdW + 20f, by, thirdW, 92f, 32f, pulse)
+        }
+        if (ui.button(c, Id.WARDROBE, bx + (thirdW + 20f) * 2f, by, thirdW, 92f, "WARDROBE")) {
             g.tap(); g.goto(Game.Screen.WARDROBE)
         }
 
