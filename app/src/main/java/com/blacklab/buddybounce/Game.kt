@@ -38,6 +38,7 @@ import com.blacklab.buddybounce.ui.ScenesScreen
 import com.blacklab.buddybounce.ui.ScoresScreen
 import com.blacklab.buddybounce.ui.SettingsScreen
 import com.blacklab.buddybounce.ui.Theme
+import com.blacklab.buddybounce.ui.UnlockPopup
 import com.blacklab.buddybounce.ui.Ui
 import com.blacklab.buddybounce.ui.WardrobeScreen
 import kotlin.math.abs
@@ -271,11 +272,13 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
     }
 
     private fun announceHeaven() {
-        notice = "HEAVEN IS OPEN"
-        noticeT = 5f
-        heavenReveal = 1f
+        unlockPopup.queue(UnlockPopup.Kind.SCENE, Scenes.HEAVEN_ID, "HEAVEN IS OPEN")
+    }
+
+    /** Called by the popup as each card comes up, so the fanfare lands with the reveal. */
+    fun onUnlockRevealed() {
         flashScreen(0.8f)
-        shakeScreen(0.5f)
+        shakeScreen(0.4f)
         audio.play(Audio.FANFARE, 1f)
     }
 
@@ -401,8 +404,7 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
             }
             t.equals(DEV_SKIN_CODE, ignoreCase = true) -> {
                 save.unlock(Outfits.DEV_ID)
-                save.equippedOutfit = Outfits.DEV_ID
-                notice = "DEVELOPER APPROVED"
+                unlockPopup.queue(UnlockPopup.Kind.OUTFIT, Outfits.DEV_ID, "APPROVED")
             }
             t.equals(HALO_PRIME_CODE, ignoreCase = true) -> {
                 // Halos only drop in Heaven, so the code is useless unless Heaven is open. This
@@ -483,7 +485,7 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         if (biomeToast > 0f) biomeToast -= dt
         if (noticeT > 0f) noticeT -= dt
         if (coinFlashT > 0f) coinFlashT -= dt
-        if (heavenReveal > 0f) heavenReveal = (heavenReveal - dt * 0.2f).coerceAtLeast(0f)
+        unlockPopup.update(dt)
         ui.beginFrame(dt)
 
         when (screen) {
@@ -550,14 +552,15 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
      */
     var secondLifeActive = false
 
+    /** Reveal cards for the unlocks that do not come out of the prize machine. */
+    val unlockPopup = UnlockPopup(this)
+
     /** True while a menu stick is pushed, so one push is one move rather than a stampede. */
     private var stickLatched = false
 
     /** Set when Heaven unlocks; spent on the next arrival at the main menu. */
     private var heavenAnnouncePending = false
 
-    /** Drives the reveal banner on the menu. Counts down; 0 when there is nothing to show. */
-    var heavenReveal = 0f
         private set
 
     /** Coins already banked for the run in progress, and the entry they were banked under. */
@@ -635,12 +638,14 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         bankedCoinsThisRun = lastCoins
         continuedStamp = save.lastBankedStamp
         if (lastHalos > 0) {
-            val hadGhost = save.ghostUnlocked
+            val hadGlory = save.ownsTrail(Trails.HEAVEN_ONLY_ID)
+            val hadEternal = save.owns(Outfits.HEAVEN_ONLY_ID)
             save.addHalos(lastHalos)
-            if (!hadGhost && save.ghostUnlocked) {
-                notice = "THE LOOK IS YOURS - TOGGLE IT IN THE WARDROBE"
-                noticeT = 5f
-                audio.play(Audio.FANFARE, 1f)
+            if (!hadGlory && save.ownsTrail(Trails.HEAVEN_ONLY_ID)) {
+                unlockPopup.queue(UnlockPopup.Kind.TRAIL, Trails.HEAVEN_ONLY_ID, "500 HALOS")
+            }
+            if (!hadEternal && save.owns(Outfits.HEAVEN_ONLY_ID)) {
+                unlockPopup.queue(UnlockPopup.Kind.OUTFIT, Outfits.HEAVEN_ONLY_ID, "1000 HALOS")
             }
         }
         if (lastNewBest && lastScore > 0) audio.play(Audio.FANFARE, 0.7f)
@@ -708,8 +713,12 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
             }
         }
 
-        // After every screen, so it is never buried under a panel, and never during a run.
-        if (screen != Screen.PLAY) ui.drawFocusRing(c)
+        // Over everything, and only outside a run - a reveal that covered the screen mid-climb
+        // would be a death sentence.
+        if (screen != Screen.PLAY) {
+            unlockPopup.draw(c)
+            ui.drawFocusRing(c)
+        }
 
         if (flash > 0.01f) {
             ui.fill(c, worldW, Theme.SCREEN_H, ColorX.withAlpha(0xFFFFFFFF.toInt(), flash * 0.55f))
@@ -1144,6 +1153,23 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         id == Outfits.HEAVEN_ONLY_ID -> "Locked - collect ${Tuning.HALOS_FOR_GHOST} halos in Heaven"
         id == Trails.HEAVEN_ONLY_ID -> "Locked - collect ${Tuning.HALOS_FOR_GLORY} halos in Heaven"
         else -> "Locked - win it from the coin machine"
+    }
+
+    /**
+     * Is this one of the two things only Heaven pays out, and is Heaven open?
+     *
+     * Their locked cards used to point at the prize machine, which has never stocked either of
+     * them. Once the world exists the honest button sends you there instead.
+     */
+    fun canGoToHeavenFor(id: String): Boolean =
+        isHeavenSecret(id) && save.ownsScene(Scenes.HEAVEN_ID)
+
+    /** Straight into a run in Heaven, from wherever the player pressed the button. */
+    fun goToHeaven() {
+        save.selectedScene = Scenes.HEAVEN_ID
+        applyScene()
+        goto(Screen.PRERUN)
+        startRun()
     }
 
     fun outfitOwned(id: String) = save.owns(id)

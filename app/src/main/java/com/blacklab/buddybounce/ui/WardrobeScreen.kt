@@ -172,6 +172,21 @@ class WardrobeScreen(private val g: Game) {
                 g.tap()
                 g.save.equippedOutfit = outfit.id
             }
+        } else {
+            lockedCta(c, bx, by, bw, outfit.id)
+        }
+    }
+
+    /**
+     * Where a locked item tells you to go. Everything the machine stocks says so; the two
+     * Heaven pays out send you to Heaven instead, because the machine has never had them.
+     */
+    private fun lockedCta(c: Canvas, bx: Float, by: Float, bw: Float, id: String) {
+        val ui = g.ui
+        if (g.canGoToHeavenFor(id)) {
+            if (ui.button(c, Id.EQUIP, bx, by - 14f, bw, 78f, "GO TO HEAVEN!", Ui.ButtonStyle.PRIMARY)) {
+                g.tap(); g.goToHeaven()
+            }
         } else if (ui.button(c, Id.EQUIP, bx, by - 14f, bw, 78f, "TO THE MACHINE", Ui.ButtonStyle.SECONDARY)) {
             g.tap(); g.goto(Game.Screen.GACHA)
         }
@@ -366,8 +381,8 @@ class WardrobeScreen(private val g: Game) {
                 g.tap()
                 g.save.equippedTrail = id
             }
-        } else if (ui.button(c, Id.EQUIP, bx, by - 14f, bw, 78f, "TO THE MACHINE", Ui.ButtonStyle.SECONDARY)) {
-            g.tap(); g.goto(Game.Screen.GACHA)
+        } else {
+            lockedCta(c, bx, by, bw, id)
         }
     }
 

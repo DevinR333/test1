@@ -80,9 +80,10 @@ object Outfits {
         Outfit("robot", "Robo-Buddy", Rarity.LEGENDARY, "Beep. Boop. Good. Boy."),
         Outfit("unicorn", "Unicorn Onesie", Rarity.LEGENDARY, "Majestic. Slightly chewed."),
         Outfit("fighter", "Fighting Gi", Rarity.LEGENDARY, "Orange gi, blue belt, hair that defies everything."),
-        Outfit(DEV_ID, "Developer Approved", Rarity.LEGENDARY, "Shipped it. Mostly."),
         Outfit("anti", "Anti-Buddy", Rarity.LEGENDARY, "Same dog. Opposite dog."),
-        Outfit(HEAVEN_ONLY_ID, "Good Boy Eternal", Rarity.LEGENDARY, "Wings, a halo, and absolutely nothing left to prove.")
+        Outfit(HEAVEN_ONLY_ID, "Good Boy Eternal", Rarity.LEGENDARY, "Wings, a halo, and absolutely nothing left to prove."),
+        // Last of all, and absent from the list entirely until the back door hands it over.
+        Outfit(DEV_ID, "Developer Approved", Rarity.LEGENDARY, "Shipped it. Mostly.")
     )
 
     private val index: Map<String, Outfit> = ALL.associateBy { it.id }

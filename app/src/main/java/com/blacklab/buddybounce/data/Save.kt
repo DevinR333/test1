@@ -24,10 +24,10 @@ class Save(ctx: Context) {
         ctx.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
     init {
-        // An earlier build handed out Good Boy Eternal the moment Heaven opened. It is only ever
-        // earned by collecting a thousand halos, and that is the same thing that sets
-        // [ghostUnlocked] - so owning one without the other can only be that old mistake.
-        if (!prefs.getBoolean(KEY_GHOST_UNLOCKED, false)) {
+        // An earlier build handed out Good Boy Eternal the moment Heaven opened. Halos are the
+        // only thing that has ever paid for it, so owning it below the price can only be that
+        // old mistake - take it back, and let it be re-earned properly.
+        if (prefs.getInt(KEY_HALOS, 0) < Tuning.HALOS_FOR_GHOST) {
             val owned = prefs.getStringSet(KEY_OWNED, null)
             if (owned != null && owned.contains(Outfits.HEAVEN_ONLY_ID)) {
                 val fixed = HashSet<String>(owned)
@@ -40,6 +40,10 @@ class Save(ctx: Context) {
                 e.commit()
             }
         }
+        // And the other half of the same hole: anything the halo total has already paid for but
+        // an earlier build never handed over - the Glory Beam, for every save that reached 500
+        // by a route the old crossing test could not see.
+        settleHalos()
     }
 
     /** Fire-and-forget: fine for settings, never used for currency or progress. */
@@ -267,33 +271,49 @@ class Save(ctx: Context) {
      */
     fun addHalos(n: Int) {
         if (n <= 0) return
-        val before = halos
-        var earned = false
-        editSync {
-            val total = before + n
-            it.putInt(KEY_HALOS, total)
-            if (total >= Tuning.HALOS_FOR_GHOST && !ghostUnlocked) {
-                it.putBoolean(KEY_GHOST_UNLOCKED, true)
-                earned = true
-            }
-        }
-        val after = before + n
-        if (before < Tuning.HALOS_FOR_GLORY && after >= Tuning.HALOS_FOR_GLORY) {
-            unlockTrail(Trails.HEAVEN_ONLY_ID)
-        }
-        if (earned) unlock(Outfits.HEAVEN_ONLY_ID)
+        editSync { it.putInt(KEY_HALOS, halos + n) }
+        settleHalos()
     }
 
-    /** True on the call that just crossed the Glory Beam's price. */
-    fun justEarnedGlory(before: Int, after: Int): Boolean =
-        before < Tuning.HALOS_FOR_GLORY && after >= Tuning.HALOS_FOR_GLORY
+    /**
+     * Grants whatever the current halo total has paid for.
+     *
+     * Deliberately absolute - "do you have enough" - and not "did this payment cross the line".
+     * The crossing test looked right and was wrong: anyone who arrived above a threshold by any
+     * route other than stepping over it never got the reward at all. The test back door does
+     * exactly that (it writes the total straight in), so priming to 999 and collecting one halo
+     * paid out the outfit and silently skipped the trail, which is what went missing. A restored
+     * save, or any future way of granting halos in bulk, would have hit the same hole.
+     *
+     * Safe to call at any time: everything here checks what is already owned first.
+     */
+    fun settleHalos() {
+        val total = halos
+        if (total >= Tuning.HALOS_FOR_GLORY && !ownsTrail(Trails.HEAVEN_ONLY_ID)) {
+            unlockTrail(Trails.HEAVEN_ONLY_ID)
+        }
+        if (total >= Tuning.HALOS_FOR_GHOST && !owns(Outfits.HEAVEN_ONLY_ID)) {
+            unlock(Outfits.HEAVEN_ONLY_ID)
+        }
+    }
+
+    /** True once the halo total has paid for it, whether or not it has been collected yet. */
+    fun gloryEarned(): Boolean = halos >= Tuning.HALOS_FOR_GLORY
 
     /** Has the Heaven reveal already been shown? Kept so it plays exactly once, ever. */
     var heavenAnnounced: Boolean
         get() = prefs.getBoolean(KEY_HEAVEN_SEEN, false)
         set(value) = editSync { it.putBoolean(KEY_HEAVEN_SEEN, value) }
 
-    val ghostUnlocked: Boolean get() = prefs.getBoolean(KEY_GHOST_UNLOCKED, false)
+    /**
+     * Can the blessed look be worn on any outfit, from the wardrobe toggle?
+     *
+     * Owning Good Boy Eternal IS the unlock - the toggle is that outfit's look lent to every
+     * other one, so it cannot arrive before the outfit does. It used to be a separate flag set
+     * by the halo count, which meant the two could drift apart (and did, for any save that
+     * reached 1000 halos by a route that skipped the grant).
+     */
+    val ghostUnlocked: Boolean get() = owns(Outfits.HEAVEN_ONLY_ID)
 
     /**
      * Testing back door: parks the halo count one short of the threshold and winds back
@@ -304,7 +324,6 @@ class Save(ctx: Context) {
     fun primeHalosForTest() {
         editSync {
             it.putInt(KEY_HALOS, (Tuning.HALOS_FOR_GHOST - 1).coerceAtLeast(0))
-            it.putBoolean(KEY_GHOST_UNLOCKED, false)
             it.putBoolean(KEY_GHOST_ON, false)
         }
         val set = ownedOutfits()
@@ -453,7 +472,6 @@ class Save(ctx: Context) {
         private const val KEY_TRAILS = "trailsOwned"
         private const val KEY_TRAIL_PICK = "trailPick"
         private const val KEY_HALOS = "halos"
-        private const val KEY_GHOST_UNLOCKED = "ghostUnlocked"
         private const val KEY_HEAVEN_SEEN = "heavenAnnounced"
         private const val KEY_GHOST_ON = "ghostOn"
         private const val KEY_FREE_SPINS = "freeSpins"

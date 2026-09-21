@@ -115,6 +115,31 @@ fun main() {
     s2.addHalos(500)
     check("1000 halos: Eternal unlocked", s2.owns(Outfits.HEAVEN_ONLY_ID), true)
 
+    println("--- 6b. the back door path that lost the trail ---")
+    // Exactly what the player did: prime to 999 with u7d%4+, then collect one halo in Heaven.
+    val s2b = Save(FakeCtx(FakePrefs()))
+    s2b.unlockScene(Scenes.HEAVEN_ID)
+    s2b.primeHalosForTest()
+    check("primed to 999", s2b.halos == 999, true)
+    check("primed: Glory locked", s2b.ownsTrail(GLORY), false)
+    check("primed: Eternal locked", s2b.owns(Outfits.HEAVEN_ONLY_ID), false)
+    s2b.addHalos(1)
+    check("1000 via the back door: Glory unlocked", s2b.ownsTrail(GLORY), true)
+    check("1000 via the back door: Eternal unlocked", s2b.owns(Outfits.HEAVEN_ONLY_ID), true)
+
+    println("--- 6c. a save already above a threshold is settled on load ---")
+    val stale = FakePrefs()
+    stale.map["halos"] = 640            // enough for Glory, not for Eternal
+    val s2c = Save(FakeCtx(stale))
+    check("Glory granted on load", s2c.ownsTrail(GLORY), true)
+    check("Eternal still not", s2c.owns(Outfits.HEAVEN_ONLY_ID), false)
+
+    println("--- 6d. the blessed toggle belongs to the outfit ---")
+    check("no outfit, no toggle", s2c.ghostUnlocked, false)
+    s2c.addHalos(360)
+    check("1000 halos: outfit", s2c.owns(Outfits.HEAVEN_ONLY_ID), true)
+    check("and the toggle comes with it", s2c.ghostUnlocked, true)
+
     println("--- 7. the dev skin is hidden until the back door opens it ---")
     val s3 = Save(FakeCtx(FakePrefs()))
     check("absent from the wardrobe list", Outfits.visible(false).any { it.id == Outfits.DEV_ID }, false)
@@ -127,6 +152,9 @@ fun main() {
     }, true)
     s3.unlock(Outfits.DEV_ID)
     check("present once unlocked", Outfits.visible(true).any { it.id == Outfits.DEV_ID }, true)
+    check("and it is last in the list", Outfits.visible(true).last().id == Outfits.DEV_ID, true)
+    check("Anti-Buddy sits just before Eternal",
+        Outfits.visible(false).let { it[it.size - 2].id } == "anti", true)
 
     println("--- 8. a save from the old build gets it taken back ---")
     val old = FakePrefs()
