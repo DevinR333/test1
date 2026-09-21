@@ -298,10 +298,15 @@ class Backdrop(private val art: Art) {
     }
 
     /**
-     * A soft snowbank running the full width at [footY], filled well past the bottom of the
-     * band so the trees standing on it always have ground underneath them.
+     * Ground: a soft ridge running the full width at [footY], filled well past the bottom of the
+     * band so whatever stands on it always has something underneath.
+     *
+     * Any band whose flourish is a discrete OBJECT - a tree, a headstone, a gumdrop hill - needs
+     * one of these. Without it the objects hang in open sky and every repeat of the band looks
+     * like scenery popping into existence instead of sliding past. Bands built from shapes that
+     * already fill downwards (hills, dunes, peaks, lava, reef) have their ground for free.
      */
-    private fun snowRidge(
+    private fun groundRidge(
         c: Canvas, worldW: Float, footY: Float, bandH: Float,
         amp: Float, color: Int, key: Int
     ) {
@@ -433,7 +438,7 @@ class Backdrop(private val art: Art) {
                 // The drift the rank stands in. Without it the trunks were short stubs hanging
                 // in empty sky, so every repeat of the band looked like trees popping into
                 // existence rather than a treeline sliding past.
-                snowRidge(
+                groundRidge(
                     c, worldW, footY, h,
                     if (far) h * 0.045f else h * 0.075f,
                     ColorX.withAlpha(
@@ -553,6 +558,12 @@ class Backdrop(private val art: Art) {
                 rect.set(cx - rad * 0.6f, baseY - rad * 0.95f, cx + rad * 0.1f, baseY - rad * 0.45f)
                 c.drawOval(rect, paint)
             }
+            // the sugar the gumdrops sit in - same reason as the graveyard floor
+            groundRidge(
+                c, worldW, baseY + 34f, h, h * 0.03f,
+                ColorX.withAlpha(ColorX.tint(pal.midShape, 0.45f), alpha * 0.92f),
+                idx * 13
+            )
             // an icing drip line running across the band
             paint.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), alpha * 0.5f)
             path.reset()
@@ -620,6 +631,21 @@ class Backdrop(private val art: Art) {
                 c.drawRect(rect, paint)
                 c.restore()
             }
+
+            // The graveyard floor, last so it buries the feet of the trees and the stones. They
+            // were standing on nothing at all, which is what made the second band of the haunted
+            // world look like it faded up out of the sky.
+            groundRidge(
+                c, worldW, baseY + 16f, h, h * 0.024f,
+                ColorX.withAlpha(ColorX.shade(pal.nearShape, 0.58f), alpha * 0.95f),
+                idx * 11
+            )
+            // a paler lip along the crest so the mound is not a flat silhouette
+            groundRidge(
+                c, worldW, baseY + 30f, h, h * 0.018f,
+                ColorX.withAlpha(ColorX.shade(pal.nearShape, 0.42f), alpha * 0.9f),
+                idx * 11 + 5
+            )
         }
     }
 

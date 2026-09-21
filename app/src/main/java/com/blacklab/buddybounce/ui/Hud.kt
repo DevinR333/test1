@@ -204,21 +204,36 @@ class Hud(private val g: Game) {
         ui.panel(c, x, y, w, h)
         ui.text(c, "PAUSED", x + w * 0.5f, y + 96f * k, 68f * k, Theme.TEXT, ui.title, true, w - 60f)
 
-        // Banked total first - that is the number that actually belongs to the player.
-        val purse = g.save.coins
+        // Banked total first - that is the number that actually belongs to the player. In Heaven
+        // the currency IS halos, so the halo total takes this slot outright rather than crowding
+        // in beside a coin count that nothing in that world can add to.
+        val inHeaven = g.world.haloMode
         val pillW = w - 96f
         ui.pill(c, x + 48f, y + 126f * k, pillW, 84f * k, 0xFF121828.toInt())
-        coinIcon(c, x + 92f, y + 168f * k, 24f * k)
-        ui.text(c, purse.toString(), x + 126f, y + 182f * k, 48f * k, Theme.ACCENT, ui.bodyLeft, false, pillW * 0.4f)
-        ui.text(
-            c, "COINS IN THE BANK", x + w - 72f, y + 178f * k, 26f * k, Theme.TEXT_DIM, ui.bodyRight, false,
-            pillW * 0.55f
-        )
+        if (inHeaven) {
+            haloIcon(c, x + 92f, y + 168f * k, 24f * k)
+            ui.text(c, g.save.halos.toString(), x + 126f, y + 182f * k, 48f * k,
+                0xFFE8A93C.toInt(), ui.bodyLeft, false, pillW * 0.4f)
+            ui.text(
+                c, "HALOS COLLECTED", x + w - 72f, y + 178f * k, 26f * k, Theme.TEXT_DIM,
+                ui.bodyRight, false, pillW * 0.55f
+            )
+        } else {
+            coinIcon(c, x + 92f, y + 168f * k, 24f * k)
+            ui.text(c, g.save.coins.toString(), x + 126f, y + 182f * k, 48f * k,
+                Theme.ACCENT, ui.bodyLeft, false, pillW * 0.4f)
+            ui.text(
+                c, "COINS IN THE BANK", x + w - 72f, y + 178f * k, 26f * k, Theme.TEXT_DIM,
+                ui.bodyRight, false, pillW * 0.55f
+            )
+        }
 
-        ui.text(
-            c, "This run: ${g.world.score} pts, ${g.world.runCoins} coins picked up",
-            x + w * 0.5f, y + 244f * k, 28f * k, Theme.TEXT_DIM, ui.body, false, w - 80f
-        )
+        val thisRun = if (inHeaven) {
+            "This run: ${g.world.score} pts, ${g.world.runHalos} halos picked up"
+        } else {
+            "This run: ${g.world.score} pts, ${g.world.runCoins} coins picked up"
+        }
+        ui.text(c, thisRun, x + w * 0.5f, y + 244f * k, 28f * k, Theme.TEXT_DIM, ui.body, false, w - 80f)
         ui.text(
             c, "run coins are banked when the run ends",
             x + w * 0.5f, y + 280f * k, 24f * k, ColorX.withAlpha(Theme.TEXT_DIM, 0.75f), ui.body, false, w - 80f

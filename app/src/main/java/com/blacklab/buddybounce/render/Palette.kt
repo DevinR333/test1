@@ -365,7 +365,7 @@ object Scenes {
 
     private val HEAVEN = Scene(
         HEAVEN_ID, "Heaven",
-        "Nothing left to unlock, so the clouds opened. Collect halos, not coins.",
+        "Every world found, so the clouds opened. Halos here, not coins - and two things left that only halos can buy.",
         GroundStyle.YARD, 0xFFFFE9A8.toInt(), Fauna.HEAVEN,
         listOf(
             BiomePalette(

@@ -100,7 +100,35 @@ fun main() {
     save.primeHalosForTest()
     check("re-runnable: locked again", save.owns(ETERNAL), false)
 
-    println("--- 6. a save from the old build gets it taken back ---")
+    println("--- 6. the Glory Beam is Heaven's too, at half the price ---")
+    val fresh = FakePrefs()
+    val s2 = Save(FakeCtx(fresh))
+    val GLORY = Trails.HEAVEN_ONLY_ID
+    check("Glory is not in the machine's pool", Trails.collectable.any { it.id == GLORY }, false)
+    check("Eternal is not in the machine's pool", Outfits.inRarity(Outfits.Rarity.LEGENDARY).any { it.id == Outfits.HEAVEN_ONLY_ID }, false)
+    check("the dev skin is not in the pool either", Outfits.inRarity(Outfits.Rarity.LEGENDARY).any { it.id == Outfits.DEV_ID }, false)
+    s2.addHalos(499)
+    check("499 halos: Glory locked", s2.ownsTrail(GLORY), false)
+    s2.addHalos(1)
+    check("500 halos: Glory unlocked", s2.ownsTrail(GLORY), true)
+    check("500 halos: Eternal still locked", s2.owns(Outfits.HEAVEN_ONLY_ID), false)
+    s2.addHalos(500)
+    check("1000 halos: Eternal unlocked", s2.owns(Outfits.HEAVEN_ONLY_ID), true)
+
+    println("--- 7. the dev skin is hidden until the back door opens it ---")
+    val s3 = Save(FakeCtx(FakePrefs()))
+    check("absent from the wardrobe list", Outfits.visible(false).any { it.id == Outfits.DEV_ID }, false)
+    check("absent from the total", Outfits.collectableCount(false) == Outfits.collectableCount(true) - 1, true)
+    check("does not block Heaven", run {
+        for (o in Outfits.ALL) if (o.id != Outfits.HEAVEN_ONLY_ID && o.id != Outfits.DEV_ID) s3.unlock(o.id)
+        for (t in Trails.collectable) s3.unlockTrail(t.id)
+        for (sc in Scenes.unlockable) s3.unlockScene(sc.id)
+        s3.hasUnlockedEverything()
+    }, true)
+    s3.unlock(Outfits.DEV_ID)
+    check("present once unlocked", Outfits.visible(true).any { it.id == Outfits.DEV_ID }, true)
+
+    println("--- 8. a save from the old build gets it taken back ---")
     val old = FakePrefs()
     old.map["owned"] = hashSetOf("fighter", ETERNAL)
     old.map["equipped"] = ETERNAL

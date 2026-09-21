@@ -6,6 +6,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Shader
+import com.blacklab.buddybounce.data.Outfits
 import com.blacklab.buddybounce.game.Flight
 import com.blacklab.buddybounce.game.MathX.clamp01
 import kotlin.math.cos
@@ -234,14 +235,21 @@ class BuddyArt(private val art: Art) {
         } else {
             -1
         }
-        drawTail(c, pose, rim)
-        drawLegs(c, pose, stretch, tuck, back = true)
-        drawBody(c, pose, rim)
-        drawLegs(c, pose, stretch, tuck, back = false)
-        OutfitArt.drawBody(c, outfit, pose, rim)
-        drawHead(c, pose, rim)
-        drawEar(c, pose)
-        OutfitArt.drawHead(c, outfit, pose, rim)
+        if (outfit == Outfits.DEV_ID) {
+            // The one skin that is not a dog at all, so it replaces the rig instead of dressing
+            // it. Everything around this block - wings, halo, the ghost layer, flight, the hurt
+            // flash - still applies, because none of it cares what shape he is.
+            DevArt.draw(c, pose, rim)
+        } else {
+            drawTail(c, pose, rim)
+            drawLegs(c, pose, stretch, tuck, back = true)
+            drawBody(c, pose, rim)
+            drawLegs(c, pose, stretch, tuck, back = false)
+            OutfitArt.drawBody(c, outfit, pose, rim)
+            drawHead(c, pose, rim)
+            drawEar(c, pose)
+            OutfitArt.drawHead(c, outfit, pose, rim)
+        }
         if (ghostLayer >= 0) c.restoreToCount(ghostLayer)
 
         if (pose.ghost > 0.01f) drawHalo(c, pose)

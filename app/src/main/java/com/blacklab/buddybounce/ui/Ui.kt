@@ -146,13 +146,43 @@ class Ui(private val art: Art) {
         justReleased = false
         if (!pointerDown) pressedId = 0
         scrollDrag = 0f
+        inputClipOn = false      // never let a screen's clip leak into the next frame
     }
+
+    // ---- input clipping -------------------------------------------------------------------
+    //
+    // Canvas.clipRect stops a widget being DRAWN outside a scrolling viewport. It does nothing
+    // about where that widget reports taps. A card scrolled up behind the back button was
+    // therefore invisible and still live, and because a list is processed after the button, the
+    // later widget won the press - so the back button was unclickable whenever a card sat under
+    // it. Any screen that clips a scrolling list must clip its input the same way.
+
+    private var inputClipOn = false
+    private var icX0 = 0f
+    private var icY0 = 0f
+    private var icX1 = 0f
+    private var icY1 = 0f
+
+    /** Restricts hit-testing to this rect until [clearInputClip]. Pair it with the canvas clip. */
+    fun setInputClip(x0: Float, y0: Float, x1: Float, y1: Float) {
+        inputClipOn = true
+        icX0 = x0; icY0 = y0; icX1 = x1; icY1 = y1
+    }
+
+    fun clearInputClip() {
+        inputClipOn = false
+    }
+
+    private fun inInputClip(x: Float, y: Float): Boolean =
+        !inputClipOn || (x >= icX0 && x <= icX1 && y >= icY0 && y <= icY1)
 
     /** True on the frame the pointer is released inside [rect] having been pressed inside it. */
     private fun hit(id: Int, x: Float, y: Float, w: Float, h: Float): Boolean {
-        val inside = pointerX >= x && pointerX <= x + w && pointerY >= y && pointerY <= y + h
+        val inside = pointerX >= x && pointerX <= x + w && pointerY >= y && pointerY <= y + h &&
+            inInputClip(pointerX, pointerY)
         val anchorInside = pressAnchorX >= x && pressAnchorX <= x + w &&
-            pressAnchorY >= y && pressAnchorY <= y + h
+            pressAnchorY >= y && pressAnchorY <= y + h &&
+            inInputClip(pressAnchorX, pressAnchorY)
         if (justPressed && inside) {
             pressedId = id
             if (!press.containsKey(id)) press[id] = 0f

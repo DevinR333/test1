@@ -41,6 +41,13 @@ class WardrobeScreen(private val g: Game) {
     private val scroll = Scroller()
     private var maxScroll = 0f
 
+    /**
+     * The outfits this player is allowed to see. Everything on this screen indexes into THIS,
+     * never [Outfits.ALL] - the developer skin is absent from the list until it is earned, so the
+     * two run out of step the moment it is unlocked.
+     */
+    private fun outfits(): List<Outfits.Outfit> = Outfits.visible(g.outfitOwned(Outfits.DEV_ID))
+
     fun draw(c: Canvas) {
         val ui = g.ui
         val wide = g.worldW > Theme.SCREEN_H * 1.12f
@@ -48,7 +55,7 @@ class WardrobeScreen(private val g: Game) {
 
         // keep the selection on the equipped outfit when arriving
         if (selected == 0 && g.equippedOutfit != Outfits.DEFAULT_ID) {
-            val idx = Outfits.ALL.indexOfFirst { it.id == g.equippedOutfit }
+            val idx = outfits().indexOfFirst { it.id == g.equippedOutfit }
             if (idx > 0) selected = idx
         }
         if (trailSelected == 0 && g.save.equippedTrail != Trails.NONE_ID) {
@@ -65,7 +72,7 @@ class WardrobeScreen(private val g: Game) {
         }
         ui.text(c, "WARDROBE", g.worldW * 0.5f, ui.safeTop + 96f, 62f, Theme.TEXT, ui.title)
         val counts = if (tab == Tab.OUTFITS) {
-            "${g.ownedCount()} of ${Outfits.collectableCount} outfits"
+            "${g.ownedCount()} of ${Outfits.collectableCount(g.outfitOwned(Outfits.DEV_ID))} outfits"
         } else {
             "${g.save.trailCount()} of ${Trails.count} trails"
         }
@@ -111,7 +118,8 @@ class WardrobeScreen(private val g: Game) {
     private fun drawPreview(c: Canvas, x: Float, y: Float, w: Float, h: Float) {
         if (tab == Tab.TRAILS) { drawTrailPreview(c, x, y, w, h); return }
         val ui = g.ui
-        val outfit = Outfits.ALL[selected.coerceIn(0, Outfits.ALL.size - 1)]
+        val list = outfits()
+        val outfit = list[selected.coerceIn(0, list.size - 1)]
         val owned = g.outfitOwned(outfit.id)
         val equipped = g.equippedOutfit == outfit.id
 
@@ -146,15 +154,9 @@ class WardrobeScreen(private val g: Game) {
             ui.text(c, "?", x + w * 0.5f, buddyY - 72f, 130f, 0xFF4A5675.toInt(), ui.title, false)
         }
 
-        ui.text(c, outfit.name.uppercase(), x + w * 0.5f, y + h - 108f, 44f, Theme.TEXT, ui.title)
-        // Good Boy Eternal is never in the machine's pool - it is earned a halo at a time in
-        // Heaven - so the usual "win it from the machine" line would send the player nowhere.
-        val lockLine = when {
-            owned -> outfit.blurb
-            outfit.id == Outfits.HEAVEN_ONLY_ID ->
-                "Locked - collect ${Tuning.HALOS_FOR_GHOST} halos in Heaven"
-            else -> "Locked - win it from the coin machine"
-        }
+        ui.text(c, g.displayName(outfit.id, outfit.name).uppercase(),
+            x + w * 0.5f, y + h - 108f, 44f, Theme.TEXT, ui.title, false, w - 50f)
+        val lockLine = g.displayBlurb(outfit.id, outfit.blurb, owned)
         var blurbSize = 27f
         while (ui.measure(lockLine, blurbSize, ui.body) > w - 50f && blurbSize > 17f) blurbSize -= 1f
         ui.text(c, lockLine, x + w * 0.5f, y + h - 68f, blurbSize, Theme.TEXT_DIM, ui.body, false)
@@ -179,13 +181,16 @@ class WardrobeScreen(private val g: Game) {
         val gap = 16f
         val cardW = (w - gap * (cols - 1)) / cols
         val cardH = cardW * 1.16f
-        val count = if (tab == Tab.OUTFITS) Outfits.ALL.size else Trails.ALL.size + 1
+        val count = if (tab == Tab.OUTFITS) outfits().size else Trails.ALL.size + 1
         val rows = ceil(count / cols.toFloat()).toInt()
         maxScroll = (rows * (cardH + gap) - gap - h).coerceAtLeast(0f)
         val scrollY = scroll.y
 
         c.save()
         c.clipRect(x - 4f, y, x + w + 4f, y + h)
+        // the hit rects have to be clipped too, or a card scrolled up out of the viewport keeps
+        // taking taps aimed at the back button and the tabs above it
+        g.ui.setInputClip(x - 4f, y, x + w + 4f, y + h)
         for (i in 0 until count) {
             val row = i / cols
             val col = i % cols
@@ -195,6 +200,7 @@ class WardrobeScreen(private val g: Game) {
             if (tab == Tab.OUTFITS) drawCard(c, i, cx, cy, cardW, cardH)
             else drawTrailCard(c, i, cx, cy, cardW, cardH)
         }
+        g.ui.clearInputClip()
         c.restore()
 
         // scroll affordance
@@ -215,7 +221,7 @@ class WardrobeScreen(private val g: Game) {
 
     private fun drawCard(c: Canvas, index: Int, x: Float, y: Float, w: Float, h: Float) {
         val ui = g.ui
-        val outfit = Outfits.ALL[index]
+        val outfit = outfits()[index]
         val owned = g.outfitOwned(outfit.id)
         val equipped = g.equippedOutfit == outfit.id
         val isSelected = index == selected
@@ -260,7 +266,7 @@ class WardrobeScreen(private val g: Game) {
         // rarity dot + name
         p.color = outfit.rarity.tint
         c.drawCircle(x + 18f, y + 18f, 7f, p)
-        val label = if (owned) outfit.name else "???"
+        val label = if (owned) g.displayName(outfit.id, outfit.name) else "???"
         ui.title.textSize = 22f
         var size = 22f
         while (ui.measure(label.uppercase(), size, ui.title) > w - 18f && size > 13f) size -= 1f
@@ -332,12 +338,11 @@ class WardrobeScreen(private val g: Game) {
             ui.text(c, "?", x + w * 0.5f, buddyY - 64f, 120f, 0xFF4A5675.toInt(), ui.title, false)
         }
 
-        val name = trail?.name ?: "No Trail"
-        ui.text(c, name.uppercase(), x + w * 0.5f, y + h - 108f, 42f, Theme.TEXT, ui.title)
+        val name = if (trail == null) "No Trail" else g.displayName(trail.id, trail.name)
+        ui.text(c, name.uppercase(), x + w * 0.5f, y + h - 108f, 42f, Theme.TEXT, ui.title, false, w - 50f)
         val blurb = when {
             trail == null -> "Clean paws. Nothing behind him."
-            owned -> trail.blurb
-            else -> "Locked - win it from the coin machine"
+            else -> g.displayBlurb(trail.id, trail.blurb, owned)
         }
         var size = 27f
         while (ui.measure(blurb, size, ui.body) > w - 50f && size > 17f) size -= 1f
@@ -419,7 +424,7 @@ class WardrobeScreen(private val g: Game) {
         c.drawCircle(x + 18f, y + 18f, 7f, p)
         val label = when {
             trail == null -> "None"
-            owned -> trail.name.removeSuffix(" Trail")
+            owned -> g.displayName(trail.id, trail.name).removeSuffix(" Trail")
             else -> "???"
         }
         var size = 22f
@@ -503,7 +508,7 @@ class WardrobeScreen(private val g: Game) {
 
     /** Moves the preview and the grid highlight onto whatever is now equipped. */
     private fun syncSelectionToEquipped() {
-        val oi = Outfits.ALL.indexOfFirst { it.id == g.equippedOutfit }
+        val oi = outfits().indexOfFirst { it.id == g.equippedOutfit }
         if (oi >= 0) selected = oi
         val trailId = g.save.equippedTrail
         trailSelected = if (trailId == Trails.NONE_ID) 0

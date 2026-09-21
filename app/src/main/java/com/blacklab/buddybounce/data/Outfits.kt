@@ -29,7 +29,7 @@ object Outfits {
     )
 
     val ALL: List<Outfit> = listOf(
-        Outfit(DEFAULT_ID, "Just Buddy", Rarity.COMMON, "The classic. A good dog and his collar."),
+        Outfit(DEFAULT_ID, "Buddy", Rarity.COMMON, "The classic. A good dog and his collar."),
 
         // ---- common ----
         Outfit("bandana", "Red Bandana", Rarity.COMMON, "Adventure-ready neckwear."),
@@ -79,8 +79,9 @@ object Outfits {
         Outfit("hero", "Hero Outfit", Rarity.LEGENDARY, "Purple tunic, pointed cap, one very small sword."),
         Outfit("robot", "Robo-Buddy", Rarity.LEGENDARY, "Beep. Boop. Good. Boy."),
         Outfit("unicorn", "Unicorn Onesie", Rarity.LEGENDARY, "Majestic. Slightly chewed."),
-        Outfit("anti", "Anti-Buddy", Rarity.LEGENDARY, "Same dog. Opposite dog."),
         Outfit("fighter", "Fighting Gi", Rarity.LEGENDARY, "Orange gi, blue belt, hair that defies everything."),
+        Outfit(DEV_ID, "Developer Approved", Rarity.LEGENDARY, "Shipped it. Mostly."),
+        Outfit("anti", "Anti-Buddy", Rarity.LEGENDARY, "Same dog. Opposite dog."),
         Outfit(HEAVEN_ONLY_ID, "Good Boy Eternal", Rarity.LEGENDARY, "Wings, a halo, and absolutely nothing left to prove.")
     )
 
@@ -92,6 +93,13 @@ object Outfits {
      */
     const val HEAVEN_ONLY_ID = "eternal"
 
+    /**
+     * The developer skin. It is not in the prize pool, not counted toward completion, and not
+     * shown in the wardrobe at all until the back door hands it over - a locked "???" card would
+     * advertise that something is there to find.
+     */
+    const val DEV_ID = "devapproved"
+
     fun byId(id: String): Outfit? = index[id]
 
     fun of(id: String): Outfit = index[id] ?: ALL[0]
@@ -101,10 +109,21 @@ object Outfits {
      * Heaven-only outfit, which is earned by reaching Heaven rather than won.
      */
     fun inRarity(r: Rarity): List<Outfit> =
-        ALL.filter { it.rarity == r && it.id != DEFAULT_ID && it.id != HEAVEN_ONLY_ID }
+        ALL.filter { it.rarity == r && it.id != DEFAULT_ID && it.id != HEAVEN_ONLY_ID && it.id != DEV_ID }
 
     /** How many outfits a completionist needs (the default collar doesn't count). */
-    val collectableCount: Int = ALL.count { it.id != DEFAULT_ID }
+    /**
+     * The wardrobe list and its total.
+     *
+     * The developer skin is left out of both until it has been earned. A locked "???" card, or a
+     * total that counts one more outfit than the grid shows, would advertise that there is
+     * something hidden to go looking for - which defeats the point of a back door.
+     */
+    fun visible(devOwned: Boolean): List<Outfit> =
+        if (devOwned) ALL else ALL.filter { it.id != DEV_ID }
+
+    fun collectableCount(devOwned: Boolean): Int =
+        visible(devOwned).count { it.id != DEFAULT_ID }
 
     /**
      * Is Buddy wearing the blessed look - translucent, with wings and a halo?

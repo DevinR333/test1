@@ -175,6 +175,9 @@ object Tuning {
     /** Halos are worth one each; 1000 of them buys the ghost look permanently. */
     const val HALO_VALUE = 1
     const val HALOS_FOR_GHOST = 1000
+
+    /** The Glory Beam trail, at half the outfit's price so it lands first. */
+    const val HALOS_FOR_GLORY = 500
     const val GACHA_COST = 100
     /** Paid out when a pick-up duplicates a power-up that is already running. */
     const val REDUNDANT_PICKUP_COINS = 1

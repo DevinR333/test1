@@ -86,6 +86,7 @@ class TrailArt(private val art: Art) {
             Trails.Style.CONFETTI -> confetti(c, size, rot, col, accent, a)
             Trails.Style.HEART -> heart(c, size, rot, col, accent, a)
             Trails.Style.BLAST -> blast(c, size, rot, col, accent, a)
+            Trails.Style.GLORY -> glory(c, size, rot, col, accent, a)
             else -> note(c, size, rot, col, accent, a)
         }
         c.restore()
@@ -873,6 +874,74 @@ class TrailArt(private val art: Art) {
         val ring = s * (0.22f + (1f - a) * 0.72f)
         line(accent, a * a * 0.85f, s * 0.09f * a + 1f)
         r.set(-s * 0.14f, -ring, s * 0.14f, ring)
+        c.drawOval(r, p)
+    }
+
+    /**
+     * Glory Beam: a shaft of golden light standing upright, brightest at its core, with motes
+     * riding up it and a soft flare where it meets the ground.
+     *
+     * It is the only trail built from a straight vertical - everything else in the catalogue
+     * tumbles, drifts or streaks - which is what makes a column of it read as light falling on
+     * him rather than as sparks coming off him.
+     */
+    private fun glory(c: Canvas, size: Float, rot: Float, col: Int, accent: Int, a: Float) {
+        val hgt = size * 3.4f
+        val halfW = size * 0.62f
+
+        // the outer shaft, widening as it falls
+        p.reset(); p.isAntiAlias = true
+        p.color = ColorX.withAlpha(accent, a * 0.30f)
+        path.reset()
+        path.moveTo(-halfW * 0.34f, -hgt)
+        path.lineTo(halfW * 0.34f, -hgt)
+        path.lineTo(halfW, hgt * 0.30f)
+        path.lineTo(-halfW, hgt * 0.30f)
+        path.close()
+        c.drawPath(path, p)
+
+        // the core, narrower and near-white
+        p.color = ColorX.withAlpha(col, a * 0.72f)
+        path.reset()
+        path.moveTo(-halfW * 0.17f, -hgt)
+        path.lineTo(halfW * 0.17f, -hgt)
+        path.lineTo(halfW * 0.44f, hgt * 0.24f)
+        path.lineTo(-halfW * 0.44f, hgt * 0.24f)
+        path.close()
+        c.drawPath(path, p)
+        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), a * 0.55f)
+        path.reset()
+        path.moveTo(-halfW * 0.07f, -hgt * 0.94f)
+        path.lineTo(halfW * 0.07f, -hgt * 0.94f)
+        path.lineTo(halfW * 0.18f, hgt * 0.18f)
+        path.lineTo(-halfW * 0.18f, hgt * 0.18f)
+        path.close()
+        c.drawPath(path, p)
+
+        // motes riding up the beam, each a four-point sparkle rather than a dot
+        for (i in 0 until 5) {
+            val t = ((rot * 0.16f + i * 0.2f) % 1f)
+            val my = hgt * 0.24f - t * hgt * 1.15f
+            val mx = sin(rot * 1.6f + i * 2.1f) * halfW * 0.5f * (1f - t)
+            val ms = size * (0.30f - t * 0.16f)
+            if (ms <= 0f) continue
+            p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), a * (1f - t) * 0.9f)
+            path.reset()
+            path.moveTo(mx, my - ms)
+            path.quadTo(mx + ms * 0.22f, my - ms * 0.22f, mx + ms, my)
+            path.quadTo(mx + ms * 0.22f, my + ms * 0.22f, mx, my + ms)
+            path.quadTo(mx - ms * 0.22f, my + ms * 0.22f, mx - ms, my)
+            path.quadTo(mx - ms * 0.22f, my - ms * 0.22f, mx, my - ms)
+            path.close()
+            c.drawPath(path, p)
+        }
+
+        // the flare where it lands
+        p.color = ColorX.withAlpha(accent, a * 0.42f)
+        r.set(-halfW * 1.25f, hgt * 0.16f, halfW * 1.25f, hgt * 0.40f)
+        c.drawOval(r, p)
+        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), a * 0.34f)
+        r.set(-halfW * 0.52f, hgt * 0.21f, halfW * 0.52f, hgt * 0.33f)
         c.drawOval(r, p)
     }
 }

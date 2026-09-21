@@ -77,6 +77,7 @@ object Trails {
         const val HEART = 38         // two lobes and a point
         const val NOTE = 39          // a quaver
         const val BLAST = 40         // a beam core inside an expanding shock ring
+        const val GLORY = 41         // a shaft of golden light with motes drifting up it
 
         const val COUNT = 41
     }
@@ -220,14 +221,31 @@ object Trails {
         // ---- the one you have to charge up ------------------------------------------------
         t("blastwave", "Blast Wave Trail", Rarity.LEGENDARY, Style.BLAST, Motion.STREAK,
             0xFFBFF4FF, 0xFF1E5FD6, 0xFFFFFFFF,
-            "A white-hot beam with the shock ring still catching up.")
+            "A white-hot beam with the shock ring still catching up."),
+
+        // ---- the one that only Heaven hands out --------------------------------------------
+        // Earned at 500 halos, half the price of the outfit, so the trail lands first and the
+        // player knows what the halos are for before the big one arrives.
+        t(HEAVEN_ONLY_ID, "Glory Beam Trail", Rarity.LEGENDARY, Style.GLORY, Motion.RISE,
+            0xFFFFF3C2, 0xFFE8A93C, 0xFFFFFFFF,
+            "A shaft of the light itself, and it follows him everywhere now.")
     )
+
+    /**
+     * The one trail that is not in the prize pool. Like Good Boy Eternal it lives behind Heaven,
+     * so it must never count toward "have I unlocked everything" - that check is what opens
+     * Heaven, and a collectable locked inside the world it gates could never be reached.
+     */
+    const val HEAVEN_ONLY_ID = "glory"
 
     val byId: Map<String, Trail> = ALL.associateBy { it.id }
 
     val count: Int get() = ALL.size
 
     fun of(id: String): Trail? = byId[id]
+
+    /** Everything the prize machine is allowed to hand out. */
+    val collectable: List<Trail> = ALL.filter { it.id != HEAVEN_ONLY_ID }
 
     /** Prize-machine weights: the rarer it is, the less often the machine hands it over. */
     fun weightOf(trail: Trail): Int = when (trail.rarity) {

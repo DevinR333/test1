@@ -77,6 +77,9 @@ class World(worldWidth: Float, private val events: Events) {
 
     private var genY = 0f
     private var enemyCredit = 0f
+
+    /** Where Buddy's feet were at the top of this frame. See the stomp test in updateEnemies. */
+    private var buddyPrevFoot = 0f
     private var rowsSinceSolid = 0
     private var lastWasHazard = false
     private var lastPlatX = 0f
@@ -344,6 +347,7 @@ class World(worldWidth: Float, private val events: Events) {
 
         // --- vertical ---
         val prevFoot = b.y
+        buddyPrevFoot = prevFoot
         val gravity = if (lowGravityTime > 0f) Tuning.GRAVITY * 0.62f else Tuning.GRAVITY
         if (b.flying && !b.dying) {
             val v = when (b.flight) {
@@ -643,8 +647,15 @@ class World(worldWidth: Float, private val events: Events) {
                 continue
             }
 
-            val stomping = EnemyKind.stompable(e.kind) && b.vy < 0f &&
-                (b.y > e.y + e.halfH * 0.15f)
+            // A stomp is decided by where he CAME FROM, not by where one frame happened to
+            // leave him. Falling fast he can clear an enemy's whole body in a single step, so
+            // testing the current position alone turned a clean drop onto a head into a
+            // side-on hit and killed him - the "sometimes I stomp and still die" case. If his
+            // feet started the frame above the enemy's crown, the only way he can be
+            // overlapping it now is from above, whatever his velocity reads as afterwards.
+            val cameFromAbove = buddyPrevFoot >= e.y + e.halfH - 2f
+            val stomping = EnemyKind.stompable(e.kind) &&
+                (cameFromAbove || (b.vy < 0f && b.y > e.y + e.halfH * 0.15f))
             if (stomping) {
                 killEnemy(e, scoreFor(e.kind))
                 b.vy = Tuning.ENEMY_STOMP_V

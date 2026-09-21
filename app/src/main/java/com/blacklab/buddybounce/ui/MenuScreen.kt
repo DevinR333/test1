@@ -159,7 +159,7 @@ class MenuScreen(private val g: Game) {
         cy += 118f * k
 
         if (ui.button(c, Id.SCENES, x, cy, halfW, rowH, "WORLDS", Ui.ButtonStyle.SECONDARY,
-                sublabel = "${g.ownedSceneCount()}/${Scenes.ALL.size} unlocked")) {
+                sublabel = "${g.ownedSceneCount()}/${g.visibleSceneCount()} unlocked")) {
             g.tap(); g.goto(Game.Screen.SCENES)
         }
         if (ui.button(c, Id.SCORES, x + halfW + 24f, cy, halfW, rowH, "SCORES", Ui.ButtonStyle.SECONDARY,
@@ -231,5 +231,30 @@ class MenuScreen(private val g: Game) {
         c.drawCircle(x + 38f, y + 24f, 3.4f, p)
         c.drawCircle(x + 44f, y + 27f, 3.4f, p)
         ui.text(c, text, x + 70f, y + 46f, 40f, Theme.ACCENT, ui.bodyLeft, false)
+
+        // Halos only exist once Heaven does. Showing a second currency before then would be the
+        // loudest possible hint that there is a world left to find.
+        if (g.save.ownsScene(Scenes.HEAVEN_ID)) drawHaloChip(c, x, y + 76f)
+    }
+
+    private fun drawHaloChip(c: Canvas, coinX: Float, y: Float) {
+        val ui = g.ui
+        val text = g.save.halos.toString()
+        val w = ui.measure(text, 36f, ui.bodyLeft) + 100f
+        // right-aligned with the coin chip above it, so the two read as one stack
+        val x = g.worldW - ui.safeRight - w - 28f
+        ui.pill(c, x, y, w, 58f, 0xAA101728.toInt())
+        p.reset(); p.isAntiAlias = true
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 6f
+        p.color = 0xFFE8A93C.toInt()
+        rect.set(x + 20f, y + 20f, x + 56f, y + 38f)
+        c.drawOval(rect, p)
+        p.strokeWidth = 2.6f
+        p.color = 0xFFFFF3C2.toInt()
+        rect.set(x + 22f, y + 19f, x + 54f, y + 33f)
+        c.drawArc(rect, 186f, 168f, false, p)
+        p.style = Paint.Style.FILL
+        ui.text(c, text, x + 68f, y + 41f, 36f, 0xFFE8A93C.toInt(), ui.bodyLeft, false)
     }
 }

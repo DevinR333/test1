@@ -49,8 +49,30 @@ object OutfitArt {
     // dispatch
     // -------------------------------------------------------------------------------------
 
+    /**
+     * The collar colour for an outfit, or 0 for the ones that wear none.
+     *
+     * Both halves of the strap have to agree, and they are drawn in different passes, so the
+     * colour lives here rather than being spelled out at each call.
+     */
+    private fun collarColor(id: String): Int = when (id) {
+        Outfits.DEFAULT_ID -> 0xFFC7413C.toInt()
+        "sweater" -> 0xFF7B4499.toInt()
+        "backpack" -> 0xFF3F7A53.toInt()
+        "vet" -> 0xFF4F9FD6.toInt()
+        "mike" -> 0xFF8E1F2E.toInt()
+        "cape" -> 0xFFD23A4A.toInt()
+        "cosmic" -> 0xFFCBB7FF.toInt()
+        "hero" -> 0xFF3FA95E.toInt()
+        "anti" -> 0xFF2A2F3D.toInt()
+        else -> 0
+    }
+
     fun drawBack(c: Canvas, id: String, pose: Pose, rim: Int) {
         prep()
+        // behind everything, so the neck and body hide the part of the strap that goes round
+        val cc = collarColor(id)
+        if (cc != 0) { collarBack(c, cc); prep() }
         when (id) {
             "cape" -> cape(c, pose, 0xFFD23A4A.toInt(), 0xFF8E1F2E.toInt())
             "cosmic" -> cape(c, pose, 0xFF3B2A7A.toInt(), 0xFF1A1140.toInt())
@@ -111,13 +133,13 @@ object OutfitArt {
     fun drawHead(c: Canvas, id: String, pose: Pose, rim: Int) {
         prep()
         when (id) {
-            Outfits.DEFAULT_ID -> collar(c, 0xFFC7413C.toInt())
+            Outfits.DEFAULT_ID -> collar(c, collarColor(id))
             "bandana" -> bandana(c)
             "ball" -> tennisBall(c)
             "party" -> cone(c, 0xFF57C4E5.toInt(), 0xFFF2645E.toInt(), 56f, pompom = true)
             "shades" -> shades(c)
             "flowers" -> flowerCrown(c)
-            "sweater" -> collar(c, 0xFF7B4499.toInt())
+            "sweater" -> collar(c, collarColor(id))
             "beanie" -> beanie(c)
             "towel" -> towelHood(c)
             "cone" -> vetCone(c)
@@ -125,17 +147,17 @@ object OutfitArt {
             "chef" -> chefHat(c)
             "cowboy" -> { cowboyHat(c); bandana(c) }
             "snorkel" -> snorkel(c)
-            "backpack" -> collar(c, 0xFF3F7A53.toInt())
+            "backpack" -> collar(c, collarColor(id))
             "raincoat" -> rainHood(c)
             "clown" -> { clownRuff(c); clownHair(c); redNose(c) }
             "plumber" -> { plumberCap(c); moustache(c) }
             "detective" -> fedora(c, 0xFF8A6A42.toInt(), 0xFF6B5130.toInt())
-            "vet" -> { collar(c, 0xFF4F9FD6.toInt()); glasses(c) }
+            "vet" -> { collar(c, collarColor(id)); glasses(c) }
             "racer" -> racingHelmet(c)
             "pirate" -> { tricorn(c); eyePatch(c) }
             "french" -> { beret(c); ascot(c); baguette(c); pencilMoustache(c) }
-            "mike" -> collar(c, 0xFF8E1F2E.toInt())
-            "cape" -> { collar(c, 0xFFD23A4A.toInt()); mask(c) }
+            "mike" -> collar(c, collarColor(id))
+            "cape" -> { collar(c, collarColor(id)); mask(c) }
             "knight" -> knightHelm(c)
             "dino" -> dinoHood(c)
             "bee" -> antennae(c, pose)
@@ -148,14 +170,14 @@ object OutfitArt {
             "shark" -> sharkHood(c)
             "firefighter" -> fireHelmet(c)
             "astro" -> astroHelmet(c)
-            "cosmic" -> collar(c, 0xFFCBB7FF.toInt())
+            "cosmic" -> collar(c, collarColor(id))
             "crown" -> { crown(c, pose); medal(c) }
-            "hero" -> { heroCap(c); collar(c, 0xFF3FA95E.toInt()) }
+            "hero" -> { heroCap(c); collar(c, collarColor(id)) }
             "robot" -> robotHead(c)
             "unicorn" -> unicornHorn(c)
             // Anti-Buddy is not a garment - the recolour happens in BuddyArt via Coats - so all
             // he needs here is a collar dark enough to show against a white coat.
-            "anti" -> collar(c, 0xFF2A2F3D.toInt())
+            "anti" -> collar(c, collarColor(id))
             "fighter" -> spikyHair(c)
         }
     }
@@ -260,15 +282,48 @@ object OutfitArt {
      * arc pair - the far half dark and thin, the near half full and lit - is what makes it wrap
      * instead of sit. The tag then hangs from the near side under gravity.
      */
-    private fun collar(c: Canvas, color: Int) {
+    private const val COLLAR_RX = 44f     // half-way round the neck
+    private const val COLLAR_RY = 15f     // how open the ellipse is - we see it nearly edge-on
+    private const val COLLAR_BAND = 13f   // the webbing's width
+
+    /** Puts the canvas on the throat, square to the neck's diagonal. Caller restores. */
+    private fun collarSpace(c: Canvas) {
         c.save()
-        // on the throat, square to the neck's diagonal
         c.translate(30f, -92f)
         c.rotate(24f)
+    }
 
-        val rx = 44f          // half-way round the neck
-        val ry = 15f          // how open the ellipse is - small, because we see it nearly edge-on
-        val band = 13f        // the webbing's width
+    /**
+     * The half of the strap that goes round the BACK of the neck.
+     *
+     * This belongs in the back pass, not the head pass. Drawn with the near half it was painted
+     * over the neck it is supposed to disappear behind, so the strap read as a closed ring lying
+     * on top of Buddy instead of a band going round him. Here the body and the head occlude it
+     * for free, and only the sliver that clears his silhouette shows - which is the whole cue.
+     */
+    private fun collarBack(c: Canvas, color: Int) {
+        collarSpace(c)
+        val rx = COLLAR_RX
+        val ry = COLLAR_RY
+        r.set(-rx, -ry, rx, ry)
+        p.reset(); p.isAntiAlias = true
+        p.style = Paint.Style.STROKE
+        p.strokeCap = Paint.Cap.BUTT
+        // a touch wider than the near half, so what peeps past the neck reads as the same strap
+        // seen from behind rather than a thin line
+        p.strokeWidth = COLLAR_BAND * 0.92f
+        p.color = ColorX.shade(color, 0.42f)
+        c.drawArc(r, 182f, 176f, false, p)
+        p.style = Paint.Style.FILL
+        c.restore()
+    }
+
+    private fun collar(c: Canvas, color: Int) {
+        collarSpace(c)
+
+        val rx = COLLAR_RX
+        val ry = COLLAR_RY
+        val band = COLLAR_BAND
 
         r.set(-rx, -ry, rx, ry)
 
@@ -276,14 +331,7 @@ object OutfitArt {
         p.style = Paint.Style.STROKE
         p.strokeCap = Paint.Cap.BUTT
 
-        // --- the far half, going round the back of the neck ---------------------------------
-        // Thinner and much darker: it is in the neck's shadow and partly hidden by it, which is
-        // the cue that sells the wrap.
-        p.strokeWidth = band * 0.7f
-        p.color = ColorX.shade(color, 0.42f)
-        c.drawArc(r, 182f, 176f, false, p)
-
-        // --- the near half, passing in front ------------------------------------------------
+        // --- the near half, passing in front. The far half is in [collarBack]. ---------------
         p.strokeWidth = band + 4f
         p.color = BuddyGeom.INK
         c.drawArc(r, 2f, 176f, false, p)

@@ -48,6 +48,8 @@ class ScenesScreen(private val g: Game) {
         }
         ui.text(c, "WORLDS", g.worldW * 0.5f, ui.safeTop + 96f, 62f, Theme.TEXT, ui.title)
         val owned = list.count { g.save.ownsScene(it.id) }
+        // list already leaves Heaven out until it is owned, so this counts nine worlds up to
+        // the moment it opens and ten afterwards - saying "of 10" early is the whole giveaway
         ui.text(
             c, "$owned of ${list.size} unlocked  \u2022  swap any time",
             g.worldW * 0.5f, ui.safeTop + 140f, 30f, Theme.TEXT_DIM, ui.body, false,
@@ -73,6 +75,9 @@ class ScenesScreen(private val g: Game) {
 
         c.save()
         c.clipRect(x0 - 12f, top, x0 + listW + 12f, top + viewH)
+        // and the same clip on the input, or a card scrolled up behind the back button still
+        // swallows the tap meant for it
+        ui.setInputClip(x0 - 12f, top, x0 + listW + 12f, top + viewH)
         for (i in list.indices) {
             val col = i % cols
             val row = i / cols
@@ -84,10 +89,11 @@ class ScenesScreen(private val g: Game) {
         val after = top + rows * (cardH + gap) - scroll.y
         if (after < top + viewH) {
             ui.text(
-                c, "More worlds turn up in the prize machine. Rarely.",
+                c, "More worlds turn up in the prize machine.",
                 g.worldW * 0.5f, after + 40f, 28f, Theme.TEXT_DIM, ui.body, false, listW - 40f
             )
         }
+        ui.clearInputClip()
         c.restore()
 
         // scroll affordance

@@ -289,8 +289,8 @@ class GachaScreen(private val g: Game) {
 
     /** Rarity weighted, and it prefers one you do not own yet so the set actually fills up. */
     private fun rollTrail(): String {
-        val locked = Trails.ALL.filter { !g.save.ownsTrail(it.id) }
-        val pool = if (locked.isEmpty()) Trails.ALL else locked
+        val locked = Trails.collectable.filter { !g.save.ownsTrail(it.id) }
+        val pool = if (locked.isEmpty()) Trails.collectable else locked
         var total = 0
         for (t in pool) total += Trails.weightOf(t)
         if (total <= 0) return pool[0].id
@@ -343,7 +343,7 @@ class GachaScreen(private val g: Game) {
             else -> if (duplicate) g.save.grantCoins(Tuning.DUPLICATE_REFUND) else g.save.unlock(prizeId)
         }
         // Any unlock might have been the last one, and completing the set is what opens Heaven.
-        if (g.save.refreshHeaven()) g.announceHeaven()
+        if (g.save.refreshHeaven()) g.queueHeavenAnnounce()
     }
 
     // -------------------------------------------------------------------------------------

@@ -215,6 +215,18 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
             menuBuddy.reset(0f, 0f)
             screen = if (save.hasName) Screen.MENU else Screen.NAME
             if (screen == Screen.NAME) host.promptName("", "What's your name?")
+            // A save can qualify for Heaven while the app is closed - the last unlock might have
+            // been the very thing the player quit after. Catch that here, and catch a reveal
+            // that was queued but never reached the menu, so it is still waiting on next launch.
+            if (save.refreshHeaven() || (save.ownsScene(Scenes.HEAVEN_ID) && !save.heavenAnnounced)) {
+                queueHeavenAnnounce()
+            }
+            // Opening on the menu skips goto(), which is what normally spends the queue.
+            if (screen == Screen.MENU && heavenAnnouncePending) {
+                heavenAnnouncePending = false
+                save.heavenAnnounced = true
+                announceHeaven()
+            }
         }
     }
 
@@ -245,9 +257,23 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
     private fun ghostAmount(): Boolean =
         Outfits.isBlessed(equippedOutfit, world.haloMode, secondLifeActive, save.ghostEnabled)
 
-    fun announceHeaven() {
+    /**
+     * Heaven opening is the payoff for the whole collection, so it gets the full reveal rather
+     * than a line of toast over whatever screen happened to trip it.
+     *
+     * The unlock can fire anywhere - buying the last trail at the machine, or simply launching
+     * the game with a save that already qualifies - so the announcement is QUEUED here and
+     * spent the next time the player reaches the main menu. That is also the only screen where
+     * the reveal makes sense: they are looking at the world list they are about to go and use.
+     */
+    fun queueHeavenAnnounce() {
+        heavenAnnouncePending = true
+    }
+
+    private fun announceHeaven() {
         notice = "HEAVEN IS OPEN"
-        noticeT = 4f
+        noticeT = 5f
+        heavenReveal = 1f
         flashScreen(0.8f)
         shakeScreen(0.5f)
         audio.play(Audio.FANFARE, 1f)
@@ -258,6 +284,12 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         previousScreen = screen
         screen = s
         screenAnim = 0f
+        // queued from wherever the last unlock happened; spent here, on arrival at the menu
+        if (s == Screen.MENU && heavenAnnouncePending) {
+            heavenAnnouncePending = false
+            save.heavenAnnounced = true
+            announceHeaven()
+        }
         if (s != Screen.PLAY) {
             controls.clearTouch()
             audio.stopJet()
@@ -344,6 +376,11 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
     //   u7d%4=   free spins on the prize machine, to grind out that last trail
     //   u7d%4+   parks you on 999 halos with Heaven open, so the thousandth halo - and
     //            the outfit it unlocks - can be tested without the grind
+    //
+    // And one that is not a testing aid at all:
+    //
+    //   uu4*=^7  the developer skin. The ONLY way to get it - it is not in the prize
+    //            pool, and the wardrobe does not admit it exists until this is entered.
     // -------------------------------------------------------------------------------------
 
     fun isUnlockCode(raw: String): Boolean {
@@ -351,7 +388,8 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         return t.equals(UNLOCK_CODE, ignoreCase = true) ||
             t.equals(ALMOST_CODE, ignoreCase = true) ||
             t.equals(FREE_SPINS_CODE, ignoreCase = true) ||
-            t.equals(HALO_PRIME_CODE, ignoreCase = true)
+            t.equals(HALO_PRIME_CODE, ignoreCase = true) ||
+            t.equals(DEV_SKIN_CODE, ignoreCase = true)
     }
 
     fun applyUnlockCode(raw: String) {
@@ -360,6 +398,11 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
             t.equals(FREE_SPINS_CODE, ignoreCase = true) -> {
                 save.freeSpins = true
                 notice = "FREE SPINS ON"
+            }
+            t.equals(DEV_SKIN_CODE, ignoreCase = true) -> {
+                save.unlock(Outfits.DEV_ID)
+                save.equippedOutfit = Outfits.DEV_ID
+                notice = "DEVELOPER APPROVED"
             }
             t.equals(HALO_PRIME_CODE, ignoreCase = true) -> {
                 // Halos only drop in Heaven, so the code is useless unless Heaven is open. This
@@ -386,13 +429,15 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
     private fun unlockAllBut(holdBackTrails: Int) {
         for (o in Outfits.ALL) {
             // The Heaven outfit lives behind Heaven, so granting it here would be cheating in
-            // the wrong direction - and it is excluded from the completion check anyway.
-            if (o.id == Outfits.HEAVEN_ONLY_ID) continue
+            // the wrong direction - and it is excluded from the completion check anyway. The
+            // developer skin has exactly one door, and this is not it.
+            if (o.id == Outfits.HEAVEN_ONLY_ID || o.id == Outfits.DEV_ID) continue
             save.unlock(o.id)
         }
         for (sc in Scenes.unlockable) save.unlockScene(sc.id)
-        val keep = Trails.ALL.size - holdBackTrails.coerceIn(0, Trails.ALL.size)
-        for (i in 0 until keep) save.unlockTrail(Trails.ALL[i].id)
+        val pool = Trails.collectable
+        val keep = pool.size - holdBackTrails.coerceIn(0, pool.size)
+        for (i in 0 until keep) save.unlockTrail(pool[i].id)
         for (pu in Powerups.ALL) save.grantPowerup(pu.id, 5)
         save.grantCoins(1000)
 
@@ -401,7 +446,7 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         } else {
             "EVERYTHING UNLOCKED"
         }
-        if (save.refreshHeaven()) announceHeaven()
+        if (save.refreshHeaven()) queueHeavenAnnounce()
     }
 
     fun onNameEntered(name: String) {
@@ -438,6 +483,7 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         if (biomeToast > 0f) biomeToast -= dt
         if (noticeT > 0f) noticeT -= dt
         if (coinFlashT > 0f) coinFlashT -= dt
+        if (heavenReveal > 0f) heavenReveal = (heavenReveal - dt * 0.2f).coerceAtLeast(0f)
         ui.beginFrame(dt)
 
         when (screen) {
@@ -503,6 +549,12 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
      * time, and each press spends another one from the shelf.
      */
     var secondLifeActive = false
+
+    /** Set when Heaven unlocks; spent on the next arrival at the main menu. */
+    private var heavenAnnouncePending = false
+
+    /** Drives the reveal banner on the menu. Counts down; 0 when there is nothing to show. */
+    var heavenReveal = 0f
         private set
 
     /** Coins already banked for the run in progress, and the entry they were banked under. */
@@ -1036,11 +1088,45 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
 
     fun flashScreen(amount: Float) { flash = amount.coerceIn(0f, 1f) }
 
+    // ---- Heaven's two secrets ---------------------------------------------------------------
+    //
+    // Good Boy Eternal and the Glory Beam are the only collectables that are not in the prize
+    // machine, and both live inside Heaven. Until Heaven is open they show as "???" - name AND
+    // blurb - because naming them, or saying they cost halos, gives away that there is a world
+    // full of halos to find. The moment Heaven opens they name themselves and say their price,
+    // so the player knows what to go and do.
+
+    private fun heavenOpen(): Boolean = save.ownsScene(Scenes.HEAVEN_ID)
+
+    private fun isHeavenSecret(id: String): Boolean =
+        id == Outfits.HEAVEN_ONLY_ID || id == Trails.HEAVEN_ONLY_ID
+
+    fun displayName(id: String, name: String): String =
+        if (isHeavenSecret(id) && !heavenOpen()) "???" else name
+
+    /** The line under the name: the real blurb when owned, otherwise how to get it. */
+    fun displayBlurb(id: String, blurb: String, owned: Boolean): String = when {
+        owned -> blurb
+        isHeavenSecret(id) && !heavenOpen() -> "???"
+        id == Outfits.HEAVEN_ONLY_ID -> "Locked - collect ${Tuning.HALOS_FOR_GHOST} halos in Heaven"
+        id == Trails.HEAVEN_ONLY_ID -> "Locked - collect ${Tuning.HALOS_FOR_GLORY} halos in Heaven"
+        else -> "Locked - win it from the coin machine"
+    }
+
     fun outfitOwned(id: String) = save.owns(id)
 
     fun ownedCount() = save.ownedOutfits().count { it != Outfits.DEFAULT_ID }
 
     fun ownedSceneCount() = save.ownedScenes().size
+
+    /**
+     * How many worlds to admit exist: nine until Heaven is open, ten after.
+     *
+     * Heaven is meant to be a surprise, and "3/10 unlocked" on the main menu when the worlds
+     * screen only lists nine is the one place the secret leaks.
+     */
+    fun visibleSceneCount(): Int =
+        if (save.ownsScene(Scenes.HEAVEN_ID)) Scenes.ALL.size else Scenes.ALL.size - 1
 
     // ---- randomise --------------------------------------------------------------------------
     //
@@ -1090,5 +1176,7 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         const val FREE_SPINS_CODE = "u7d%4="
         /** Opens Heaven and parks you on 999 halos, so the thousandth can be tested. */
         const val HALO_PRIME_CODE = "u7d%4+"
+        /** The developer skin. Not a testing aid - the only way to get it at all. */
+        const val DEV_SKIN_CODE = "uu4*=^7"
     }
 }

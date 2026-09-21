@@ -267,17 +267,31 @@ class Save(ctx: Context) {
      */
     fun addHalos(n: Int) {
         if (n <= 0) return
+        val before = halos
         var earned = false
         editSync {
-            val total = halos + n
+            val total = before + n
             it.putInt(KEY_HALOS, total)
             if (total >= Tuning.HALOS_FOR_GHOST && !ghostUnlocked) {
                 it.putBoolean(KEY_GHOST_UNLOCKED, true)
                 earned = true
             }
         }
+        val after = before + n
+        if (before < Tuning.HALOS_FOR_GLORY && after >= Tuning.HALOS_FOR_GLORY) {
+            unlockTrail(Trails.HEAVEN_ONLY_ID)
+        }
         if (earned) unlock(Outfits.HEAVEN_ONLY_ID)
     }
+
+    /** True on the call that just crossed the Glory Beam's price. */
+    fun justEarnedGlory(before: Int, after: Int): Boolean =
+        before < Tuning.HALOS_FOR_GLORY && after >= Tuning.HALOS_FOR_GLORY
+
+    /** Has the Heaven reveal already been shown? Kept so it plays exactly once, ever. */
+    var heavenAnnounced: Boolean
+        get() = prefs.getBoolean(KEY_HEAVEN_SEEN, false)
+        set(value) = editSync { it.putBoolean(KEY_HEAVEN_SEEN, value) }
 
     val ghostUnlocked: Boolean get() = prefs.getBoolean(KEY_GHOST_UNLOCKED, false)
 
@@ -295,6 +309,11 @@ class Save(ctx: Context) {
         }
         val set = ownedOutfits()
         if (set.remove(Outfits.HEAVEN_ONLY_ID)) editSync { it.putStringSet(KEY_OWNED, set) }
+        val trails = ownedTrails()
+        if (trails.remove(Trails.HEAVEN_ONLY_ID)) editSync { it.putStringSet(KEY_TRAILS, trails) }
+        if (prefs.getString(KEY_TRAIL_PICK, null) == Trails.HEAVEN_ONLY_ID) {
+            editSync { it.putString(KEY_TRAIL_PICK, Trails.NONE_ID) }
+        }
         if (prefs.getString(KEY_EQUIPPED, null) == Outfits.HEAVEN_ONLY_ID) {
             editSync { it.putString(KEY_EQUIPPED, Outfits.DEFAULT_ID) }
         }
@@ -318,10 +337,12 @@ class Save(ctx: Context) {
      */
     fun hasUnlockedEverything(): Boolean {
         for (o in Outfits.ALL) {
-            if (o.id == Outfits.HEAVEN_ONLY_ID) continue
+            // Heaven's own outfit sits behind Heaven, and the developer skin is not a
+            // collectable at all - neither can be required to open the world.
+            if (o.id == Outfits.HEAVEN_ONLY_ID || o.id == Outfits.DEV_ID) continue
             if (!owns(o.id)) return false
         }
-        for (t in Trails.ALL) if (!ownsTrail(t.id)) return false
+        for (t in Trails.collectable) if (!ownsTrail(t.id)) return false
         for (sc in Scenes.unlockable) if (!ownsScene(sc.id)) return false
         return true
     }
@@ -433,6 +454,7 @@ class Save(ctx: Context) {
         private const val KEY_TRAIL_PICK = "trailPick"
         private const val KEY_HALOS = "halos"
         private const val KEY_GHOST_UNLOCKED = "ghostUnlocked"
+        private const val KEY_HEAVEN_SEEN = "heavenAnnounced"
         private const val KEY_GHOST_ON = "ghostOn"
         private const val KEY_FREE_SPINS = "freeSpins"
         private const val KEY_POWERUP_PREFIX = "pu_"
