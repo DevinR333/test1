@@ -2,6 +2,8 @@ package com.blacklab.buddybounce.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.blacklab.buddybounce.game.Tuning
+import com.blacklab.buddybounce.render.Scenes
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -58,11 +60,21 @@ class Save(ctx: Context) {
 
     /**
      * Banks a finished run: coins, score, leaderboard and run count, in one committed edit.
+     *
+     * Coins are banked the instant a run ends, so closing the app impulsively can never lose
+     * them. That matters for the Second Life power-up, which reopens a run that was already
+     * banked: passing [replacingStamp] from the earlier banking makes this call REPLACE that
+     * partial entry rather than adding a second one, and skips the run counter, so continuing
+     * leaves one run in the table with the full height on it - not two fragments.
+     *
+     * @param coinsEarned coins to add. On a continuation this is the DELTA since the last
+     *   banking, because the earlier part is already in the purse.
      * @return the 0-based rank the run landed at, or -1 if it missed the table.
      */
-    fun bankRun(score: Int, coinsEarned: Int): Int {
+    fun bankRun(score: Int, coinsEarned: Int, replacingStamp: Long = 0L): Int {
         val earned = coinsEarned.coerceAtLeast(0)
         val table = scores().toMutableList()
+        if (replacingStamp != 0L) table.removeAll { it.whenMs == replacingStamp }
         val stamp = System.currentTimeMillis()
         table.add(ScoreEntry(playerName.ifEmpty { "BUDDY" }, score, stamp))
         table.sortWith(compareByDescending<ScoreEntry> { it.score }.thenBy { it.whenMs })
@@ -71,16 +83,22 @@ class Save(ctx: Context) {
         editSync { e ->
             e.putInt(KEY_COINS, coins + earned)
             e.putInt(KEY_COINS_EARNED, totalCoinsEarned + earned)
-            e.putInt(KEY_RUNS, totalRuns + 1)
+            // A continuation is the same run carrying on, so it must not be counted twice.
+            if (replacingStamp == 0L) e.putInt(KEY_RUNS, totalRuns + 1)
             if (score > bestScore) e.putInt(KEY_BEST, score)
             e.putString(KEY_SCORES, encodeScores(table))
         }
 
+        lastBankedStamp = stamp
         for (i in table.indices) {
             if (table[i].score == score && table[i].whenMs == stamp) return i
         }
         return -1
     }
+
+    /** Timestamp of the entry the last [bankRun] wrote, for a continuation to replace. */
+    var lastBankedStamp = 0L
+        private set
 
     fun spendCoins(amount: Int): Boolean {
         if (amount <= 0 || coins < amount) return false
@@ -216,6 +234,62 @@ class Save(ctx: Context) {
             if (ownsTrail(value)) editAsync { it.putString(KEY_TRAIL_PICK, value) }
         }
 
+    // ---- Heaven: halos, and the look they buy -------------------------------------------------
+
+    val halos: Int get() = prefs.getInt(KEY_HALOS, 0)
+
+    /**
+     * Banked with the rest of a run, and once a thousand have been collected the ghost look is
+     * unlocked for good - at which point it becomes a toggle in the wardrobe that works in every
+     * world, not just Heaven.
+     */
+    fun addHalos(n: Int) {
+        if (n <= 0) return
+        editSync {
+            val total = halos + n
+            it.putInt(KEY_HALOS, total)
+            if (total >= Tuning.HALOS_FOR_GHOST) it.putBoolean(KEY_GHOST_UNLOCKED, true)
+        }
+    }
+
+    val ghostUnlocked: Boolean get() = prefs.getBoolean(KEY_GHOST_UNLOCKED, false)
+
+    /** Testing back door: prize-machine pulls cost nothing. */
+    var freeSpins: Boolean
+        get() = prefs.getBoolean(KEY_FREE_SPINS, false)
+        set(value) = editSync { it.putBoolean(KEY_FREE_SPINS, value) }
+
+    /** The wardrobe toggle. Only meaningful once [ghostUnlocked]; Heaven forces it on anyway. */
+    var ghostEnabled: Boolean
+        get() = ghostUnlocked && prefs.getBoolean(KEY_GHOST_ON, false)
+        set(value) = editAsync { it.putBoolean(KEY_GHOST_ON, value) }
+
+    /**
+     * Has the player unlocked literally everything that Heaven waits on?
+     *
+     * Deliberately excludes Heaven itself (it would gate itself) and the Heaven-only outfit
+     * (which sits BEHIND Heaven, so requiring it would make the world impossible to reach).
+     */
+    fun hasUnlockedEverything(): Boolean {
+        for (o in Outfits.ALL) {
+            if (o.id == Outfits.HEAVEN_ONLY_ID) continue
+            if (!owns(o.id)) return false
+        }
+        for (t in Trails.ALL) if (!ownsTrail(t.id)) return false
+        for (sc in Scenes.unlockable) if (!ownsScene(sc.id)) return false
+        return true
+    }
+
+    /** Called whenever something is unlocked; opens Heaven the moment the set is complete. */
+    fun refreshHeaven(): Boolean {
+        if (ownsScene(Scenes.HEAVEN_ID)) return false
+        if (!hasUnlockedEverything()) return false
+        unlockScene(Scenes.HEAVEN_ID)
+        // The outfit that lives there comes with it.
+        unlock(Outfits.HEAVEN_ONLY_ID)
+        return true
+    }
+
     // ---- consumable power-ups ---------------------------------------------------------------
 
     fun powerupCount(id: String): Int = prefs.getInt(KEY_POWERUP_PREFIX + id, 0)
@@ -235,7 +309,9 @@ class Save(ctx: Context) {
 
     fun totalPowerups(): Int {
         var n = 0
-        for (p in Powerups.ALL) n += powerupCount(p.id)
+        // Only the ones the picker can offer - a shelf holding nothing but Second Lives should
+        // not make the game stop and ask what you want to use before a run.
+        for (p in Powerups.preRunChoices) n += powerupCount(p.id)
         return n
     }
 
@@ -297,6 +373,10 @@ class Save(ctx: Context) {
         private const val KEY_SCENE_PICK = "scenePick"
         private const val KEY_TRAILS = "trailsOwned"
         private const val KEY_TRAIL_PICK = "trailPick"
+        private const val KEY_HALOS = "halos"
+        private const val KEY_GHOST_UNLOCKED = "ghostUnlocked"
+        private const val KEY_GHOST_ON = "ghostOn"
+        private const val KEY_FREE_SPINS = "freeSpins"
         private const val KEY_POWERUP_PREFIX = "pu_"
         private const val KEY_LANDSCAPE = "landscape"
         private const val KEY_CONTROL = "control"

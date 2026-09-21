@@ -172,12 +172,18 @@ object Tuning {
     // the height bonus at the end, the rest from the handful of coins actually on the way up.
     const val COIN_VALUE = 1
     const val BONE_COIN_VALUE = 5
+    /** Halos are worth one each; 1000 of them buys the ghost look permanently. */
+    const val HALO_VALUE = 1
+    const val HALOS_FOR_GHOST = 1000
     const val GACHA_COST = 100
     /** Paid out when a pick-up duplicates a power-up that is already running. */
     const val REDUNDANT_PICKUP_COINS = 1
     const val DUPLICATE_REFUND = 35
     /** Points per coin awarded at the end of a run. */
     const val SCORE_PER_BONUS_COIN = 300
+    /** In Heaven the ground currency is the ONLY currency, so it is placed more often. */
+    const val HALO_SPACING_SCALE = 0.34f
+
     /** A coin is placed roughly this far apart, in wu of climb. */
     const val COIN_SPACING_MIN = 7600f
     const val COIN_SPACING_MAX = 15400f

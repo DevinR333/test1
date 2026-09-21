@@ -186,7 +186,7 @@ class GachaScreen(private val g: Game) {
         if (state == State.REVEAL) {
             drawReveal(c)
         } else {
-            val canPull = coins >= Tuning.GACHA_COST && state == State.IDLE
+            val canPull = (g.save.freeSpins || coins >= Tuning.GACHA_COST) && state == State.IDLE
 
             // The crank itself is the press target. A ghost button laid over wherever
             // drawMachine just put it, so it lines up whatever size the machine came out.
@@ -214,6 +214,7 @@ class GachaScreen(private val g: Game) {
 
             val hint = when {
                 state != State.IDLE -> "..."
+                g.save.freeSpins -> "turn the crank (free spins)"
                 canPull -> "turn the crank"
                 else -> "collect ${Tuning.GACHA_COST - coins} more coins"
             }
@@ -243,7 +244,7 @@ class GachaScreen(private val g: Game) {
     // -------------------------------------------------------------------------------------
 
     private fun pull() {
-        if (!g.save.spendCoins(Tuning.GACHA_COST)) return
+        if (!g.save.freeSpins && !g.save.spendCoins(Tuning.GACHA_COST)) return
         coinDropT = COIN_DROP_TIME
         g.audio.play(Audio.COIN, 0.7f, 0.8f)
         g.audio.play(Audio.GACHA_SPIN, 0.8f)
@@ -272,7 +273,9 @@ class GachaScreen(private val g: Game) {
             return
         }
 
-        val anyOutfitLeft = Outfits.ALL.any { it.id != Outfits.DEFAULT_ID && !g.save.owns(it.id) }
+        val anyOutfitLeft = Outfits.ALL.any {
+            it.id != Outfits.DEFAULT_ID && it.id != Outfits.HEAVEN_ONLY_ID && !g.save.owns(it.id)
+        }
         if (roll < SCENE_CHANCE + TRAIL_CHANCE + OUTFIT_CHANCE && anyOutfitLeft) {
             prizeKind = Kind.OUTFIT
             prizeId = rollOutfit()
@@ -339,6 +342,8 @@ class GachaScreen(private val g: Game) {
                 if (duplicate) g.save.grantCoins(Tuning.DUPLICATE_REFUND) else g.save.unlockTrail(prizeId)
             else -> if (duplicate) g.save.grantCoins(Tuning.DUPLICATE_REFUND) else g.save.unlock(prizeId)
         }
+        // Any unlock might have been the last one, and completing the set is what opens Heaven.
+        if (g.save.refreshHeaven()) g.announceHeaven()
     }
 
     // -------------------------------------------------------------------------------------
@@ -557,7 +562,7 @@ class GachaScreen(private val g: Game) {
         )
 
         val by = y + h - 96f
-        val canAgain = g.save.coins >= Tuning.GACHA_COST
+        val canAgain = g.save.freeSpins || g.save.coins >= Tuning.GACHA_COST
         // Three buttons when there is something to put on, two when there is not. Winning a
         // trail you like and then having to go and find it in the wardrobe to wear it was silly.
         val canEquip = !duplicate && (prizeKind == Kind.OUTFIT || prizeKind == Kind.TRAIL ||

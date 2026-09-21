@@ -76,8 +76,9 @@ object Trails {
         const val CONFETTI = 37      // a twisted rectangle of paper
         const val HEART = 38         // two lobes and a point
         const val NOTE = 39          // a quaver
+        const val BLAST = 40         // a beam core inside an expanding shock ring
 
-        const val COUNT = 40
+        const val COUNT = 41
     }
 
     /**
@@ -214,7 +215,12 @@ object Trails {
         t("heart", "Heart Trail", Rarity.RARE, Style.HEART, Motion.RISE,
             0xFFFF7A9E, 0xFFC02A54, 0xFFFFD6E2, "He loves this. He loves all of this."),
         t("music", "Music Trail", Rarity.EPIC, Style.NOTE, Motion.RISE,
-            0xFFFFE9A8, 0xFF8E62D6, 0xFFFFFFFF, "Something with a good beat to bounce to.")
+            0xFFFFE9A8, 0xFF8E62D6, 0xFFFFFFFF, "Something with a good beat to bounce to."),
+
+        // ---- the one you have to charge up ------------------------------------------------
+        t("blastwave", "Blast Wave Trail", Rarity.LEGENDARY, Style.BLAST, Motion.STREAK,
+            0xFFBFF4FF, 0xFF1E5FD6, 0xFFFFFFFF,
+            "A white-hot beam with the shock ring still catching up.")
     )
 
     val byId: Map<String, Trail> = ALL.associateBy { it.id }

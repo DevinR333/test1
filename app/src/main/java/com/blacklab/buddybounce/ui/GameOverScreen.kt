@@ -3,6 +3,7 @@ package com.blacklab.buddybounce.ui
 import android.graphics.Canvas
 import com.blacklab.buddybounce.Game
 import com.blacklab.buddybounce.game.MathX.smoothstep
+import com.blacklab.buddybounce.data.Powerups
 import com.blacklab.buddybounce.game.Tuning
 import com.blacklab.buddybounce.render.ColorX
 import com.blacklab.buddybounce.render.Palettes
@@ -17,6 +18,7 @@ class GameOverScreen(private val g: Game) {
         const val MENU = 7002
         const val WARDROBE = 7003
         const val GACHA = 7004
+        const val CONTINUE = 7005
     }
 
     fun draw(c: Canvas) {
@@ -72,7 +74,25 @@ class GameOverScreen(private val g: Game) {
         val bw = w - 96f
         val bx = x + 48f
         var by = y + h - 268f
-        if (ui.button(c, Id.RETRY, bx, by, bw, 116f, "BOUNCE AGAIN", Ui.ButtonStyle.PRIMARY)) {
+
+        // A Second Life is spent HERE, not chosen before a run - it is the answer to "no, not
+        // yet". Offering it above BOUNCE AGAIN puts it where the thumb already is.
+        val lives = g.save.powerupCount(Powerups.SECOND_LIFE)
+        if (lives > 0) {
+            by -= 124f
+            if (ui.button(
+                    c, Id.CONTINUE, bx, by, bw, 108f, "SECOND LIFE", Ui.ButtonStyle.PRIMARY,
+                    sublabel = "carry on from here \u00b7 $lives left"
+                )
+            ) {
+                g.tap(); g.reviveWithSecondLife()
+            }
+            ui.shimmer(c, bx, by, bw, 108f, 36f, 0.4f + 0.35f * sin(ui.time * 3.4f))
+            by += 124f
+        }
+
+        if (ui.button(c, Id.RETRY, bx, by, bw, 116f,
+                if (lives > 0) "START OVER" else "BOUNCE AGAIN", Ui.ButtonStyle.PRIMARY)) {
             g.tap(); g.startRun()
         }
         by += 132f

@@ -51,6 +51,8 @@ class World(worldWidth: Float, private val events: Events) {
     var maxY = 0f
         private set
     var runCoins = 0
+    /** Halos picked up this run. Only ever non-zero in [haloMode]. */
+    var runHalos = 0
         private set
     var bonusScore = 0
         private set
@@ -84,6 +86,12 @@ class World(worldWidth: Float, private val events: Events) {
     private var dragTargetX = 0f
     private var wasDragging = false
     private var nextCoinY = 0f
+    /**
+     * Heaven rules: the currency on the ground is halos, and height milestones pay NOTHING.
+     * Halos have to be earned by actually collecting them, which is what makes a thousand of
+     * them mean something.
+     */
+    var haloMode = false
     /** Last value of [heightBonusCoins] we told anyone about, so we can report the increments. */
     private var reportedBonusCoins = 0
     private var coinsPlaced = 0
@@ -94,7 +102,7 @@ class World(worldWidth: Float, private val events: Events) {
 
     /** Coins awarded for the height climbed, on top of the ones picked up. */
     val heightBonusCoins: Int
-        get() = (score / Tuning.SCORE_PER_BONUS_COIN) * coinMultiplier
+        get() = if (haloMode) 0 else (score / Tuning.SCORE_PER_BONUS_COIN) * coinMultiplier
 
     /** Screens climbed at an arbitrary world Y - used by generation and the backdrop. */
     fun screensAt(y: Float): Float = (y - startY) / Tuning.VIEW_H
@@ -109,6 +117,7 @@ class World(worldWidth: Float, private val events: Events) {
         startY = Tuning.GROUND_Y
         maxY = startY
         runCoins = 0
+        runHalos = 0
         bonusScore = 0
         reportedBonusCoins = 0
         finished = false
@@ -572,6 +581,7 @@ class World(worldWidth: Float, private val events: Events) {
         }
 
         when (c.kind) {
+            PickupKind.HALO -> runHalos += Tuning.HALO_VALUE
             PickupKind.COIN -> runCoins += Tuning.COIN_VALUE * coinMultiplier
             PickupKind.BONE -> runCoins += Tuning.BONE_COIN_VALUE * coinMultiplier
             PickupKind.SHIELD -> { b.shieldTime = Tuning.SHIELD_TIME }
@@ -678,6 +688,28 @@ class World(worldWidth: Float, private val events: Events) {
         buddy.vy = if (cause == DeathCause.ENEMY) 700f else buddy.vy
         finished = true
         events.onDeath(cause)
+    }
+
+    /**
+     * Second Life: put him back on his paws where he fell and let the run continue.
+     *
+     * The camera, the height already climbed and every platform stay exactly as they were -
+     * this is a continue, not a restart. He gets a bounce's worth of upward speed and a moment
+     * of invulnerability so he is not killed again by whatever he landed in.
+     */
+    fun revive() {
+        val b = buddy
+        b.dying = false
+        b.alive = true
+        b.deathT = 0f
+        b.vx = 0f
+        b.vy = Tuning.JUMP_V * 1.15f
+        // If he fell below the view, lift him back into it - continuing off-screen is no use.
+        val floor = camY + Tuning.VIEW_H * 0.16f
+        if (b.y < floor) b.y = floor
+        b.invulnT = 2.5f
+        finished = false
+        deathSettled = false
     }
 
     private fun updateCamera(dt: Float) {
@@ -832,10 +864,15 @@ class World(worldWidth: Float, private val events: Events) {
      */
     private fun maybeCoin(p: Platform, s: Float) {
         if (genY < nextCoinY) return
-        nextCoinY = genY + rand(Tuning.COIN_SPACING_MIN, Tuning.COIN_SPACING_MAX) * coinSpacingScale
+        val spacing = coinSpacingScale * (if (haloMode) Tuning.HALO_SPACING_SCALE else 1f)
+        nextCoinY = genY + rand(Tuning.COIN_SPACING_MIN, Tuning.COIN_SPACING_MAX) * spacing
         coinsPlaced++
         val c = pickups.obtain()
-        c.kind = if (coinsPlaced % Tuning.BONE_EVERY == 0) PickupKind.BONE else PickupKind.COIN
+        c.kind = when {
+            haloMode -> PickupKind.HALO
+            coinsPlaced % Tuning.BONE_EVERY == 0 -> PickupKind.BONE
+            else -> PickupKind.COIN
+        }
         // Slightly off to one side and up, so it is a small detour rather than a freebie.
         c.x = clamp(
             p.x + rand(-1f, 1f) * p.w * 0.9f,

@@ -126,11 +126,17 @@ class Pose {
     var spin = 0f          // death tumble, radians
     var dead = false
     var time = 0f
+    /**
+     * 0 = the ordinary dog, 1 = the blessed one: translucent, with wings and a halo. Heaven
+     * forces it on, a Second Life turns it on for the rest of a run, and a thousand halos buys
+     * it as a wardrobe toggle that works anywhere.
+     */
+    var ghost = 0f
 
     fun reset(): Pose {
         squash = 0f; lean = 0f; earFlap = 0f; tail = 0f; blink = 0f; mouth = 0f
         facing = 1f; flight = Flight.NONE; flightT = 0f; shield = 0f; invuln = 0f
-        hurt = 0f; spin = 0f; dead = false; time = 0f
+        hurt = 0f; spin = 0f; dead = false; time = 0f; ghost = 0f
         return this
     }
 }
@@ -213,8 +219,21 @@ class BuddyArt(private val art: Art) {
         val tuck = clamp01(-pose.squash)
         ink.strokeWidth = 6f
 
+        // The wings go on behind everything, at full strength - they are made of light, so they
+        // should not fade out along with the dog.
+        if (pose.ghost > 0.01f) drawWings(c, pose)
+
         drawFlightBack(c, pose)
         OutfitArt.drawBack(c, outfit, pose, rim)
+
+        // The dog himself, and whatever he is wearing, go into one layer so the whole thing can
+        // be made translucent together. Fading each shape individually would let the ones behind
+        // show through the ones in front, which reads as a mess rather than as a ghost.
+        val ghostLayer = if (pose.ghost > 0.01f) {
+            c.saveLayerAlpha(null, (255 * (1f - 0.42f * pose.ghost)).toInt())
+        } else {
+            -1
+        }
         drawTail(c, pose, rim)
         drawLegs(c, pose, stretch, tuck, back = true)
         drawBody(c, pose, rim)
@@ -223,6 +242,9 @@ class BuddyArt(private val art: Art) {
         drawHead(c, pose, rim)
         drawEar(c, pose)
         OutfitArt.drawHead(c, outfit, pose, rim)
+        if (ghostLayer >= 0) c.restoreToCount(ghostLayer)
+
+        if (pose.ghost > 0.01f) drawHalo(c, pose)
         drawFlightFront(c, pose)
 
         if (pose.hurt > 0.01f) {
@@ -760,5 +782,80 @@ class BuddyArt(private val art: Art) {
         p.style = Paint.Style.FILL
         p.color = ColorX.withAlpha(0xFF9FDCF7.toInt(), 0.09f * base)
         c.drawCircle(cx, cy, r, p)
+    }
+
+    // -------------------------------------------------------------------------------------
+    // the blessed look: wings and a halo
+    // -------------------------------------------------------------------------------------
+
+    /** Two feathered wings off the shoulders, beating slowly. */
+    private fun drawWings(c: Canvas, pose: Pose) {
+        val a = clamp01(pose.ghost)
+        val beat = sin(pose.time * 4.2f)
+        val ox = BuddyGeom.BODY_CX + 6f
+        val oy = BuddyGeom.BACK_Y + 18f
+
+        art.drawGlow(c, ox, oy, 320f, 0xFFFFF6DC.toInt(), 0.3f * a)
+
+        for (side in 0 until 2) {
+            // the far wing is smaller and dimmer, so the pair reads as depth rather than a
+            // symmetrical cut-out stuck on his back
+            val far = side == 0
+            val k = if (far) 0.82f else 1f
+            val lift = beat * (if (far) 12f else 18f)
+            p.reset(); p.isAntiAlias = true
+            p.color = ColorX.withAlpha(0xFFFFFDF4.toInt(), a * (if (far) 0.5f else 0.9f))
+
+            c.save()
+            c.translate(ox, oy)
+            c.scale(k, k)
+            c.rotate(if (far) 8f else -4f)
+
+            // three overlapping feather banks per wing
+            for (bank in 0 until 3) {
+                val bk = 1f - bank * 0.22f
+                path.reset()
+                path.moveTo(-6f, 0f)
+                path.cubicTo(
+                    -58f * bk, -50f * bk - lift,
+                    -128f * bk, -18f * bk - lift * 0.6f,
+                    -104f * bk, 26f * bk
+                )
+                path.cubicTo(-70f * bk, 18f * bk, -30f * bk, 10f * bk, -6f, 0f)
+                path.close()
+                c.drawPath(path, p)
+            }
+            // primary feather separations
+            ink.strokeWidth = 2.4f
+            ink.color = ColorX.withAlpha(0xFFD8E4F2.toInt(), a * 0.55f)
+            for (i in 0 until 4) {
+                val t = i / 3f
+                c.drawLine(-30f - t * 30f, 2f + t * 6f, -70f - t * 40f, 14f + t * 8f, ink)
+            }
+            ink.color = coat.ink
+            ink.strokeWidth = 6f
+            c.restore()
+        }
+    }
+
+    /** The ring, floating above the skull and tilting gently. */
+    private fun drawHalo(c: Canvas, pose: Pose) {
+        val a = clamp01(pose.ghost)
+        val hx = BuddyGeom.HEAD_CX - 4f
+        val hy = BuddyGeom.HEAD_CY - BuddyGeom.HEAD_R * 1.85f + sin(pose.time * 1.9f) * 4f
+        val rad = 30f
+        val tilt = 0.3f + 0.07f * sin(pose.time * 1.5f)
+
+        art.drawGlow(c, hx, hy, rad * 5f, 0xFFFFE9A8.toInt(), 0.45f * a)
+        p.reset(); p.isAntiAlias = true
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = rad * 0.24f
+        p.color = ColorX.withAlpha(0xFFFFE9A8.toInt(), a)
+        rect.set(hx - rad, hy - rad * tilt, hx + rad, hy + rad * tilt)
+        c.drawOval(rect, p)
+        p.strokeWidth = rad * 0.09f
+        p.color = ColorX.withAlpha(0xFFFFFDF0.toInt(), a * 0.85f)
+        c.drawOval(rect, p)
+        p.style = Paint.Style.FILL
     }
 }

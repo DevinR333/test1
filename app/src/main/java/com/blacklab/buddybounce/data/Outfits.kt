@@ -79,16 +79,29 @@ object Outfits {
         Outfit("hero", "Hero Outfit", Rarity.LEGENDARY, "Purple tunic, pointed cap, one very small sword."),
         Outfit("robot", "Robo-Buddy", Rarity.LEGENDARY, "Beep. Boop. Good. Boy."),
         Outfit("unicorn", "Unicorn Onesie", Rarity.LEGENDARY, "Majestic. Slightly chewed."),
-        Outfit("anti", "Anti-Buddy", Rarity.LEGENDARY, "Same dog. Opposite dog.")
+        Outfit("anti", "Anti-Buddy", Rarity.LEGENDARY, "Same dog. Opposite dog."),
+        Outfit("fighter", "Fighting Gi", Rarity.LEGENDARY, "Orange gi, blue belt, hair that defies everything."),
+        Outfit(HEAVEN_ONLY_ID, "Good Boy Eternal", Rarity.LEGENDARY, "Wings, a halo, and absolutely nothing left to prove.")
     )
 
     private val index: Map<String, Outfit> = ALL.associateBy { it.id }
+
+    /**
+     * The one outfit that lives BEHIND Heaven rather than in front of it. It must never count
+     * toward "have I unlocked everything", or the world it comes from could never be reached.
+     */
+    const val HEAVEN_ONLY_ID = "eternal"
 
     fun byId(id: String): Outfit? = index[id]
 
     fun of(id: String): Outfit = index[id] ?: ALL[0]
 
-    fun inRarity(r: Rarity): List<Outfit> = ALL.filter { it.rarity == r && it.id != DEFAULT_ID }
+    /**
+     * The machine's pool for a rarity. Excludes the default collar (you start in it) and the
+     * Heaven-only outfit, which is earned by reaching Heaven rather than won.
+     */
+    fun inRarity(r: Rarity): List<Outfit> =
+        ALL.filter { it.rarity == r && it.id != DEFAULT_ID && it.id != HEAVEN_ONLY_ID }
 
     /** How many outfits a completionist needs (the default collar doesn't count). */
     val collectableCount: Int = ALL.count { it.id != DEFAULT_ID }

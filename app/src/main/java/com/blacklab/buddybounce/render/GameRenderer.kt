@@ -397,6 +397,7 @@ class GameRenderer(private val art: Art) {
             PickupKind.ROCKET -> rocketIcon(c, pk.x, y, time)
             PickupKind.SHIELD -> shieldIcon(c, pk.x, y, time)
             PickupKind.MAGNET -> magnetIcon(c, pk.x, y)
+            PickupKind.HALO -> haloPickup(c, pk.x, y, time + pk.t)
         }
     }
 
@@ -570,6 +571,33 @@ class GameRenderer(private val art: Art) {
         c.drawRect(r, p)
         r.set(x + 16f, y - 2f, x + 32f, y + 24f)
         c.drawRect(r, p)
+    }
+
+    /**
+     * Heaven's currency. A tilting ring of light rather than a disc, so it never reads as a
+     * coin with a different tint - in that world the coin is simply not what you are collecting.
+     */
+    private fun haloPickup(c: Canvas, x: Float, y: Float, t: Float) {
+        val tilt = 0.28f + 0.16f * sin(t * 2.2f)
+        art.drawGlow(c, x, y, 150f, 0xFFFFE9A8.toInt(), 0.5f)
+        p.reset(); p.isAntiAlias = true
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 11f
+        p.color = 0xFFE8B84A.toInt()
+        r.set(x - 30f, y - 30f * tilt, x + 30f, y + 30f * tilt)
+        c.drawOval(r, p)
+        p.strokeWidth = 6f
+        p.color = 0xFFFFE9A8.toInt()
+        c.drawOval(r, p)
+        p.strokeWidth = 2.4f
+        p.color = ColorX.withAlpha(0xFFFFFDF0.toInt(), 0.9f)
+        r.set(x - 26f, y - 26f * tilt - 2f, x + 14f, y + 26f * tilt - 2f)
+        c.drawArc(r, 186f, 130f, false, p)
+        p.style = Paint.Style.FILL
+        // a couple of motes orbiting it
+        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.8f)
+        c.drawCircle(x + cos(t * 2.4f) * 34f, y + sin(t * 2.4f) * 34f * tilt, 3.4f, p)
+        c.drawCircle(x + cos(t * 2.4f + 3.14f) * 34f, y + sin(t * 2.4f + 3.14f) * 34f * tilt, 2.8f, p)
     }
 
     // -----------------------------------------------------------------------------------

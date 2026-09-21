@@ -239,7 +239,7 @@ class MainActivity : Activity(), SensorEventListener, Game.Host {
         val entered = nameInput?.text?.toString().orEmpty()
         // Checked against the RAW text: the sanitiser strips the punctuation the code uses.
         if (game.isUnlockCode(entered)) {
-            game.applyUnlockCode()
+            game.applyUnlockCode(entered)
             hideNamePrompt()
             return
         }

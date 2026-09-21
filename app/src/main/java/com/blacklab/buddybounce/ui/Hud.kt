@@ -62,13 +62,14 @@ class Hud(private val g: Game) {
         // Everything this run is worth so far: the coins picked up PLUS the height bonus earned
         // so far. The bonus used to be invisible until the run ended, which made the "+N" flash
         // below meaningless - there was no number for it to be an increment of.
-        val runTotal = g.world.runCoins + g.world.heightBonusCoins
+        val halos = g.world.haloMode
+        val runTotal = if (halos) g.world.runHalos else g.world.runCoins + g.world.heightBonusCoins
         val coinText = runTotal.toString()
         val cw = ui.measure(coinText, 40f, ui.bodyLeft) + 104f
         val cx = g.worldW - ui.safeRight - cw - 18f
         val cy = pcy + 74f
         ui.pill(c, cx, cy, cw, 58f, 0xCC101728.toInt())
-        coinIcon(c, cx + 34f, cy + 29f, 20f)
+        if (halos) haloIcon(c, cx + 34f, cy + 29f, 20f) else coinIcon(c, cx + 34f, cy + 29f, 20f)
         ui.text(c, coinText, cx + 62f, cy + 42f, 40f, Theme.ACCENT, ui.bodyLeft, false)
 
         drawCoinFlash(c, cx + cw * 0.5f, cy)
@@ -128,6 +129,20 @@ class Hud(private val g: Game) {
         rect.set(x + 8f, y + 8f, x + 8f + (w - 16f) * clamp01(fill), y + h - 8f)
         c.drawRoundRect(rect, (h - 16f) * 0.5f, (h - 16f) * 0.5f, p)
         g.ui.text(c, label, x + w * 0.5f, y + h * 0.5f + 10f, 26f, 0xFF10151F.toInt(), g.ui.title, false)
+    }
+
+    /** The halo counter's icon: a ring, not a disc, so Heaven never looks like coins. */
+    private fun haloIcon(c: Canvas, cx: Float, cy: Float, r: Float) {
+        p.reset(); p.isAntiAlias = true
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = r * 0.38f
+        p.color = Theme.ACCENT_DEEP
+        rect.set(cx - r, cy - r * 0.42f, cx + r, cy + r * 0.42f)
+        c.drawOval(rect, p)
+        p.strokeWidth = r * 0.2f
+        p.color = 0xFFFFE9A8.toInt()
+        c.drawOval(rect, p)
+        p.style = Paint.Style.FILL
     }
 
     private fun coinIcon(c: Canvas, cx: Float, cy: Float, r: Float) {
@@ -213,7 +228,7 @@ class Hud(private val g: Game) {
         val bx = x + 48f
         var by = y + headerH * k
         if (ui.button(c, Id.RESUME, bx, by, bw, btnH[0] * k, "RESUME", Ui.ButtonStyle.PRIMARY)) {
-            g.tap(); g.goto(Game.Screen.PLAY)
+            g.tap(); g.resumeFromPause()
         }
         by += (btnH[0] + gap) * k
         if (ui.button(c, Id.RESTART, bx, by, bw, btnH[1] * k, "RESTART")) {

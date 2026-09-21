@@ -69,6 +69,7 @@ object OutfitArt {
             "mafia" -> coatTail(c, pose, 0xFF3A3F55.toInt())
             "ninja" -> ninjaScarf(c, pose)
             "french" -> onionString(c)
+            "fighter" -> auraBack(c, pose)
         }
     }
 
@@ -85,6 +86,7 @@ object OutfitArt {
             "racer" -> { torso(c, 0xFFE8433C.toInt(), 0xFFB32C28.toInt()); racingStripe(c) }
             "pirate" -> torso(c, 0xFF2F4A6E.toInt(), 0xFF1E3350.toInt())
             "french" -> { torso(c, 0xFFF4F6FA.toInt(), 0xFFDDE3EC.toInt()); bretonStripes(c) }
+            "fighter" -> { torso(c, 0xFFF2882A.toInt(), 0xFFC96A16.toInt()); giWrap(c) }
             "mike" -> { torso(c, 0xFF17181C.toInt(), 0xFF0D0E11.toInt()); tongueLogo(c) }
             "cape" -> torso(c, 0xFF2F6FD6.toInt(), 0xFF1F4C99.toInt())
             "knight" -> plate(c)
@@ -154,6 +156,7 @@ object OutfitArt {
             // Anti-Buddy is not a garment - the recolour happens in BuddyArt via Coats - so all
             // he needs here is a collar dark enough to show against a white coat.
             "anti" -> collar(c, 0xFF2A2F3D.toInt())
+            "fighter" -> spikyHair(c)
         }
     }
 
@@ -243,70 +246,201 @@ object OutfitArt {
     }
 
     /**
-     * The neck runs diagonally from the chest up to the jaw, so the collar is a band drawn
-     * across that axis rather than a flat bar - otherwise it reads as a floating rectangle.
-     * The tag hangs from the throat under gravity, not off the side.
+     * The collar.
+     *
+     * Two earlier attempts drew it as a rounded rectangle laid across the throat, and both read
+     * as a pill stuck ON Buddy rather than webbing going round him - because a flat bar has no
+     * far side. A strap round a neck seen in profile is an ELLIPSE seen almost edge-on: the top
+     * arc disappears behind the neck and the bottom arc passes in front of it. Drawing it as an
+     * arc pair - the far half dark and thin, the near half full and lit - is what makes it wrap
+     * instead of sit. The tag then hangs from the near side under gravity.
      */
     private fun collar(c: Canvas, color: Int) {
         c.save()
-        c.translate(36f, -96f)
-        c.rotate(21f)
+        // on the throat, square to the neck's diagonal
+        c.translate(30f, -92f)
+        c.rotate(24f)
 
-        // 13 units of webbing, not 22. At the old thickness, with an 8-unit corner radius on an
-        // 80-wide band, the two ends met in the middle and the whole thing read as a pill stuck
-        // to his neck rather than a strap going round it. A flat strap with barely-rounded ends
-        // reads as leather at any size.
-        r.set(-42f, -6.5f, 42f, 6.5f)
-        c.drawRoundRect(r, 3f, 3f, ink)
+        val rx = 44f          // half-way round the neck
+        val ry = 15f          // how open the ellipse is - small, because we see it nearly edge-on
+        val band = 13f        // the webbing's width
+
+        r.set(-rx, -ry, rx, ry)
+
+        p.reset(); p.isAntiAlias = true
+        p.style = Paint.Style.STROKE
+        p.strokeCap = Paint.Cap.BUTT
+
+        // --- the far half, going round the back of the neck ---------------------------------
+        // Thinner and much darker: it is in the neck's shadow and partly hidden by it, which is
+        // the cue that sells the wrap.
+        p.strokeWidth = band * 0.7f
+        p.color = ColorX.shade(color, 0.42f)
+        c.drawArc(r, 182f, 176f, false, p)
+
+        // --- the near half, passing in front ------------------------------------------------
+        p.strokeWidth = band + 4f
+        p.color = BuddyGeom.INK
+        c.drawArc(r, 2f, 176f, false, p)
+        p.strokeWidth = band
         p.color = color
-        c.drawRoundRect(r, 3f, 3f, p)
+        c.drawArc(r, 2f, 176f, false, p)
 
-        // lower third in shadow, a fine stitch line along the top edge
-        p.color = ColorX.shade(color, 0.68f)
-        r.set(-42f, 2f, 42f, 6.5f)
+        // lit along the top edge of the near strap, shaded along the bottom
+        p.strokeWidth = band * 0.28f
+        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.26f)
+        r.set(-rx, -ry + band * 0.34f, rx, ry + band * 0.34f)
+        c.drawArc(r, 8f, 164f, false, p)
+        p.color = ColorX.withAlpha(0xFF000000.toInt(), 0.3f)
+        r.set(-rx, -ry - band * 0.36f, rx, ry - band * 0.36f)
+        c.drawArc(r, 8f, 164f, false, p)
+
+        // stitching, following the same curve
+        p.strokeWidth = 1.6f
+        p.color = ColorX.withAlpha(0xFF000000.toInt(), 0.35f)
+        r.set(-rx + 3f, -ry + band * 0.18f, rx - 3f, ry + band * 0.18f)
+        c.drawArc(r, 12f, 156f, false, p)
+
+        p.style = Paint.Style.FILL
+
+        // --- buckle, on the near side where it would actually sit ---------------------------
+        val bx = 6f
+        val by = ry * 0.82f
+        p.color = ColorX.shade(0xFFD8DEE9.toInt(), 0.55f)
+        r.set(bx - 8f, by - 9f, bx + 8f, by + 9f)
         c.drawRoundRect(r, 2.5f, 2.5f, p)
-        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.2f)
-        r.set(-35f, -4.5f, 35f, -2.8f)
+        p.color = 0xFFD8DEE9.toInt()
+        r.set(bx - 7f, by - 8f, bx + 7f, by + 8f)
+        c.drawRoundRect(r, 2.5f, 2.5f, p)
+        p.color = ColorX.shade(color, 0.7f)
+        r.set(bx - 3f, by - 5f, bx + 3f, by + 5f)
         c.drawRect(r, p)
 
-        // buckle: only a little proud of the webbing
-        p.color = 0xFFD8DEE9.toInt()
-        r.set(-5f, -8.5f, 6f, 8.5f)
-        c.drawRoundRect(r, 2f, 2f, p)
-        p.color = 0xFF9AA4B4.toInt()
-        r.set(-2f, -6f, 1.5f, 6f)
-        c.drawRect(r, p)
         c.restore()
 
-        // a little bone tag on a ring, hanging under the throat
-        val tx = 52f
-        val ty = -72f
-        ink.strokeWidth = 3.2f
-        c.drawLine(tx - 4f, ty - 12f, tx, ty - 5f, ink)
-        p.color = 0xFFF2C14E.toInt()
-        r.set(tx - 9f, ty - 4f, tx + 9f, ty + 3f)
-        c.drawRoundRect(r, 3.5f, 3.5f, p)
-        c.drawCircle(tx - 9f, ty - 4f, 4.5f, p)
-        c.drawCircle(tx - 9f, ty + 3f, 4.5f, p)
-        c.drawCircle(tx + 9f, ty - 4f, 4.5f, p)
-        c.drawCircle(tx + 9f, ty + 3f, 4.5f, p)
-        p.color = ColorX.withAlpha(0xFFB98F25.toInt(), 0.7f)
-        r.set(tx - 6f, ty - 1f, tx + 6f, ty + 2f)
-        c.drawRoundRect(r, 1.5f, 1.5f, p)
+        // --- the tag, hanging off the near side --------------------------------------------
+        val tx = 44f
+        val ty = -70f
+        ink.strokeWidth = 3f
+        ink.color = 0xFF9AA4B4.toInt()
+        c.drawLine(tx - 2f, ty - 13f, tx, ty - 5f, ink)
+        ink.color = BuddyGeom.INK
         ink.strokeWidth = 5f
+        p.color = 0xFFF2C14E.toInt()
+        r.set(tx - 8f, ty - 4f, tx + 8f, ty + 2f)
+        c.drawRoundRect(r, 3f, 3f, p)
+        c.drawCircle(tx - 8f, ty - 4f, 4f, p)
+        c.drawCircle(tx - 8f, ty + 2f, 4f, p)
+        c.drawCircle(tx + 8f, ty - 4f, 4f, p)
+        c.drawCircle(tx + 8f, ty + 2f, 4f, p)
+        p.color = ColorX.withAlpha(0xFFB98F25.toInt(), 0.75f)
+        r.set(tx - 5f, ty - 1.5f, tx + 5f, ty + 0.5f)
+        c.drawRoundRect(r, 1f, 1f, p)
     }
 
+    /**
+     * A bandana: a square folded corner-to-corner, wrapped round the neck and knotted, with the
+     * point hanging down the chest.
+     *
+     * The old one was a flat four-sided blob with two dots on it, which read as a bib. What
+     * makes a bandana legible is the three parts working together - the wrap going round (so it
+     * is tied ON, not painted on), the KNOT with its two little tails, and the folded triangle
+     * draping over the chest with a soft hem rather than a straight cut.
+     */
     private fun bandana(c: Canvas) {
+        val cloth = 0xFFCC3B3B.toInt()
+        val shade = ColorX.shade(cloth, 0.72f)
+
+        // --- the draped triangle, drawn first so the wrap and knot sit over its top edge -----
         path.reset()
-        path.moveTo(NECK_X - 22f, NECK_Y - 2f)
-        path.lineTo(NECK_X + 26f, NECK_Y - 18f)
-        path.lineTo(NECK_X + 22f, NECK_Y + 28f)
-        path.lineTo(NECK_X - 6f, NECK_Y + 34f)
+        path.moveTo(0f, -92f)                                 // shoulder, far side
+        path.cubicTo(18f, -86f, 44f, -88f, 62f, -96f)         // across the chest under the wrap
+        path.cubicTo(62f, -74f, 52f, -54f, 34f, -42f)         // the near edge falling away
+        path.cubicTo(28f, -46f, 22f, -48f, 18f, -54f)         // the point, softened
+        path.cubicTo(10f, -66f, 2f, -80f, 0f, -92f)
         path.close()
-        fillInk(c, 0xFFCC3B3B.toInt())
-        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.5f)
-        c.drawCircle(NECK_X + 8f, NECK_Y + 8f, 3.4f, p)
-        c.drawCircle(NECK_X + 16f, NECK_Y + 18f, 3.4f, p)
+        fillInk(c, cloth)
+
+        // the fold - a bandana is a square doubled over, so there is always a second layer
+        p.color = ColorX.withAlpha(shade, 0.85f)
+        path.reset()
+        path.moveTo(4f, -88f)
+        path.cubicTo(20f, -80f, 40f, -82f, 56f, -90f)
+        path.cubicTo(52f, -80f, 30f, -74f, 4f, -88f)
+        path.close()
+        c.drawPath(path, p)
+
+        // hem stitching along the falling edge
+        ink.strokeWidth = 2.2f
+        ink.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.35f)
+        path.reset()
+        path.moveTo(58f, -90f)
+        path.cubicTo(58f, -72f, 48f, -56f, 34f, -46f)
+        c.drawPath(path, ink)
+        ink.color = BuddyGeom.INK
+        ink.strokeWidth = 5f
+
+        // polka dots, kept inside the cloth
+        p.color = ColorX.withAlpha(0xFFFFF0F0.toInt(), 0.7f)
+        c.drawCircle(22f, -76f, 3.6f, p)
+        c.drawCircle(40f, -80f, 3.2f, p)
+        c.drawCircle(33f, -62f, 3.4f, p)
+        c.drawCircle(46f, -66f, 2.8f, p)
+
+        // --- the wrap round the neck --------------------------------------------------------
+        c.save()
+        c.translate(30f, -92f)
+        c.rotate(24f)
+        val rx = 42f
+        val ry = 14f
+        r.set(-rx, -ry, rx, ry)
+        p.style = Paint.Style.STROKE
+        p.strokeCap = Paint.Cap.BUTT
+        p.strokeWidth = 10f
+        p.color = ColorX.shade(cloth, 0.45f)          // behind the neck
+        c.drawArc(r, 182f, 176f, false, p)
+        p.strokeWidth = 17f
+        p.color = BuddyGeom.INK
+        c.drawArc(r, 2f, 176f, false, p)
+        p.strokeWidth = 13f
+        p.color = cloth
+        c.drawArc(r, 2f, 176f, false, p)
+        p.strokeWidth = 3f
+        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.22f)
+        r.set(-rx, -ry + 4f, rx, ry + 4f)
+        c.drawArc(r, 10f, 160f, false, p)
+        p.style = Paint.Style.FILL
+        c.restore()
+
+        // --- the knot, off to the back, with two tails --------------------------------------
+        val kx = -2f
+        val ky = -96f
+        path.reset()
+        path.moveTo(kx - 11f, ky - 8f)
+        path.cubicTo(kx + 2f, ky - 13f, kx + 2f, ky + 11f, kx - 11f, ky + 7f)
+        path.cubicTo(kx - 17f, ky + 3f, kx - 17f, ky - 4f, kx - 11f, ky - 8f)
+        path.close()
+        fillInk(c, cloth)
+        p.color = ColorX.withAlpha(shade, 0.8f)
+        path.reset()
+        path.moveTo(kx - 12f, ky - 2f)
+        path.cubicTo(kx - 5f, ky - 5f, kx - 5f, ky + 4f, kx - 12f, ky + 2f)
+        path.close()
+        c.drawPath(path, p)
+
+        p.color = cloth
+        path.reset()                                   // upper tail
+        path.moveTo(kx - 9f, ky - 6f)
+        path.lineTo(kx - 27f, ky - 17f)
+        path.lineTo(kx - 22f, ky - 5f)
+        path.close()
+        c.drawPath(path, p)
+        path.reset()                                   // lower tail
+        path.moveTo(kx - 9f, ky + 4f)
+        path.lineTo(kx - 26f, ky + 9f)
+        path.lineTo(kx - 20f, ky - 1f)
+        path.close()
+        c.drawPath(path, p)
     }
 
     /** A cap with a forward brim, used by several outfits. */
@@ -1367,5 +1501,124 @@ object OutfitArt {
         p.color = ColorX.shade(0xFFE0566A.toInt(), 0.78f)
         c.drawLine(0f, 8f, 10f, 20f, ink)
         c.restore()
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Fighting Gi
+    // -------------------------------------------------------------------------------------
+
+    /** The crossed-over jacket front and the blue belt that holds it shut. */
+    private fun giWrap(c: Canvas) {
+        val cloth = 0xFFF2882A.toInt()
+        val under = 0xFF2E56B8.toInt()
+
+        // the blue undershirt showing at the collar
+        p.color = under
+        path.reset()
+        path.moveTo(BX1 - 18f, BACK + 12f)
+        path.cubicTo(BX1 - 4f, BACK + 30f, BX1 - 8f, BACK + 52f, BX1 - 24f, BACK + 58f)
+        path.cubicTo(BX1 - 32f, BACK + 40f, BX1 - 30f, BACK + 22f, BX1 - 18f, BACK + 12f)
+        path.close()
+        c.drawPath(path, p)
+
+        // the jacket's left panel crossing over the right - the one detail that says "gi"
+        p.color = ColorX.shade(cloth, 0.86f)
+        path.reset()
+        path.moveTo(BX1 - 26f, BACK + 8f)
+        path.cubicTo(BX1 - 40f, BACK + 34f, BX0 + 40f, BELLY - 18f, BX0 + 16f, BELLY - 2f)
+        path.lineTo(BX0 + 10f, BELLY + 4f)
+        path.cubicTo(BX0 + 46f, BELLY - 22f, BX1 - 34f, BACK + 30f, BX1 - 18f, BACK + 6f)
+        path.close()
+        c.drawPath(path, p)
+        ink.strokeWidth = 3.4f
+        ink.color = ColorX.withAlpha(BuddyGeom.INK, 0.7f)
+        path.reset()
+        path.moveTo(BX1 - 22f, BACK + 8f)
+        path.cubicTo(BX1 - 40f, BACK + 34f, BX0 + 40f, BELLY - 18f, BX0 + 12f, BELLY + 2f)
+        c.drawPath(path, ink)
+        ink.color = BuddyGeom.INK
+        ink.strokeWidth = 5f
+
+        // the belt, knotted on the near side
+        p.color = under
+        r.set(BX0 + 2f, BELLY - 30f, BX1 - 6f, BELLY - 12f)
+        c.drawRoundRect(r, 4f, 4f, p)
+        p.color = ColorX.shade(under, 0.72f)
+        r.set(BX0 + 2f, BELLY - 17f, BX1 - 6f, BELLY - 12f)
+        c.drawRoundRect(r, 3f, 3f, p)
+        p.color = under
+        r.set(BX1 - 34f, BELLY - 34f, BX1 - 12f, BELLY - 8f)
+        c.drawRoundRect(r, 5f, 5f, p)          // the knot
+        p.color = ColorX.shade(under, 0.8f)
+        path.reset()                            // the hanging end
+        path.moveTo(BX1 - 30f, BELLY - 10f)
+        path.lineTo(BX1 - 24f, BELLY + 14f)
+        path.lineTo(BX1 - 14f, BELLY + 12f)
+        path.lineTo(BX1 - 16f, BELLY - 10f)
+        path.close()
+        c.drawPath(path, p)
+    }
+
+    /** Tall backswept spikes. Read as hair, not as a crown, because they all lean the same way. */
+    private fun spikyHair(c: Canvas) {
+        val hair = 0xFF2A1C10.toInt()
+        p.color = hair
+        // a low mass sitting on the skull, so the spikes have something to grow out of
+        r.set(HX - 34f, TOP - 4f, HX + 26f, TOP + 22f)
+        c.drawRoundRect(r, 12f, 12f, p)
+
+        // nine spikes, fanning back and getting shorter toward the nape
+        for (i in 0 until 9) {
+            val t = i / 8f
+            val baseX = HX + 22f - t * 62f
+            val lean = -18f - t * 26f                 // all leaning the same way = swept back
+            val len = 52f - t * 16f + (if (i % 2 == 0) 8f else 0f)
+            c.save()
+            c.translate(baseX, TOP + 6f)
+            c.rotate(lean)
+            path.reset()
+            path.moveTo(-9f, 4f)
+            path.lineTo(0f, -len)
+            path.lineTo(9f, 4f)
+            path.close()
+            c.drawPath(path, p)
+            c.restore()
+        }
+        // a couple of loose strands over the brow
+        c.save()
+        c.translate(HX + 24f, TOP + 14f)
+        c.rotate(26f)
+        path.reset()
+        path.moveTo(-6f, 2f); path.lineTo(2f, -30f); path.lineTo(7f, 3f); path.close()
+        c.drawPath(path, p)
+        c.restore()
+
+        // sheen, so it does not read as a flat black slab
+        p.color = ColorX.withAlpha(0xFF6B4A2F.toInt(), 0.5f)
+        r.set(HX - 24f, TOP - 1f, HX + 6f, TOP + 9f)
+        c.drawOval(r, p)
+
+        collar(c, 0xFF2E56B8.toInt())
+    }
+
+    /** A standing aura behind him - the charge-up flames, not an attack. */
+    private fun auraBack(c: Canvas, pose: Pose) {
+        val t = pose.time
+        p.color = ColorX.withAlpha(0xFFFFD24A.toInt(), 0.32f)
+        for (i in 0 until 7) {
+            val k = i / 6f
+            val x = BX0 - 6f + k * 118f
+            val flick = sin(t * 9f + i * 1.4f)
+            val h = 42f + flick * 14f + (if (i % 2 == 0) 16f else 0f)
+            path.reset()
+            path.moveTo(x - 11f, BACK + 16f)
+            path.quadTo(x - 4f + flick * 7f, BACK - h * 0.55f, x, BACK - h)
+            path.quadTo(x + 5f + flick * 7f, BACK - h * 0.5f, x + 11f, BACK + 16f)
+            path.close()
+            c.drawPath(path, p)
+        }
+        p.color = ColorX.withAlpha(0xFFFFF4C2.toInt(), 0.3f)
+        r.set(BX0 - 14f, BACK - 10f, BX1 + 14f, BELLY + 10f)
+        c.drawOval(r, p)
     }
 }

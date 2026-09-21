@@ -115,8 +115,10 @@ object PickupKind {
     const val ROCKET = 4
     const val SHIELD = 5
     const val MAGNET = 6
+    /** Heaven's currency. Replaces coins there, and is only ever a pick-up. */
+    const val HALO = 7
 
-    fun isCurrency(kind: Int): Boolean = kind == COIN || kind == BONE
+    fun isCurrency(kind: Int): Boolean = kind == COIN || kind == BONE || kind == HALO
 }
 
 class Pickup : Poolable {

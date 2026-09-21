@@ -60,6 +60,12 @@ class EnemyArt(private val art: Art) {
                 EnemyKind.STORM -> moltenRock(c, t, phase, a)
                 else -> obsidianRift(c, t, a)
             }
+            Fauna.HEAVEN -> when (kind) {
+                EnemyKind.BEE -> cherub(c, t, phase, facing, a)
+                EnemyKind.CROW -> seraph(c, t, phase, facing, a)
+                EnemyKind.STORM -> thundergate(c, t, phase, a)
+                else -> lightWell(c, t, a)
+            }
             else -> when (kind) {
                 EnemyKind.BEE -> bee(c, t, phase, a)
                 EnemyKind.CROW -> crow(c, t, phase, facing, a)
@@ -695,5 +701,157 @@ class EnemyArt(private val art: Art) {
             fill(ColorX.lerp(0xFFFFD25A.toInt(), 0xFF8E2B08.toInt(), (d - 34f) / 60f), a * 0.85f)
             c.drawCircle(cos(ph * 1.7f) * d, sin(ph * 1.3f) * d * 0.72f, 5.5f, p)
         }
+    }
+
+    // =====================================================================================
+    // Heaven - cherub, seraph, thundergate, light well
+    // =====================================================================================
+
+    /** A small round cherub with stubby wings and its own little halo. */
+    private fun cherub(c: Canvas, t: Float, phase: Float, facing: Float, a: Float) {
+        val flap = sin(t * 12f + phase)
+        c.scale(if (facing >= 0f) 1f else -1f, 1f)
+        art.drawGlow(c, 0f, -6f, 120f, 0xFFFFF4C2.toInt(), 0.3f * a)
+
+        fill(0xFFFFFDF2.toInt(), a * 0.9f)                 // wings
+        c.save(); c.scale(1f, 0.55f + 0.45f * abs(flap))
+        path.reset()
+        path.moveTo(-8f, -18f)
+        path.cubicTo(-44f, -46f, -62f, -14f, -30f, -2f)
+        path.cubicTo(-20f, 2f, -12f, -6f, -8f, -18f)
+        path.close()
+        c.drawPath(path, p)
+        path.reset()
+        path.moveTo(8f, -18f)
+        path.cubicTo(44f, -46f, 62f, -14f, 30f, -2f)
+        path.cubicTo(20f, 2f, 12f, -6f, 8f, -18f)
+        path.close()
+        c.drawPath(path, p)
+        c.restore()
+
+        fill(0xFFF6D9B8.toInt(), a)                        // body + head
+        r.set(-22f, -12f, 22f, 30f)
+        c.drawOval(r, p)
+        c.drawCircle(4f, -26f, 24f, p)
+        fill(0xFFE0B892.toInt(), a * 0.6f)
+        r.set(-16f, 8f, 18f, 30f)
+        c.drawOval(r, p)
+
+        eyes(c, -4f, 14f, -28f, 6f, a, 0xFF3A2A18.toInt())
+        fill(0xFFE07A88.toInt(), a * 0.55f)                 // cheeks
+        c.drawCircle(-12f, -20f, 6f, p)
+        c.drawCircle(22f, -20f, 6f, p)
+
+        halo(c, 4f, -58f, 22f, a, t)
+    }
+
+    /** A tall winged figure that patrols - all wings and light, no face to speak of. */
+    private fun seraph(c: Canvas, t: Float, phase: Float, facing: Float, a: Float) {
+        val flap = sin(t * 7f + phase)
+        c.scale(if (facing >= 0f) 1f else -1f, 1f)
+        art.drawGlow(c, 0f, -10f, 200f, 0xFFFFE9A8.toInt(), 0.36f * a)
+
+        // three pairs of wings, each pair beating out of phase with the last
+        for (pair in 0 until 3) {
+            val k = 1f - pair * 0.24f
+            val beat = sin(t * 7f + phase + pair * 1.1f)
+            fill(0xFFFFFDF4.toInt(), a * (0.85f - pair * 0.2f))
+            for (side in 0 until 2) {
+                val d = if (side == 0) -1f else 1f
+                path.reset()
+                path.moveTo(0f, -10f + pair * 14f)
+                path.cubicTo(
+                    d * 44f * k, -52f * k - beat * 18f,
+                    d * 82f * k, -18f * k - beat * 10f,
+                    d * 52f * k, 14f * k
+                )
+                path.cubicTo(d * 30f * k, 10f * k, d * 12f * k, 2f, 0f, -10f + pair * 14f)
+                path.close()
+                c.drawPath(path, p)
+            }
+        }
+        fill(0xFFFFF4D8.toInt(), a)                         // the body: a column of light
+        r.set(-13f, -34f, 13f, 34f)
+        c.drawRoundRect(r, 13f, 13f, p)
+        fill(0xFFFFFFFF.toInt(), a * 0.9f)
+        r.set(-7f, -28f, 7f, 22f)
+        c.drawRoundRect(r, 7f, 7f, p)
+        halo(c, 0f, -52f - flap * 3f, 26f, a, t)
+    }
+
+    /** A gate of cloud with light hammering through the bars. Static, and it hurts. */
+    private fun thundergate(c: Canvas, t: Float, phase: Float, a: Float) {
+        art.drawGlow(c, 0f, 0f, 190f, 0xFFFFE9A8.toInt(), 0.34f * a)
+        fill(0xFFE8EFF8.toInt(), a)                          // the cloud bank it sits in
+        c.drawCircle(-46f, 6f, 34f, p)
+        c.drawCircle(0f, -14f, 44f, p)
+        c.drawCircle(46f, 6f, 32f, p)
+        r.set(-60f, -6f, 60f, 32f)
+        c.drawRoundRect(r, 22f, 22f, p)
+
+        // gilded bars
+        fill(0xFFE8C87A.toInt(), a)
+        for (i in 0 until 4) {
+            val x = -36f + i * 24f
+            r.set(x - 5f, -24f, x + 5f, 40f)
+            c.drawRoundRect(r, 4f, 4f, p)
+        }
+        r.set(-44f, -30f, 44f, -20f)
+        c.drawRoundRect(r, 5f, 5f, p)
+
+        // the light between the bars, pulsing
+        val glow = 0.4f + 0.6f * abs(sin(t * 2.4f + phase))
+        fill(0xFFFFFBE8.toInt(), a * glow * 0.7f)
+        for (i in 0 until 3) {
+            val x = -24f + i * 24f
+            r.set(x - 6f, -20f, x + 6f, 38f)
+            c.drawRect(r, p)
+        }
+        eyes(c, -20f, 20f, 2f, 8f, a, 0xFF6E5A28.toInt())
+    }
+
+    /** A shaft of light with a ring turning inside it. The big static one. */
+    private fun lightWell(c: Canvas, t: Float, a: Float) {
+        art.drawGlow(c, 0f, 0f, 260f, 0xFFFFFFFF.toInt(), 0.5f * a)
+        // the shaft, widening upward
+        fill(0xFFFFF8E0.toInt(), a * 0.34f)
+        path.reset()
+        path.moveTo(-26f, 70f)
+        path.lineTo(-92f, -110f)
+        path.lineTo(92f, -110f)
+        path.lineTo(26f, 70f)
+        path.close()
+        c.drawPath(path, p)
+        fill(0xFFFFFFFF.toInt(), a * 0.3f)
+        path.reset()
+        path.moveTo(-12f, 66f)
+        path.lineTo(-44f, -110f)
+        path.lineTo(44f, -110f)
+        path.lineTo(12f, 66f)
+        path.close()
+        c.drawPath(path, p)
+
+        // rings falling through it
+        for (i in 0 until 3) {
+            val k = ((t * 0.5f + i * 0.33f) % 1f)
+            val y = -90f + k * 150f
+            val rad = 30f + k * 36f
+            stroke(0xFFFFE9A8.toInt(), a * (1f - k) * 0.9f, 6f)
+            r.set(-rad, y - rad * 0.3f, rad, y + rad * 0.3f)
+            c.drawOval(r, p)
+        }
+        fill(0xFFFFFFFF.toInt(), a * 0.85f)
+        c.drawCircle(0f, 0f, 16f, p)
+    }
+
+    /** The ring every Heaven creature wears. Also used for Buddy's own halo. */
+    private fun halo(c: Canvas, x: Float, y: Float, rad: Float, a: Float, t: Float) {
+        val tilt = 0.3f + 0.06f * sin(t * 1.7f)
+        art.drawGlow(c, x, y, rad * 4.5f, 0xFFFFE9A8.toInt(), 0.4f * a)
+        stroke(0xFFFFE9A8.toInt(), a, rad * 0.22f)
+        r.set(x - rad, y - rad * tilt, x + rad, y + rad * tilt)
+        c.drawOval(r, p)
+        stroke(0xFFFFFDF0.toInt(), a * 0.8f, rad * 0.08f)
+        c.drawOval(r, p)
     }
 }

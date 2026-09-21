@@ -24,6 +24,7 @@ class WardrobeScreen(private val g: Game) {
         const val RAND_OUTFIT = 3004
         const val RAND_TRAIL = 3005
         const val RAND_ALL = 3006
+        const val GHOST = 3007
     }
 
     /** Two collections share this screen; the tab strip at the top switches between them. */
@@ -80,8 +81,7 @@ class WardrobeScreen(private val g: Game) {
 
         val randY = ui.safeTop + 230f
         drawRandomizers(c, randY)
-
-        val top = randY + 92f
+        val top = drawGhostToggle(c, randY + 92f)
         // Whatever is left after the header, tabs and dice - which is what the preview and the
         // grid have to share. Nothing here is a fixed number, so a squarer screen or a tall
         // gesture bar shrinks the preview rather than pushing the grid off the bottom.
@@ -467,6 +467,30 @@ class WardrobeScreen(private val g: Game) {
             g.tap()
             if (g.randomizeAll()) syncSelectionToEquipped()
         }
+    }
+
+    /**
+     * The blessed look, once a thousand halos have been collected in Heaven. It is a toggle
+     * rather than an outfit because it goes OVER whatever he is wearing - the only cosmetic in
+     * the game that changes the dog rather than dressing him.
+     */
+    private fun drawGhostToggle(c: Canvas, y: Float): Float {
+        if (!g.save.ghostUnlocked) return y
+        val ui = g.ui
+        val left = ui.safeLeft + 36f
+        val w = g.worldW - ui.safeLeft - ui.safeRight - 72f
+        val on = g.save.ghostEnabled
+        if (ui.button(
+                c, Id.GHOST, left, y, w, 72f,
+                if (on) "BLESSED: ON" else "BLESSED: OFF",
+                if (on) Ui.ButtonStyle.PRIMARY else Ui.ButtonStyle.SECONDARY,
+                sublabel = "wings, halo and all"
+            )
+        ) {
+            g.tap()
+            g.save.ghostEnabled = !on
+        }
+        return y + 84f
     }
 
     /** Moves the preview and the grid highlight onto whatever is now equipped. */

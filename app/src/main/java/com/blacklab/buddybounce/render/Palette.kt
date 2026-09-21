@@ -95,6 +95,7 @@ object Fauna {
     const val NEON = 2
     const val FROST = 3
     const val EMBER = 4
+    const val HEAVEN = 5
 }
 
 /**
@@ -340,7 +341,58 @@ object Scenes {
         )
     )
 
-    val ALL: List<Scene> = listOf(YARD, OCEAN, NEON, FROST, EMBER)
+    // ---- Heaven ----------------------------------------------------------------------------
+
+    /**
+     * The secret world. It is never a prize: it appears once EVERYTHING else is unlocked, and it
+     * is the only world that changes Buddy himself - see Coats/Pose.ghost.
+     */
+    const val HEAVEN_ID = "heaven"
+
+    private val HEAVEN = Scene(
+        HEAVEN_ID, "Heaven",
+        "Nothing left to unlock, so the clouds opened. Collect halos, not coins.",
+        GroundStyle.YARD, 0xFFFFE9A8.toInt(), Fauna.HEAVEN,
+        listOf(
+            BiomePalette(
+                "Gates", BandStyle.CLOUDS,
+                0xFFBFD9F2.toInt(), 0xFFDCEAF8.toInt(), 0xFFF6F2E4.toInt(),
+                0xFFFFFFFF.toInt(), 0xFFF2F6FC.toInt(), 0xFFDCE6F2.toInt(),
+                0xFFFFF6DC.toInt(), 0xFFEBDCB4.toInt(), 0xFFC9B68A.toInt(), 0xFFFFE9A8.toInt(),
+                0xFFFFFFFF.toInt(), starAlpha = 0.1f, cloudAlpha = 1f
+            ),
+            BiomePalette(
+                "Cloudgarden", BandStyle.TREES,
+                0xFFA9CCEE.toInt(), 0xFFCFE4F6.toInt(), 0xFFEFF6E8.toInt(),
+                0xFFBFE6C4.toInt(), 0xFF8FCCA4.toInt(), 0xFF6AA98A.toInt(),
+                0xFFFFF4D8.toInt(), 0xFFE2D0A8.toInt(), 0xFFBFA87E.toInt(), 0xFFFFE9A8.toInt(),
+                0xFFFFFFFF.toInt(), starAlpha = 0.12f, cloudAlpha = 0.95f
+            ),
+            BiomePalette(
+                "Choir", BandStyle.AURORA,
+                0xFF8FB6E4.toInt(), 0xFFBBD6F0.toInt(), 0xFFE6EFFA.toInt(),
+                0xFFFFE9A8.toInt(), 0xFFEFD9F2.toInt(), 0xFFC9D8F0.toInt(),
+                0xFFFFF8E6.toInt(), 0xFFE8D4A8.toInt(), 0xFFC0A87C.toInt(), 0xFFFFF0C0.toInt(),
+                0xFFFFFFFF.toInt(), starAlpha = 0.4f, cloudAlpha = 0.7f
+            ),
+            BiomePalette(
+                "Halo Reach", BandStyle.NEBULA,
+                0xFF6E96CE.toInt(), 0xFF9FBEE6.toInt(), 0xFFD6E4F6.toInt(),
+                0xFFFFE9A8.toInt(), 0xFFE2C8F0.toInt(), 0xFFB6C6E6.toInt(),
+                0xFFFFF6E0.toInt(), 0xFFE0CCA0.toInt(), 0xFFB8A076.toInt(), 0xFFFFDE8A.toInt(),
+                0xFFFFFFFF.toInt(), starAlpha = 0.75f, cloudAlpha = 0.45f
+            ),
+            BiomePalette(
+                "The Light", BandStyle.AURORA,
+                0xFFF2EEDC.toInt(), 0xFFFAF6E8.toInt(), 0xFFFFFDF4.toInt(),
+                0xFFFFE9A8.toInt(), 0xFFFFF4CC.toInt(), 0xFFEDE0BC.toInt(),
+                0xFFFFFCF0.toInt(), 0xFFEAD9B0.toInt(), 0xFFC4B084.toInt(), 0xFFFFD87A.toInt(),
+                0xFFFFFFFF.toInt(), starAlpha = 1f, cloudAlpha = 0.3f
+            )
+        )
+    )
+
+    val ALL: List<Scene> = listOf(YARD, OCEAN, NEON, FROST, EMBER, HEAVEN)
 
     private val index: Map<String, Scene> = ALL.associateBy { it.id }
 
@@ -348,8 +400,12 @@ object Scenes {
 
     fun of(id: String): Scene = index[id] ?: YARD
 
-    /** Scenes other than the default, i.e. the ones the machine can hand out. */
-    val unlockable: List<Scene> = ALL.filter { it.id != DEFAULT_ID }
+    /**
+     * Scenes the machine can hand out: everything but the default yard and Heaven. Heaven is
+     * earned by completing the collection, never won, so it must never enter the prize pool -
+     * and it must not count toward "have I unlocked every world", or it would gate itself.
+     */
+    val unlockable: List<Scene> = ALL.filter { it.id != DEFAULT_ID && it.id != HEAVEN_ID }
 }
 
 /** Band lookup for the scene currently being played. */

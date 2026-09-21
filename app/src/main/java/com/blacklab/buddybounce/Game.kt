@@ -123,6 +123,13 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
     /** True while a finger is on the glass during the countdown, which fast-forwards it. */
     var holdingToSkip = false
         private set
+    /**
+     * True when the countdown is a RESUME from pause rather than the start of a run. Same beat,
+     * same hold-to-skip - the point is identical either way: a moment to find the platforms
+     * again before anything moves.
+     */
+    var resuming = false
+        private set
     var chosenPowerup: String? = null
         private set
     private var pendingPowerup: String? = null
@@ -132,6 +139,8 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
     var lastScore = 0
     var lastRunCoins = 0
     var lastBonusCoins = 0
+    /** Halos collected in the last run. Only ever non-zero after a run in Heaven. */
+    var lastHalos = 0
     var lastCoins = 0
     var lastRank = -1
     var lastNewBest = false
@@ -224,6 +233,21 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
     /** Points the renderer at the scene the player has selected. */
     fun applyScene() {
         Palettes.current = Scenes.of(save.selectedScene)
+        // Heaven changes the economy, not just the wallpaper: halos on the ground, and height
+        // pays nothing at all.
+        world.haloMode = save.selectedScene == Scenes.HEAVEN_ID
+    }
+
+    /** True when the dog should be drawn blessed: in Heaven, after a Second Life, or by choice. */
+    private fun ghostAmount(): Boolean =
+        world.haloMode || secondLifeActive || save.ghostEnabled
+
+    fun announceHeaven() {
+        notice = "HEAVEN IS OPEN"
+        noticeT = 4f
+        flashScreen(0.8f)
+        shakeScreen(0.5f)
+        audio.play(Audio.FANFARE, 1f)
     }
 
     fun goto(s: Screen) {
@@ -248,12 +272,16 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         fx.clear()
         applyScene()
         world.reset()
-        lastScore = 0; lastRunCoins = 0; lastBonusCoins = 0; lastCoins = 0
+        lastScore = 0; lastRunCoins = 0; lastBonusCoins = 0; lastCoins = 0; lastHalos = 0
         coinFlash = 0; coinFlashT = 0f
+        secondLifeActive = false
+        bankedCoinsThisRun = 0
+        continuedStamp = 0L
         lastRank = -1; lastNewBest = false
         chosenPowerup = null
         pendingPowerup = null
         lastCountdownTick = -1
+        resuming = false
         preRunPhase = if (save.totalPowerups() > 0) PreRun.PICK else PreRun.COUNTDOWN
         countdown = COUNTDOWN_SECONDS
         goto(Screen.PRERUN)
@@ -271,6 +299,7 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         preRunPhase = PreRun.COUNTDOWN
         countdown = COUNTDOWN_SECONDS
         holdingToSkip = false
+        resuming = false
         cosmeticAccum = 0f
         lastCountdownTick = -1
     }
@@ -301,21 +330,65 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         pendingPowerup = null
     }
 
-    /** Typing this as your name is a testing back door: it unlocks the lot. */
-    fun isUnlockCode(raw: String): Boolean = raw.trim().equals(UNLOCK_CODE, ignoreCase = true)
+    // -------------------------------------------------------------------------------------
+    // testing back doors
+    //
+    // Three names, all checked against the RAW text before the sanitiser strips punctuation:
+    //
+    //   u7d%4>   unlock everything, which also opens Heaven
+    //   u7d%4<   unlock everything EXCEPT one trail, so the final unlock - and Heaven opening
+    //            as a result of it - can actually be watched happening
+    //   u7d%4=   free spins on the prize machine, to grind out that last trail
+    // -------------------------------------------------------------------------------------
 
-    fun applyUnlockCode() {
-        for (o in Outfits.ALL) save.unlock(o.id)
-        for (sc in Scenes.ALL) save.unlockScene(sc.id)
-        for (tr in Trails.ALL) save.unlockTrail(tr.id)
-        for (pu in Powerups.ALL) save.grantPowerup(pu.id, 5)
-        save.grantCoins(1000)
+    fun isUnlockCode(raw: String): Boolean {
+        val t = raw.trim()
+        return t.equals(UNLOCK_CODE, ignoreCase = true) ||
+            t.equals(ALMOST_CODE, ignoreCase = true) ||
+            t.equals(FREE_SPINS_CODE, ignoreCase = true)
+    }
+
+    fun applyUnlockCode(raw: String) {
+        val t = raw.trim()
+        when {
+            t.equals(FREE_SPINS_CODE, ignoreCase = true) -> {
+                save.freeSpins = true
+                notice = "FREE SPINS ON"
+            }
+            t.equals(ALMOST_CODE, ignoreCase = true) -> unlockAllBut(1)
+            else -> unlockAllBut(0)
+        }
         if (!save.hasName) save.playerName = "TESTER"
-        notice = "EVERYTHING UNLOCKED"
-        noticeT = 3.2f
+        noticeT = 3.6f
         flashScreen(0.6f)
         audio.play(Audio.FANFARE, 0.9f)
         if (screen == Screen.NAME) goto(Screen.MENU)
+    }
+
+    /**
+     * @param holdBackTrails how many trails to deliberately leave locked. One means the
+     *   collection is complete except for a single trail, so unlocking it is what trips the
+     *   "everything unlocked" check and opens Heaven - the exact moment worth testing.
+     */
+    private fun unlockAllBut(holdBackTrails: Int) {
+        for (o in Outfits.ALL) {
+            // The Heaven outfit lives behind Heaven, so granting it here would be cheating in
+            // the wrong direction - and it is excluded from the completion check anyway.
+            if (o.id == Outfits.HEAVEN_ONLY_ID) continue
+            save.unlock(o.id)
+        }
+        for (sc in Scenes.unlockable) save.unlockScene(sc.id)
+        val keep = Trails.ALL.size - holdBackTrails.coerceIn(0, Trails.ALL.size)
+        for (i in 0 until keep) save.unlockTrail(Trails.ALL[i].id)
+        for (pu in Powerups.ALL) save.grantPowerup(pu.id, 5)
+        save.grantCoins(1000)
+
+        notice = if (holdBackTrails > 0) {
+            "ALL BUT $holdBackTrails TRAIL UNLOCKED"
+        } else {
+            "EVERYTHING UNLOCKED"
+        }
+        if (save.refreshHeaven()) announceHeaven()
     }
 
     fun onNameEntered(name: String) {
@@ -410,6 +483,19 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         menuBuddy.updateAnim(dt, 1000f)
     }
 
+    /**
+     * True once a Second Life has been spent this run. Purely cosmetic from then on - the dog is
+     * drawn blessed for the rest of the run - but it is also what stops a single death being
+     * revived twice: [reviveWithSecondLife] only fires from the death screen, one press at a
+     * time, and each press spends another one from the shelf.
+     */
+    var secondLifeActive = false
+        private set
+
+    /** Coins already banked for the run in progress, and the entry they were banked under. */
+    private var bankedCoinsThisRun = 0
+    private var continuedStamp = 0L
+
     private var trailAccum = 0f
     private var cosmeticAccum = 0f
     private var holdX = 0f
@@ -471,12 +557,45 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         lastRunCoins = world.runCoins
         lastBonusCoins = world.heightBonusCoins
         lastCoins = lastRunCoins + lastBonusCoins
+        lastHalos = world.runHalos
         lastBiome = world.biome
         lastNewBest = lastScore > save.bestScore
         save.highestBiome = world.biome
-        lastRank = save.bankRun(lastScore, lastCoins)
+        // A run that has already been part-banked (because a Second Life reopened it) replaces
+        // its own earlier entry instead of adding a second one, and only the new coins are added.
+        lastRank = save.bankRun(lastScore, lastCoins - bankedCoinsThisRun, continuedStamp)
+        bankedCoinsThisRun = lastCoins
+        continuedStamp = save.lastBankedStamp
+        if (lastHalos > 0) {
+            val hadGhost = save.ghostUnlocked
+            save.addHalos(lastHalos)
+            if (!hadGhost && save.ghostUnlocked) {
+                notice = "THE LOOK IS YOURS - TOGGLE IT IN THE WARDROBE"
+                noticeT = 5f
+                audio.play(Audio.FANFARE, 1f)
+            }
+        }
         if (lastNewBest && lastScore > 0) audio.play(Audio.FANFARE, 0.7f)
         goto(Screen.GAMEOVER)
+    }
+
+    /** Can the death screen offer a continue? */
+    fun canSecondLife(): Boolean = save.powerupCount(Powerups.SECOND_LIFE) > 0
+
+    /**
+     * Spend one Second Life and carry on from where he fell.
+     *
+     * One press revives one death; dying again offers it again while any remain, which is what
+     * the brief asked for - two in the bank means two continues in the same run.
+     */
+    fun reviveWithSecondLife() {
+        if (!save.consumePowerup(Powerups.SECOND_LIFE)) return
+        secondLifeActive = true
+        world.revive()
+        flashScreen(0.7f)
+        audio.play(Audio.FANFARE, 0.8f)
+        // Straight into the countdown, so the player gets their bearings before it moves again.
+        resumeFromPause()
     }
 
     // -------------------------------------------------------------------------------------
@@ -564,6 +683,7 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
     private fun drawBuddy(c: Canvas, viewTop: Float) {
         val b = world.buddy
         posePlayer(b)
+        pose.ghost = if (ghostAmount()) 1f else 0f
         val sy = viewTop - b.y
         buddyArt.draw(c, b.x, sy, 1f, pose, equippedOutfit, rimColor)
         if (b.x < Tuning.BUDDY_W) buddyArt.draw(c, b.x + playW, sy, 1f, pose, equippedOutfit, rimColor)
@@ -599,12 +719,14 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         pose.mouth = menuBuddy.mouthOpen
         pose.facing = 1f
         pose.time = time
+        if (save.ghostEnabled || outfit == Outfits.HEAVEN_ONLY_ID) pose.ghost = 1f
         buddyArt.draw(c, cx, groundY - menuBuddy.y * 0.28f, scaleFactor, pose, outfit, 0xFFFFE6A8.toInt())
     }
 
     /** A gently idling Buddy for wardrobe cards and the prize reveal. */
     fun drawPosedBuddy(c: Canvas, cx: Float, pawY: Float, scaleFactor: Float, outfit: String, phase: Float) {
         pose.reset()
+        if (save.ghostEnabled || outfit == Outfits.HEAVEN_ONLY_ID) pose.ghost = 1f
         pose.squash = sin(phase) * 0.1f
         pose.lean = sin(phase * 0.7f) * 0.14f
         pose.tail = phase * 3.4f
@@ -650,6 +772,20 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
     /** Same sample, sized to fill a prize card. */
     fun drawTrailPreview(c: Canvas, cx: Float, cy: Float, w: Float, h: Float, trailId: String, phase: Float) {
         drawTrailSample(c, cx, cy, w, h, trailId, phase)
+    }
+
+    /**
+     * Un-pausing runs the countdown over the frozen world instead of dropping you straight back
+     * into a falling dog. Nothing is re-laid-out and no power-up is applied; the run is already
+     * in progress and simply starts moving again on GO.
+     */
+    fun resumeFromPause() {
+        resuming = true
+        preRunPhase = PreRun.COUNTDOWN
+        countdown = COUNTDOWN_SECONDS
+        holdingToSkip = false
+        pendingPowerup = null
+        goto(Screen.PRERUN)
     }
 
     private fun drawMenuBackdrop(c: Canvas) {
@@ -935,5 +1071,9 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         const val COIN_FLASH_TIME = 1.1f
         /** Testing back door - enter as the player name to unlock every collectable. */
         const val UNLOCK_CODE = "u7d%4>"
+        /** Unlocks everything but one trail, so the last unlock opening Heaven can be tested. */
+        const val ALMOST_CODE = "u7d%4<"
+        /** Free prize-machine pulls, for grinding out that last trail. */
+        const val FREE_SPINS_CODE = "u7d%4="
     }
 }

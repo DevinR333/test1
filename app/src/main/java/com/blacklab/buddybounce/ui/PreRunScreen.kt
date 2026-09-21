@@ -40,7 +40,7 @@ class PreRunScreen(private val g: Game) {
         val h = Theme.SCREEN_H
         ui.scrim(c, g.worldW, h, 0.55f)
 
-        val owned = Powerups.ALL.filter { g.save.powerupCount(it.id) > 0 }
+        val owned = Powerups.preRunChoices.filter { g.save.powerupCount(it.id) > 0 }
         val wide = g.worldW > h * 1.12f
         val cols = if (wide) 4 else 2
         val rows = ceil(owned.size / cols.toFloat()).toInt().coerceAtLeast(1)
@@ -145,7 +145,7 @@ class PreRunScreen(private val g: Game) {
         ui.title.color = ColorX.withAlpha(if (label == "GO!") Theme.GOOD else Theme.TEXT, alpha)
         c.drawText(label, cx, cy, ui.title)
 
-        val chosen = g.chosenPowerup
+        val chosen = if (g.resuming) null else g.chosenPowerup
         if (chosen != null) {
             val pu = Powerups.of(chosen)
             ui.text(
@@ -155,7 +155,11 @@ class PreRunScreen(private val g: Game) {
         }
         // Holding a finger fast-forwards the count (see Game.updatePreRun), so say so - and say
         // it differently while they are actually holding, as the feedback that it is working.
-        val hint = if (g.holdingToSkip) "skipping ahead..." else "get ready - hold to skip"
+        val hint = when {
+            g.holdingToSkip -> "skipping ahead..."
+            g.resuming -> "back in a moment - hold to skip"
+            else -> "get ready - hold to skip"
+        }
         ui.text(
             c, hint, cx, cy + 148f, 30f,
             ColorX.withAlpha(if (g.holdingToSkip) Theme.ACCENT else Theme.TEXT_DIM, alpha * 0.9f),

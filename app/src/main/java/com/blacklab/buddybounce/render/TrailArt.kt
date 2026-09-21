@@ -85,6 +85,7 @@ class TrailArt(private val art: Art) {
             Trails.Style.GUM -> gum(c, size, col, accent, a)
             Trails.Style.CONFETTI -> confetti(c, size, rot, col, accent, a)
             Trails.Style.HEART -> heart(c, size, rot, col, accent, a)
+            Trails.Style.BLAST -> blast(c, size, rot, col, accent, a)
             else -> note(c, size, rot, col, accent, a)
         }
         c.restore()
@@ -834,5 +835,44 @@ class TrailArt(private val art: Art) {
         c.drawPath(path, p)
         fill(accent, a * 0.5f)
         c.drawCircle(-s * 0.13f, s * 0.07f, s * 0.05f, p)
+    }
+
+    /**
+     * A beam segment with the shock ring still expanding off it.
+     *
+     * The look is a charged energy wave: a white-hot core, a blue sheath around it that thins as
+     * it ages, and a ring perpendicular to the beam that swells outward and fades - the pressure
+     * front running away from the shot. It lies along the direction of travel (STREAK motion),
+     * so climbing leaves a beam pointing back down at where he came from.
+     */
+    private fun blast(c: Canvas, s: Float, rot: Float, col: Int, accent: Int, a: Float) {
+        c.rotate(rot * 57.29578f)
+        glow(c, s * 3.6f, col, a * 0.6f)
+
+        // the sheath, fattest at the head and tapering back down the beam
+        val len = s * 0.95f
+        val fat = s * 0.3f * (0.45f + 0.55f * a)
+        fill(col, a * 0.75f)
+        path.reset()
+        path.moveTo(len, 0f)
+        path.cubicTo(len * 0.3f, -fat, -len * 0.4f, -fat * 0.7f, -len, 0f)
+        path.cubicTo(-len * 0.4f, fat * 0.7f, len * 0.3f, fat, len, 0f)
+        path.close()
+        c.drawPath(path, p)
+
+        // the white-hot core
+        fill(accent, a * 0.95f)
+        path.reset()
+        path.moveTo(len * 0.92f, 0f)
+        path.cubicTo(len * 0.2f, -fat * 0.36f, -len * 0.4f, -fat * 0.26f, -len * 0.9f, 0f)
+        path.cubicTo(-len * 0.4f, fat * 0.26f, len * 0.2f, fat * 0.36f, len * 0.92f, 0f)
+        path.close()
+        c.drawPath(path, p)
+
+        // the shock ring, swelling and thinning as the particle ages
+        val ring = s * (0.22f + (1f - a) * 0.72f)
+        line(accent, a * a * 0.85f, s * 0.09f * a + 1f)
+        r.set(-s * 0.14f, -ring, s * 0.14f, ring)
+        c.drawOval(r, p)
     }
 }
