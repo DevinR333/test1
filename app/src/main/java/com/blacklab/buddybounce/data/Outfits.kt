@@ -105,4 +105,16 @@ object Outfits {
 
     /** How many outfits a completionist needs (the default collar doesn't count). */
     val collectableCount: Int = ALL.count { it.id != DEFAULT_ID }
+
+    /**
+     * Is Buddy wearing the blessed look - translucent, with wings and a halo?
+     *
+     * This is not clothing: [HEAVEN_ONLY_ID] has no garment of its own, the look is a flag on the
+     * pose. Four separate things switch it on, and every place that draws Buddy has to agree on
+     * all four. They did not: the in-game draw checked Heaven, a Second Life and the wardrobe
+     * toggle but never the equipped outfit, so Good Boy Eternal showed in the menus and vanished
+     * the moment a run started. One rule, one place.
+     */
+    fun isBlessed(outfit: String, inHeaven: Boolean, secondLife: Boolean, toggle: Boolean): Boolean =
+        inHeaven || secondLife || toggle || outfit == HEAVEN_ONLY_ID
 }

@@ -241,15 +241,9 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         music.setWorld(save.selectedScene)
     }
 
-    /**
-     * True when the dog should be drawn blessed: in Heaven, after a Second Life, because the
-     * wardrobe toggle is on, or because Good Boy Eternal is the outfit he is wearing. The last
-     * one is the reason this is not just [Save.ghostEnabled] - the outfit has no clothes of its
-     * own, so without it the wardrobe showed the halo and the run did not.
-     */
+    /** True when the dog should be drawn blessed. See [Outfits.isBlessed] for the rule. */
     private fun ghostAmount(): Boolean =
-        world.haloMode || secondLifeActive || save.ghostEnabled ||
-            equippedOutfit == Outfits.HEAVEN_ONLY_ID
+        Outfits.isBlessed(equippedOutfit, world.haloMode, secondLifeActive, save.ghostEnabled)
 
     fun announceHeaven() {
         notice = "HEAVEN IS OPEN"
@@ -728,14 +722,14 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         pose.mouth = menuBuddy.mouthOpen
         pose.facing = 1f
         pose.time = time
-        if (save.ghostEnabled || outfit == Outfits.HEAVEN_ONLY_ID) pose.ghost = 1f
+        if (Outfits.isBlessed(outfit, false, false, save.ghostEnabled)) pose.ghost = 1f
         buddyArt.draw(c, cx, groundY - menuBuddy.y * 0.28f, scaleFactor, pose, outfit, 0xFFFFE6A8.toInt())
     }
 
     /** A gently idling Buddy for wardrobe cards and the prize reveal. */
     fun drawPosedBuddy(c: Canvas, cx: Float, pawY: Float, scaleFactor: Float, outfit: String, phase: Float) {
         pose.reset()
-        if (save.ghostEnabled || outfit == Outfits.HEAVEN_ONLY_ID) pose.ghost = 1f
+        if (Outfits.isBlessed(outfit, false, false, save.ghostEnabled)) pose.ghost = 1f
         pose.squash = sin(phase) * 0.1f
         pose.lean = sin(phase * 0.7f) * 0.14f
         pose.tail = phase * 3.4f

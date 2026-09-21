@@ -2,15 +2,9 @@ import com.blacklab.buddybounce.game.*
 import kotlin.math.abs
 
 /**
- * Headless balance harness. The simulation in `game/` has no Android dependencies, so it can be
- * played without a device: a bot locks a reachable target platform at each bounce and steers
- * toward it until it lands, which is roughly what a competent human does. Run it after touching
- * anything in Tuning.kt to check that every aspect ratio is still climbable.
- *
- *   kotlinc app/src/main/java/com/blacklab/buddybounce/game package sources tools/sim/Sim.kt \
- *       -include-runtime -d sim.jar && java -jar sim.jar
- *
- * See docs/MECHANICS.md for what the numbers should look like.
+ * Headless smoke test: a bot plays the real World in several aspect ratios. The bot locks a
+ * target platform when it bounces and steers toward it until it lands, which is roughly what a
+ * competent human does.
  */
 object Sim {
     class Stats : World.Events {
@@ -33,7 +27,7 @@ object Sim {
         val apex = b.y + (b.vy * b.vy) / (2f * Tuning.GRAVITY)
         for (p in w.platforms.items) {
             if (!p.alive || p.state != 0) continue
-            if (p.kind == PlatKind.FRAGILE || p.isGround) continue
+            if (p.kind == PlatKind.FRAGILE) continue
             if (p.y <= b.y + 40f || p.y > apex - 20f) continue
             val dx = abs(MathX.wrapDelta(p.x, b.x, w.worldW))
             // Time available to travel there ~ time to reach that height going up.
@@ -60,14 +54,13 @@ object Sim {
 
     @JvmStatic
     fun main(args: Array<String>) {
-        val widths = floatArrayOf(1080f, 1440f, 1707f, 3413f, 4551f, 5973f)
+        val widths = floatArrayOf(675f, 900f, 1067f, 2133f, 2844f, 3733f)
         val names = arrayOf("portrait 3:4", "portrait 9:16", "portrait 20:9", "landscape 4:3", "landscape 16:9", "landscape 21:9")
         var failures = 0
         for (i in widths.indices) {
             var bestScreens = 0f
             var bestScore = 0
             var sumScreens = 0f
-            var sumCoins = 0
             var totalFrames = 0
             var maxPlatforms = 0
             var maxParticles = 0
@@ -86,7 +79,6 @@ object Sim {
                 }
                 totalFrames += frames
                 sumScreens += w.screens
-                sumCoins += w.runCoins + w.heightBonusCoins
                 bestScreens = maxOf(bestScreens, w.screens)
                 bestScore = maxOf(bestScore, w.score)
             }
@@ -96,9 +88,9 @@ object Sim {
             if (!ok) failures++
             println(
                 String.format(
-                    "%-16s w=%-6.0f best=%7d pts %6.1f screens | avg %5.1f screens, %4.1f coins/run, %5.1fs | plats %3d | bounce %d break %d stomp %d death %d | %s",
-                    names[i], widths[i], bestScore, bestScreens, avgScreens, sumCoins / runs.toFloat(), avgSeconds,
-                    maxPlatforms, stats.bounces, stats.breaks, stats.stomps, stats.deaths,
+                    "%-16s w=%-6.0f best=%7d pts %6.1f screens | avg %5.1f screens in %5.1fs | plats %3d ents %3d | bounce %d break %d coin %d stomp %d death %d | %s",
+                    names[i], widths[i], bestScore, bestScreens, avgScreens, avgSeconds,
+                    maxPlatforms, maxParticles, stats.bounces, stats.breaks, stats.pickups, stats.stomps, stats.deaths,
                     if (ok) "OK" else "TOO HARD"
                 )
             )

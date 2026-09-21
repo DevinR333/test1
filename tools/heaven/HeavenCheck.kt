@@ -1,0 +1,99 @@
+import android.content.Context
+import android.content.SharedPreferences
+import com.blacklab.buddybounce.data.Outfits
+import com.blacklab.buddybounce.data.Save
+import com.blacklab.buddybounce.data.Trails
+import com.blacklab.buddybounce.render.Scenes
+
+/** A SharedPreferences that actually stores, so Save can be driven for real. */
+class FakePrefs : SharedPreferences {
+    val map = HashMap<String, Any?>()
+    override fun getString(k: String, d: String?) = map[k] as? String ?: d
+    override fun getInt(k: String, d: Int) = map[k] as? Int ?: d
+    override fun getLong(k: String, d: Long) = map[k] as? Long ?: d
+    override fun getFloat(k: String, d: Float) = map[k] as? Float ?: d
+    override fun getBoolean(k: String, d: Boolean) = map[k] as? Boolean ?: d
+    @Suppress("UNCHECKED_CAST")
+    override fun getStringSet(k: String, d: Set<String>?) = map[k] as? Set<String> ?: d
+    override fun edit(): SharedPreferences.Editor = Ed(this)
+
+    class Ed(val p: FakePrefs) : SharedPreferences.Editor {
+        val pending = HashMap<String, Any?>()
+        override fun putString(k: String, v: String?) = apply { pending[k] = v }
+        override fun putInt(k: String, v: Int) = apply { pending[k] = v }
+        override fun putLong(k: String, v: Long) = apply { pending[k] = v }
+        override fun putFloat(k: String, v: Float) = apply { pending[k] = v }
+        override fun putBoolean(k: String, v: Boolean) = apply { pending[k] = v }
+        override fun putStringSet(k: String, v: Set<String>?) = apply { pending[k] = v }
+        override fun apply() { p.map.putAll(pending) }
+        override fun commit(): Boolean { p.map.putAll(pending); return true }
+    }
+}
+
+class FakeCtx(private val prefs: FakePrefs) : Context() {
+    override fun getSharedPreferences(name: String, mode: Int): SharedPreferences = prefs
+}
+
+var failures = 0
+fun check(label: String, actual: Boolean, expected: Boolean) {
+    val ok = actual == expected
+    if (!ok) failures++
+    println("${if (ok) "PASS" else "FAIL"}  $label  (got $actual, want $expected)")
+}
+
+fun main() {
+    val prefs = FakePrefs()
+    val save = Save(FakeCtx(prefs))
+    val ETERNAL = Outfits.HEAVEN_ONLY_ID
+
+    println("--- 1. unlocking literally everything else opens Heaven ---")
+    for (o in Outfits.ALL) if (o.id != ETERNAL) save.unlock(o.id)
+    for (t in Trails.ALL) save.unlockTrail(t.id)
+    for (sc in Scenes.unlockable) save.unlockScene(sc.id)
+    check("everything-else is complete", save.hasUnlockedEverything(), true)
+    check("refreshHeaven opens Heaven", save.refreshHeaven(), true)
+    check("Heaven is owned", save.ownsScene(Scenes.HEAVEN_ID), true)
+    check("Eternal is STILL LOCKED", save.owns(ETERNAL), false)
+    check("ghost look still locked", save.ghostUnlocked, false)
+
+    println("--- 2. a Second Life cannot grant it ---")
+    // the whole revive path, as Game.reviveWithSecondLife drives it
+    save.grantPowerup(com.blacklab.buddybounce.data.Powerups.SECOND_LIFE, 2)
+    repeat(2) {
+        check("consume a Second Life", save.consumePowerup(com.blacklab.buddybounce.data.Powerups.SECOND_LIFE), true)
+        check("  Eternal still locked after revive", save.owns(ETERNAL), false)
+    }
+    check("blessed DURING a revive", Outfits.isBlessed(Outfits.DEFAULT_ID, false, true, false), true)
+    check("not blessed once the run ends", Outfits.isBlessed(Outfits.DEFAULT_ID, false, false, false), false)
+
+    println("--- 3. halos are the only key, and 999 is not enough ---")
+    save.addHalos(999)
+    check("999 halos: still locked", save.owns(ETERNAL), false)
+    check("999 halos: toggle still locked", save.ghostUnlocked, false)
+    save.addHalos(1)
+    check("1000 halos: Eternal unlocked", save.owns(ETERNAL), true)
+    check("1000 halos: toggle unlocked", save.ghostUnlocked, true)
+
+    println("--- 4. equipping it shows in game, not just the wardrobe ---")
+    save.equippedOutfit = ETERNAL
+    check("it equips", save.equippedOutfit == ETERNAL, true)
+    check("blessed IN GAME (plain world, no revive, toggle off)",
+        Outfits.isBlessed(save.equippedOutfit, false, false, save.ghostEnabled), true)
+    save.ghostEnabled = false
+    check("blessed with the toggle explicitly off",
+        Outfits.isBlessed(ETERNAL, false, false, false), true)
+    check("another outfit is not blessed",
+        Outfits.isBlessed("fighter", false, false, false), false)
+
+    println("--- 5. a save from the old build gets it taken back ---")
+    val old = FakePrefs()
+    old.map["owned"] = hashSetOf("fighter", ETERNAL)
+    old.map["equipped"] = ETERNAL
+    val repaired = Save(FakeCtx(old))
+    check("old save: Eternal revoked", repaired.owns(ETERNAL), false)
+    check("old save: other outfits kept", repaired.owns("fighter"), true)
+    check("old save: no longer equipped", repaired.equippedOutfit == Outfits.DEFAULT_ID, true)
+
+    println()
+    println(if (failures == 0) "ALL CHECKS PASSED" else "$failures CHECK(S) FAILED")
+}
