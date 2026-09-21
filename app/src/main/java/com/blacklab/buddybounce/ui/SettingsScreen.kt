@@ -39,7 +39,7 @@ class SettingsScreen(private val g: Game) {
         if (ui.backButton(c, Id.BACK, ui.safeLeft + 78f, ui.safeTop + 78f, 52f)) {
             g.tap(); g.goto(if (g.previousScreen == Game.Screen.PAUSE) Game.Screen.PAUSE else Game.Screen.MENU)
         }
-        ui.text(c, "SETTINGS", g.worldW * 0.5f, ui.safeTop + 100f, 66f, Theme.TEXT, ui.title)
+        ui.text(c, "SETTINGS", g.worldW * 0.5f, ui.safeTop + 100f, 66f, Theme.TEXT, ui.title, true, ui.headerWidth(g.worldW))
 
         val wide = g.worldW > Theme.SCREEN_H * 1.12f
         val colW = min(g.worldW - ui.safeLeft - ui.safeRight - 80f, if (wide) 700f else 820f)

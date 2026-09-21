@@ -50,6 +50,18 @@ class Scroller {
     }
 
     /**
+     * Scrolls by [delta] immediately, killing any momentum.
+     *
+     * Used to bring a controller-focused row into view. The jump is instant rather than eased
+     * because the ring has already moved - easing the list behind it would leave the two out of
+     * step for as long as the glide lasted.
+     */
+    fun nudge(delta: Float) {
+        y += delta
+        velocity = 0f
+    }
+
+    /**
      * Advance one frame.
      *
      * @param down      is a finger on the glass

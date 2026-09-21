@@ -70,7 +70,7 @@ class WardrobeScreen(private val g: Game) {
         if (ui.backButton(c, Id.BACK, ui.safeLeft + 78f, ui.safeTop + 78f, 52f)) {
             g.tap(); g.goto(Game.Screen.MENU)
         }
-        ui.text(c, "WARDROBE", g.worldW * 0.5f, ui.safeTop + 96f, 62f, Theme.TEXT, ui.title)
+        ui.text(c, "WARDROBE", g.worldW * 0.5f, ui.safeTop + 96f, 62f, Theme.TEXT, ui.title, true, ui.headerWidth(g.worldW))
         val counts = if (tab == Tab.OUTFITS) {
             "${g.ownedCount()} of ${Outfits.collectableCount(g.outfitOwned(Outfits.DEV_ID))} outfits"
         } else {
@@ -196,7 +196,14 @@ class WardrobeScreen(private val g: Game) {
             val col = i % cols
             val cx = x + col * (cardW + gap)
             val cy = y + row * (cardH + gap) - scrollY
-            if (cy + cardH < y - 20f || cy > y + h + 20f) continue
+            if (g.ui.padActive && g.ui.focusId == Id.CARD + i) {
+                if (cy < y) scroll.nudge(cy - y)
+                else if (cy + cardH > y + h) scroll.nudge(cy + cardH - (y + h))
+            }
+            if (cy + cardH < y - 20f || cy > y + h + 20f) {
+                g.ui.focusOnly(Id.CARD + i, cx, cy, cardW, cardH)
+                continue
+            }
             if (tab == Tab.OUTFITS) drawCard(c, i, cx, cy, cardW, cardH)
             else drawTrailCard(c, i, cx, cy, cardW, cardH)
         }

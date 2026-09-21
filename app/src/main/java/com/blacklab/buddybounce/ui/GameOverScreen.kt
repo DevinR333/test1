@@ -39,19 +39,19 @@ class GameOverScreen(private val g: Game) {
             g.lastRank in 0..2 -> "GOOD BOY!"
             else -> "NICE RUN"
         }
-        ui.text(c, headline, x + w * 0.5f, y + 104f, 66f, if (g.lastNewBest) Theme.ACCENT else Theme.TEXT, ui.title)
+        ui.text(c, headline, x + w * 0.5f, y + 104f, 66f, if (g.lastNewBest) Theme.ACCENT else Theme.TEXT, ui.title, true, w - 60f)
 
         // score
         val scoreSize = min(w * 0.30f, 200f)
         val bounce = if (k < 1f) (1f - k) * 30f else sin(ui.time * 2.2f) * 3f
-        ui.text(c, g.lastScore.toString(), x + w * 0.5f, y + 104f + scoreSize + bounce, scoreSize, Theme.TEXT, ui.title)
+        ui.text(c, g.lastScore.toString(), x + w * 0.5f, y + 104f + scoreSize + bounce, scoreSize, Theme.TEXT, ui.title, true, w - 60f)
         ui.text(c, "POINTS", x + w * 0.5f, y + 130f + scoreSize + 34f, 28f, Theme.TEXT_DIM, ui.body, false)
 
         if (g.lastRank in 0..9) {
             val label = "#${g.lastRank + 1} ON THE BOARD"
             val pw = ui.measure(label, 30f, ui.body) + 60f
             ui.pill(c, x + (w - pw) * 0.5f, y + 130f + scoreSize + 56f, pw, 52f, ColorX.withAlpha(Theme.ACCENT, 0.2f))
-            ui.text(c, label, x + w * 0.5f, y + 130f + scoreSize + 92f, 30f, Theme.ACCENT, ui.title, false)
+            ui.text(c, label, x + w * 0.5f, y + 130f + scoreSize + 92f, 30f, Theme.ACCENT, ui.title, false, w - 60f)
         }
 
         // stats strip

@@ -34,6 +34,9 @@ class World(worldWidth: Float, private val events: Events) {
 
     var worldW: Float = worldWidth
         private set
+
+    /** Physics wraps at the screen edge. See Tuning.WRAP_SHOW for why the DRAWING does not. */
+    val wrapW: Float get() = worldW
     var metrics = Tuning.Metrics(worldWidth)
         private set
 
@@ -257,15 +260,15 @@ class World(worldWidth: Float, private val events: Events) {
         // swipe is the distance he covers and he holds station the moment you stop.
         if (dragging) {
             if (!wasDragging) dragTargetX = buddy.x
-            dragTargetX = wrapX(dragTargetX + dragDx, worldW)
+            dragTargetX = wrapX(dragTargetX + dragDx, wrapW)
             // Never let the target run away from him: a lead he cannot close in a beat would
             // mean releasing the finger leaves him coasting, which is exactly what we removed.
             val maxLead = metrics.maxVx * Tuning.DRAG_LEAD_SECONDS
-            val lead = MathX.wrapDelta(dragTargetX, buddy.x, worldW)
+            val lead = MathX.wrapDelta(dragTargetX, buddy.x, wrapW)
             if (lead > maxLead) {
-                dragTargetX = wrapX(buddy.x + maxLead, worldW)
+                dragTargetX = wrapX(buddy.x + maxLead, wrapW)
             } else if (lead < -maxLead) {
-                dragTargetX = wrapX(buddy.x - maxLead, worldW)
+                dragTargetX = wrapX(buddy.x - maxLead, wrapW)
             }
         }
         wasDragging = dragging
@@ -328,7 +331,7 @@ class World(worldWidth: Float, private val events: Events) {
         if (dragging && !b.dying) {
             // Positional: aim at the speed that closes the remaining gap to the finger's target
             // this beat, capped a little above cruising speed so long swipes still feel snappy.
-            val err = MathX.wrapDelta(dragTargetX, b.x, worldW)
+            val err = MathX.wrapDelta(dragTargetX, b.x, wrapW)
             val cap = maxVx * Tuning.DRAG_OVERSPEED
             targetVx = MathX.clamp(err * Tuning.DRAG_STIFFNESS, -cap, cap)
         } else {
@@ -343,7 +346,7 @@ class World(worldWidth: Float, private val events: Events) {
             else -> if (braking) Tuning.STEER_BRAKE_TILT else Tuning.STEER_ACCEL_TILT
         }
         b.vx = MathX.approach(b.vx, targetVx, rate, dt)
-        b.x = wrapX(b.x + b.vx * dt, worldW)
+        b.x = wrapX(b.x + b.vx * dt, wrapW)
 
         // --- vertical ---
         val prevFoot = b.y
@@ -419,7 +422,7 @@ class World(worldWidth: Float, private val events: Events) {
             // and count as a landing - which is exactly the "I lived without hitting anything"
             // bounce at the bottom of the screen.
             if (prevFoot < p.prevY - 2f || b.y > p.y) continue
-            val dx = wrapDelta(b.x, p.x, worldW)
+            val dx = wrapDelta(b.x, p.x, wrapW)
             val span = p.w * 0.5f + Tuning.BUDDY_FOOT_HALF
             if (abs(dx) > span) {
                 // Clipping the very edge of a ledge you were clearly steering toward catches
@@ -443,7 +446,7 @@ class World(worldWidth: Float, private val events: Events) {
             p.state = 1
             p.timer = Tuning.FRAGILE_TIME
             p.fallVy = -140f
-            p.tilt = if (wrapDelta(b.x, p.x, worldW) > 0f) 0.5f else -0.5f
+            p.tilt = if (wrapDelta(b.x, p.x, wrapW) > 0f) 0.5f else -0.5f
             events.onPlatformBreak(p)
             return
         }
@@ -515,12 +518,12 @@ class World(worldWidth: Float, private val events: Events) {
                 c.x = carrier.x + c.carrierOffsetX
                 c.y = carrier.y + c.carrierOffsetY
             } else if (c.magnetised) {
-                c.x = wrapX(c.x + c.vx * dt, worldW)
+                c.x = wrapX(c.x + c.vx * dt, wrapW)
                 c.y += c.vy * dt
             }
 
             if (PickupKind.isCurrency(c.kind) && carrier == null && (magnet || c.magnetised)) {
-                val dx = wrapDelta(b.x, c.x, worldW)
+                val dx = wrapDelta(b.x, c.x, wrapW)
                 val dy = (b.y + Tuning.BUDDY_H * 0.5f) - c.y
                 val d2 = dx * dx + dy * dy
                 // Once a coin has committed to him it keeps seeking even if he outruns the
@@ -544,7 +547,7 @@ class World(worldWidth: Float, private val events: Events) {
 
             if (b.dying) continue
 
-            val dx = wrapDelta(b.x, c.x, worldW)
+            val dx = wrapDelta(b.x, c.x, wrapW)
             val dy = (b.y + Tuning.BUDDY_H * 0.5f) - c.y
             val reach = c.radius + Tuning.BUDDY_HURT_HALF_W
             if (dx * dx + dy * dy <= reach * reach) {
@@ -622,7 +625,7 @@ class World(worldWidth: Float, private val events: Events) {
                     e.facing = if (cos(e.t * 1.7f + e.phase) > 0f) 1f else -1f
                 }
                 EnemyKind.CROW -> {
-                    e.x = wrapX(e.x + e.vx * dt, worldW)
+                    e.x = wrapX(e.x + e.vx * dt, wrapW)
                     e.y = e.baseY + sin(e.t * 3.1f + e.phase) * 24f
                     e.facing = if (e.vx > 0f) 1f else -1f
                 }
@@ -636,7 +639,7 @@ class World(worldWidth: Float, private val events: Events) {
 
             if (b.dying) continue
 
-            val dx = wrapDelta(b.x, e.x, worldW)
+            val dx = wrapDelta(b.x, e.x, wrapW)
             val dy = (b.y + Tuning.BUDDY_H * 0.5f) - e.y
             val overlapX = abs(dx) < e.halfW + Tuning.BUDDY_HURT_HALF_W
             val overlapY = abs(dy) < e.halfH + Tuning.BUDDY_HURT_HALF_H
@@ -927,7 +930,7 @@ class World(worldWidth: Float, private val events: Events) {
         var best = rand(lo, hi)
         if (avoidSpan > 0f) {
             var tries = 0
-            while (abs(wrapDelta(best, avoid, worldW)) < avoidSpan && tries < 8) {
+            while (abs(wrapDelta(best, avoid, wrapW)) < avoidSpan && tries < 8) {
                 best = rand(lo, hi)
                 tries++
             }

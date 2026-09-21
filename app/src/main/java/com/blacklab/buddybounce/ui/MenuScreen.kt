@@ -230,7 +230,7 @@ class MenuScreen(private val g: Game) {
         c.drawCircle(x + 32f, y + 27f, 3.4f, p)
         c.drawCircle(x + 38f, y + 24f, 3.4f, p)
         c.drawCircle(x + 44f, y + 27f, 3.4f, p)
-        ui.text(c, text, x + 70f, y + 46f, 40f, Theme.ACCENT, ui.bodyLeft, false)
+        ui.text(c, text, x + 70f, y + 46f, 40f, Theme.ACCENT, ui.bodyLeft, false, w - 82f)
 
         // Halos only exist once Heaven does. Showing a second currency before then would be the
         // loudest possible hint that there is a world left to find.
@@ -255,6 +255,6 @@ class MenuScreen(private val g: Game) {
         rect.set(x + 22f, y + 19f, x + 54f, y + 33f)
         c.drawArc(rect, 186f, 168f, false, p)
         p.style = Paint.Style.FILL
-        ui.text(c, text, x + 68f, y + 41f, 36f, 0xFFE8A93C.toInt(), ui.bodyLeft, false)
+        ui.text(c, text, x + 68f, y + 41f, 36f, 0xFFE8A93C.toInt(), ui.bodyLeft, false, w - 80f)
     }
 }

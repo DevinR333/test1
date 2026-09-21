@@ -46,7 +46,7 @@ class ScenesScreen(private val g: Game) {
         if (ui.backButton(c, Id.BACK, ui.safeLeft + 78f, ui.safeTop + 78f, 52f)) {
             g.tap(); g.goto(Game.Screen.MENU)
         }
-        ui.text(c, "WORLDS", g.worldW * 0.5f, ui.safeTop + 96f, 62f, Theme.TEXT, ui.title)
+        ui.text(c, "WORLDS", g.worldW * 0.5f, ui.safeTop + 96f, 62f, Theme.TEXT, ui.title, true, ui.headerWidth(g.worldW))
         val owned = list.count { g.save.ownsScene(it.id) }
         // list already leaves Heaven out until it is owned, so this counts nine worlds up to
         // the moment it opens and ten afterwards - saying "of 10" early is the whole giveaway
@@ -83,7 +83,16 @@ class ScenesScreen(private val g: Game) {
             val row = i / cols
             val x = x0 + col * (cardW + gap)
             val y = top + row * (cardH + gap) - scroll.y + rise
-            if (y + cardH < top - 40f || y > top + viewH + 40f) continue
+            // A card the controller is pointing at is brought into view rather than left
+            // behind the fold - focus can outrun the scroll otherwise.
+            if (ui.padActive && ui.focusId == Id.CARD + i) {
+                if (y < top) scroll.nudge(y - top)
+                else if (y + cardH > top + viewH) scroll.nudge(y + cardH - (top + viewH))
+            }
+            if (y + cardH < top - 40f || y > top + viewH + 40f) {
+                ui.focusOnly(Id.CARD + i, x, y, cardW, cardH)
+                continue
+            }
             drawCard(c, list[i], i, x, y, cardW, cardH, wide)
         }
         val after = top + rows * (cardH + gap) - scroll.y

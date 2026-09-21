@@ -11,6 +11,9 @@ import com.blacklab.buddybounce.game.MathX.approach
 import com.blacklab.buddybounce.game.MathX.clamp01
 import com.blacklab.buddybounce.render.Art
 import com.blacklab.buddybounce.render.ColorX
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sin
 
 /**
@@ -58,6 +61,123 @@ class Ui(private val art: Art) {
     private var pressAnchorY = 0f
     var scrollDrag = 0f
         private set
+
+    // ---- gamepad focus ---------------------------------------------------------------------
+    //
+    // These menus were built for a finger, so there is no view hierarchy and no focus order to
+    // inherit - every widget is just a rectangle drawn this frame. Focus is therefore rebuilt
+    // from scratch each frame out of the rectangles the screen happens to draw, and a d-pad
+    // press moves it to the nearest rectangle in that direction. That keeps every screen
+    // controller-navigable without any of them knowing this exists.
+    //
+    // Navigation resolves against the PREVIOUS frame's rectangles, because the current frame's
+    // are still being collected while the screen draws. Layout is stable frame to frame, so the
+    // one-frame lag is invisible.
+
+    private class Focusable(var id: Int, var x: Float, var y: Float, var w: Float, var h: Float)
+
+    private val focusNow = ArrayList<Focusable>()
+    private val focusPrev = ArrayList<Focusable>()
+    private var focusPool = ArrayList<Focusable>()
+
+    /** The widget a controller is pointing at, or 0 for none. */
+    var focusId = 0
+        private set
+
+    /** True once a pad or key has been used. Until then no focus ring is drawn at all. */
+    var padActive = false
+        private set
+
+    private var pendingNavX = 0
+    private var pendingNavY = 0
+    private var pendingActivate = false
+    private var focusX = 0f
+    private var focusY = 0f
+    private var focusW = 0f
+    private var focusH = 0f
+    private var focusSeen = false
+
+    /** Queued by the host on a d-pad press or a stick flick. */
+    fun navigate(dx: Int, dy: Int) {
+        padActive = true
+        if (dx != 0) pendingNavX = dx
+        if (dy != 0) pendingNavY = dy
+    }
+
+    /** Queued by the host on the confirm button. Spent by whichever widget holds focus. */
+    fun activateFocused() {
+        padActive = true
+        pendingActivate = true
+    }
+
+    /** Where the focused widget was drawn, for [drawFocusRing]. */
+    fun hasFocusRect(): Boolean = padActive && focusSeen && focusId != 0
+
+    /**
+     * Registers a widget for focus WITHOUT hit-testing it.
+     *
+     * Scrolling lists cull the rows they are not drawing, which would otherwise make them
+     * unreachable by controller - focus can only land on rectangles it has been told about, so
+     * the ring would stop dead at the bottom of the viewport. Culled rows register through here
+     * instead, and the screen scrolls the focused one back into view.
+     */
+    fun focusOnly(id: Int, x: Float, y: Float, w: Float, h: Float) {
+        registerFocusable(id, x, y, w, h)
+    }
+
+    private fun registerFocusable(id: Int, x: Float, y: Float, w: Float, h: Float) {
+        val f = if (focusPool.isEmpty()) {
+            Focusable(id, x, y, w, h)
+        } else {
+            focusPool.removeAt(focusPool.size - 1).also {
+                it.id = id; it.x = x; it.y = y; it.w = w; it.h = h
+            }
+        }
+        focusNow.add(f)
+        if (id == focusId) {
+            focusX = x; focusY = y; focusW = w; focusH = h
+            focusSeen = true
+        }
+    }
+
+    /**
+     * Moves focus to the nearest widget in the given direction.
+     *
+     * "Nearest" weights travel ALONG the axis far more heavily than drift across it, so a d-pad
+     * right lands on the button beside you rather than one that happens to be marginally closer
+     * diagonally. With nothing focused, or nothing in that direction, it falls back to the first
+     * widget on the screen - pressing a direction should always put the ring somewhere.
+     */
+    private fun moveFocus(dx: Int, dy: Int) {
+        if (focusPrev.isEmpty()) return
+        val from = focusPrev.firstOrNull { it.id == focusId }
+        if (from == null) {
+            focusId = focusPrev[0].id
+            return
+        }
+        val fx = from.x + from.w * 0.5f
+        val fy = from.y + from.h * 0.5f
+        var best: Focusable? = null
+        var bestScore = Float.MAX_VALUE
+        for (f in focusPrev) {
+            if (f.id == focusId) continue
+            val cx = f.x + f.w * 0.5f
+            val cy = f.y + f.h * 0.5f
+            val along = (cx - fx) * dx + (cy - fy) * dy
+            if (along <= 1f) continue                       // not in that direction
+            val across = if (dx != 0) abs(cy - fy) else abs(cx - fx)
+            // overlapping on the cross axis counts as perfectly in line
+            val overlap = if (dx != 0) {
+                max(0f, min(f.y + f.h, from.y + from.h) - max(f.y, from.y))
+            } else {
+                max(0f, min(f.x + f.w, from.x + from.w) - max(f.x, from.x))
+            }
+            val penalty = if (overlap > 4f) 0f else across * 2.2f
+            val score = along + penalty
+            if (score < bestScore) { bestScore = score; best = f }
+        }
+        if (best != null) focusId = best.id
+    }
 
     /**
      * Width of the screen in UI units. [text] uses it as a backstop so a string can never run
@@ -135,6 +255,12 @@ class Ui(private val art: Art) {
     fun beginFrame(dt: Float) {
         frameDt = dt
         time += dt
+        // resolve navigation against last frame's rectangles, then start collecting this one's
+        if (pendingNavX != 0) { moveFocus(pendingNavX, 0); pendingNavX = 0 }
+        if (pendingNavY != 0) { moveFocus(0, pendingNavY); pendingNavY = 0 }
+        focusPool.addAll(focusNow)
+        focusNow.clear()
+        focusSeen = false
         for (entry in press.entries) {
             val target = if (pressedId == entry.key) 1f else 0f
             entry.setValue(approach(entry.value, target, 16f, dt))
@@ -147,6 +273,37 @@ class Ui(private val art: Art) {
         if (!pointerDown) pressedId = 0
         scrollDrag = 0f
         inputClipOn = false      // never let a screen's clip leak into the next frame
+        // An activate nobody claimed is dropped rather than carried into the next screen, where
+        // it would fire whatever happened to inherit the id.
+        pendingActivate = false
+        focusPool.addAll(focusPrev)
+        focusPrev.clear()
+        focusPrev.addAll(focusNow)
+        // A screen change can leave focus on an id nothing draws any more; snap it back.
+        if (focusId != 0 && focusPrev.none { it.id == focusId }) {
+            focusId = if (focusPrev.isEmpty()) 0 else focusPrev[0].id
+        }
+    }
+
+    /**
+     * The ring around whatever the controller is pointing at. Drawn after the screen, so it is
+     * never buried under a panel, and only once a pad has actually been used - a touch player
+     * should never see it.
+     */
+    fun drawFocusRing(c: Canvas) {
+        if (!hasFocusRect()) return
+        val pulse = 0.55f + sin(time * 4.2f) * 0.2f
+        p.reset(); p.isAntiAlias = true
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 5f
+        p.color = ColorX.withAlpha(Theme.ACCENT, pulse)
+        rect.set(focusX - 6f, focusY - 6f, focusX + focusW + 6f, focusY + focusH + 6f)
+        c.drawRoundRect(rect, Theme.RADIUS * 0.6f + 6f, Theme.RADIUS * 0.6f + 6f, p)
+        p.strokeWidth = 2f
+        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), pulse * 0.5f)
+        rect.set(focusX - 10f, focusY - 10f, focusX + focusW + 10f, focusY + focusH + 10f)
+        c.drawRoundRect(rect, Theme.RADIUS * 0.6f + 10f, Theme.RADIUS * 0.6f + 10f, p)
+        p.style = Paint.Style.FILL
     }
 
     // ---- input clipping -------------------------------------------------------------------
@@ -178,6 +335,13 @@ class Ui(private val art: Art) {
 
     /** True on the frame the pointer is released inside [rect] having been pressed inside it. */
     private fun hit(id: Int, x: Float, y: Float, w: Float, h: Float): Boolean {
+        // Focus is collected from the same rectangles the pointer uses, so a widget is
+        // controller-reachable for free the moment it is drawn.
+        registerFocusable(id, x, y, w, h)
+        if (pendingActivate && focusId == id) {
+            pendingActivate = false
+            return true
+        }
         val inside = pointerX >= x && pointerX <= x + w && pointerY >= y && pointerY <= y + h &&
             inInputClip(pointerX, pointerY)
         val anchorInside = pressAnchorX >= x && pressAnchorX <= x + w &&
@@ -234,18 +398,37 @@ class Ui(private val art: Art) {
      * is left at 0 the screen (minus the safe insets and a gutter) is used instead, which is a
      * backstop, not a substitute for passing the real width.
      */
+    /**
+     * The width a CENTRED header may occupy without reaching the controls that flank it.
+     *
+     * Every screen puts its title in the middle of the top bar, with a back button pinned left
+     * and sometimes a chip pinned right. A long title on a narrow phone grew until it ran under
+     * them. Measuring symmetrically from the centre means the box is safe whichever side has
+     * something in it, and the title shrinks instead of colliding.
+     */
+    fun headerWidth(worldW: Float, sideInset: Float = 150f): Float =
+        (worldW - 2f * (max(safeLeft, safeRight) + sideInset)).coerceAtLeast(180f)
+
     fun text(
         c: Canvas, s: String, x: Float, y: Float, size: Float, color: Int,
         paint: Paint = body, shadow: Boolean = true, maxWidth: Float = 0f
     ) {
-        paint.textSize = fitSize(s, size, paint, maxWidth)
+        val size2 = fitSize(s, size, paint, maxWidth)
+        // Shrinking alone is not a guarantee: past the floor a long string would still run out
+        // of its box, so anything that cannot be made to fit is cut and elided instead.
+        val box = boxFor(maxWidth)
+        val str = if (box > 0f && measure(s, size2, paint) > box) {
+            elide(s, size2, paint, box)
+        } else {
+            s
+        }
+        paint.textSize = size2
         if (shadow) {
-            val sz = paint.textSize
             paint.color = ColorX.withAlpha(0xFF000000.toInt(), 0.35f)
-            c.drawText(s, x + sz * 0.045f, y + sz * 0.055f, paint)
+            c.drawText(str, x + size2 * 0.045f, y + size2 * 0.055f, paint)
         }
         paint.color = color
-        c.drawText(s, x, y, paint)
+        c.drawText(str, x, y, paint)
     }
 
     /**
@@ -253,17 +436,34 @@ class Ui(private val art: Art) {
      * the requested size: past that it is better to let a pathological string clip than to draw
      * something nobody can read.
      */
+    /** The box a string must fit in: an explicit limit, else the whole usable screen width. */
+    private fun boxFor(limit: Float): Float = when {
+        limit > 0f -> limit
+        screenW > 0f -> screenW - safeLeft - safeRight - 32f
+        else -> 0f
+    }
+
     fun fitSize(s: String, size: Float, paint: Paint = body, limit: Float = 0f): Float {
-        val box = when {
-            limit > 0f -> limit
-            screenW > 0f -> screenW - safeLeft - safeRight - 32f
-            else -> 0f
-        }
+        val box = boxFor(limit)
         if (box <= 0f || s.isEmpty()) return size
-        val floor = size * 0.55f
+        // Shrink further than the old 55% before giving up - a heading that is small is a
+        // cosmetic problem, a heading that runs off the display is a broken one.
+        val floor = size * 0.42f
         var sz = size
         while (sz > floor && measure(s, sz, paint) > box) sz -= 1f
         return sz
+    }
+
+    /** Trims a string until it fits, ending it in an ellipsis. */
+    private fun elide(s: String, size: Float, paint: Paint, box: Float): String {
+        if (s.isEmpty()) return s
+        var end = s.length
+        while (end > 1) {
+            val candidate = s.substring(0, end).trimEnd() + "\u2026"
+            if (measure(candidate, size, paint) <= box) return candidate
+            end--
+        }
+        return "\u2026"
     }
 
     fun measure(s: String, size: Float, paint: Paint = body): Float {

@@ -165,7 +165,7 @@ class GachaScreen(private val g: Game) {
         if (ui.backButton(c, Id.BACK, ui.safeLeft + 78f, ui.safeTop + 78f, 52f)) {
             g.tap(); reset(); g.goto(Game.Screen.MENU)
         }
-        ui.text(c, "PRIZE MACHINE", g.worldW * 0.5f, ui.safeTop + 96f, 58f, Theme.TEXT, ui.title)
+        ui.text(c, "PRIZE MACHINE", g.worldW * 0.5f, ui.safeTop + 96f, 58f, Theme.TEXT, ui.title, true, ui.headerWidth(g.worldW))
 
         val coins = g.save.coins
         ui.text(

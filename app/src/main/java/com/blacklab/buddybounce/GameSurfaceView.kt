@@ -127,17 +127,42 @@ class GameSurfaceView(context: Context, private val game: Game) : SurfaceView(co
         return super.onKeyUp(keyCode, event)
     }
 
+    /**
+     * Every controller Android knows about reports through the same key codes, so there is no
+     * per-brand mapping here and none is needed: an Xbox A, a PlayStation cross, a Switch B
+     * (its physical bottom button) and a Retroid A all arrive as KEYCODE_BUTTON_A, and the
+     * right-hand cancel button on all of them arrives as KEYCODE_BUTTON_B.
+     *
+     * In a menu the d-pad moves the focus ring; in a run the same keys steer Buddy. That split
+     * is the only thing this has to decide.
+     */
     private fun handleKey(keyCode: Int, down: Boolean): Boolean {
         synchronized(lock) {
+            val inMenu = !game.padSteers()
             when (keyCode) {
-                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_A -> { game.onKeyLeft(down); return true }
-                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_D -> { game.onKeyRight(down); return true }
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_A -> {
+                    if (inMenu) { if (down) game.onPadNav(-1, 0) } else game.onKeyLeft(down)
+                    return true
+                }
+                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_D -> {
+                    if (inMenu) { if (down) game.onPadNav(1, 0) } else game.onKeyRight(down)
+                    return true
+                }
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_W -> {
+                    if (inMenu && down) game.onPadNav(0, -1)
+                    return true
+                }
+                KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_S -> {
+                    if (inMenu && down) game.onPadNav(0, 1)
+                    return true
+                }
                 KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_START,
                 KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_DPAD_CENTER -> {
                     if (!down) game.onConfirmKey()
                     return true
                 }
-                KeyEvent.KEYCODE_BUTTON_B -> {
+                KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_BUTTON_SELECT,
+                KeyEvent.KEYCODE_ESCAPE -> {
                     if (!down) game.onBackPressed()
                     return true
                 }
@@ -152,7 +177,19 @@ class GameSurfaceView(context: Context, private val game: Game) : SurfaceView(co
         ) {
             var axis = event.getAxisValue(MotionEvent.AXIS_X)
             if (abs(axis) < 0.08f) axis = event.getAxisValue(MotionEvent.AXIS_HAT_X)
-            synchronized(lock) { game.onPadAxis(axis) }
+            var axisY = event.getAxisValue(MotionEvent.AXIS_Y)
+            if (abs(axisY) < 0.08f) axisY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
+            synchronized(lock) {
+                if (game.padSteers()) {
+                    game.onPadAxis(axis)
+                } else {
+                    // A stick is analogue and a menu is not, so it is turned into discrete
+                    // steps: one move per push past the threshold, nothing more until it comes
+                    // back to centre. Without the latch a held stick scrolls the whole menu in
+                    // a couple of frames.
+                    game.onPadStick(axis, axisY)
+                }
+            }
             return true
         }
         return super.onGenericMotionEvent(event)

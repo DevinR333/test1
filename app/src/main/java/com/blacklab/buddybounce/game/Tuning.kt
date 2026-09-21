@@ -94,6 +94,21 @@ object Tuning {
     // ---- player ----------------------------------------------------------------------------
     // He is drawn in profile, so he is wider than he is tall.
     const val BUDDY_W = 220f
+
+    /**
+     * How far past the edge he must be before his copy appears on the other side.
+     *
+     * The wrap used to show the copy the instant any part of him crossed, so for the whole
+     * crossing he was visibly in two places - which is what reads as "popping over before you
+     * get there". Holding the copy back until he is mostly gone gives the crossing some room.
+     *
+     * This is deliberately a DRAWING rule and not a wider world. Widening the wrap to put a real
+     * off-screen corridor between the two edges was tried, and it is a platform-free dead zone
+     * the width of a phone's third - the balance sim failed all three portrait ratios outright
+     * (average climb fell from ~21 screens to ~7). Physics keeps wrapping seamlessly at the
+     * screen edge; only the duplicate waits.
+     */
+    const val WRAP_SHOW = 0.34f
     const val BUDDY_H = 160f
     /** Collision half-width at the paws - narrower than the art so near-misses feel generous. */
     const val BUDDY_FOOT_HALF = 56f

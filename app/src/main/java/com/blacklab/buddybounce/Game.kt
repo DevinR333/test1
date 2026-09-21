@@ -550,6 +550,9 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
      */
     var secondLifeActive = false
 
+    /** True while a menu stick is pushed, so one push is one move rather than a stampede. */
+    private var stickLatched = false
+
     /** Set when Heaven unlocks; spent on the next arrival at the main menu. */
     private var heavenAnnouncePending = false
 
@@ -705,6 +708,9 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
             }
         }
 
+        // After every screen, so it is never buried under a panel, and never during a run.
+        if (screen != Screen.PLAY) ui.drawFocusRing(c)
+
         if (flash > 0.01f) {
             ui.fill(c, worldW, Theme.SCREEN_H, ColorX.withAlpha(0xFFFFFFFF.toInt(), flash * 0.55f))
         }
@@ -751,8 +757,12 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         pose.ghost = if (ghostAmount()) 1f else 0f
         val sy = viewTop - b.y
         buddyArt.draw(c, b.x, sy, 1f, pose, equippedOutfit, rimColor)
-        if (b.x < Tuning.BUDDY_W) buddyArt.draw(c, b.x + playW, sy, 1f, pose, equippedOutfit, rimColor)
-        if (b.x > playW - Tuning.BUDDY_W) buddyArt.draw(c, b.x - playW, sy, 1f, pose, equippedOutfit, rimColor)
+        // The copy on the far side waits until he is mostly across, rather than appearing the
+        // moment his nose clears the edge. See Tuning.WRAP_SHOW.
+        val span = world.wrapW
+        val show = Tuning.BUDDY_W * Tuning.WRAP_SHOW
+        if (b.x < show) buddyArt.draw(c, b.x + span, sy, 1f, pose, equippedOutfit, rimColor)
+        if (b.x > span - show) buddyArt.draw(c, b.x - span, sy, 1f, pose, equippedOutfit, rimColor)
     }
 
     private fun posePlayer(b: Buddy) {
@@ -819,17 +829,17 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
             trailArtFor = art
         }
         val ta = trailArt ?: return
-        // Fewer, BIGGER particles than the in-game emitter uses. In a run a trail is read in
-        // peripheral vision and wants to be small; on a card it has to be identifiable, and at
-        // the old size you genuinely could not tell a snowflake from a star.
-        val n = 8
+        // A longer, finer ribbon than the one behind him in a run. The oversized version this
+        // replaces was legible but crowded the cards and the prize reveal, so the MENU sample
+        // goes back to the smaller particles; the in-game emitter is untouched and stays big.
+        val n = 11
         for (i in 0 until n) {
             val k = i / (n - 1f)                 // 0 at the tail, 1 at the head
             val life = 0.28f + 0.72f * k          // head is freshest
             val px = cx - w * 0.5f + w * k
             val py = cy + sin(k * 3.4f - phase * 1.8f) * h * 0.34f
             val col = ColorX.lerp(trail.cool, trail.hot, life)
-            ta.draw(c, trail.style, px, py, h * 1.9f * (0.72f + 0.28f * life),
+            ta.draw(c, trail.style, px, py, h * 0.9f * (0.6f + 0.4f * life),
                 k * 5.1f + phase, col, trail.accent, life)
         }
     }
@@ -904,6 +914,29 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
     fun onKeyLeft(down: Boolean) { controls.keyLeft = down }
     fun onKeyRight(down: Boolean) { controls.keyRight = down }
     fun onPadAxis(value: Float) { controls.padAxis = value }
+
+    /**
+     * Does a controller's stick and d-pad steer Buddy right now, or move a focus ring?
+     *
+     * Only an actual run steers. The pre-run picker and the countdown are menus - you are
+     * choosing a power-up, not flying - and every other screen obviously is.
+     */
+    fun padSteers(): Boolean = screen == Screen.PLAY
+
+    fun onPadNav(dx: Int, dy: Int) {
+        ui.navigate(dx, dy)
+    }
+
+    /** A stick held in a menu: one step per push, re-armed when it returns to centre. */
+    fun onPadStick(x: Float, y: Float) {
+        controls.padAxis = 0f
+        val ax = if (x > STICK_ON) 1 else if (x < -STICK_ON) -1 else 0
+        val ay = if (y > STICK_ON) 1 else if (y < -STICK_ON) -1 else 0
+        if (ax == 0 && ay == 0) { stickLatched = false; return }
+        if (stickLatched) return
+        stickLatched = true
+        ui.navigate(ax, ay)
+    }
 
     fun onConfirmKey() {
         when (screen) {
@@ -1178,5 +1211,7 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         const val HALO_PRIME_CODE = "u7d%4+"
         /** The developer skin. Not a testing aid - the only way to get it at all. */
         const val DEV_SKIN_CODE = "uu4*=^7"
+        /** How far a menu stick must be pushed to count as one step. */
+        const val STICK_ON = 0.55f
     }
 }

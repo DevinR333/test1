@@ -69,45 +69,11 @@ class GameRenderer(private val art: Art) {
             else -> pal.platTop
         }
 
-        p.reset(); p.isAntiAlias = true
-
-        // body + lit top face
-        p.color = ColorX.withAlpha(pal.platShade, alpha)
-        r.set(left, top + h * 0.35f, right, top + h)
-        c.drawRoundRect(r, h * 0.38f, h * 0.38f, p)
-        p.color = ColorX.withAlpha(bodyColor, alpha)
-        r.set(left, top + h * 0.12f, right, top + h * 0.86f)
-        c.drawRoundRect(r, h * 0.36f, h * 0.36f, p)
-        ink.color = ColorX.withAlpha(0xFF080A0F.toInt(), alpha * 0.75f)
-        ink.strokeWidth = 5f
-        r.set(left, top, right, top + h)
-        c.drawRoundRect(r, h * 0.38f, h * 0.38f, ink)
-        p.color = ColorX.withAlpha(topColor, alpha)
-        r.set(left, top, right, top + h * 0.46f)
-        c.drawRoundRect(r, h * 0.3f, h * 0.3f, p)
-        p.color = ColorX.withAlpha(ColorX.tint(topColor, 0.45f), alpha * 0.6f)
-        r.set(left + w * 0.06f, top + h * 0.06f, right - w * 0.06f, top + h * 0.2f)
-        c.drawRoundRect(r, h * 0.1f, h * 0.1f, p)
-
-        // end caps: a slightly darker block at each end reads as thickness
-        p.color = ColorX.withAlpha(ColorX.shade(bodyColor, 0.82f), alpha * 0.9f)
-        r.set(left, top + h * 0.18f, left + h * 0.5f, top + h * 0.92f)
-        c.drawRoundRect(r, h * 0.2f, h * 0.2f, p)
-        r.set(right - h * 0.5f, top + h * 0.18f, right, top + h * 0.92f)
-        c.drawRoundRect(r, h * 0.2f, h * 0.2f, p)
-        // specular line along the very top
-        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), alpha * 0.22f)
-        r.set(left + w * 0.1f, top + h * 0.04f, right - w * 0.22f, top + h * 0.12f)
-        c.drawRoundRect(r, h * 0.06f, h * 0.06f, p)
-        surfaceDetail(c, plat, top, left, right, w, h, skin, alpha, pal)
-
-        when (skin) {
-            0 -> grassTufts(c, plat, top, left, right, pal, alpha)
-            1 -> moss(c, plat, top, left, right, pal, alpha)
-            2 -> cloudPuffs(c, plat, top, left, right, w, h, alpha)
-            3 -> crystal(c, plat, top, left, right, w, h, pal, alpha)
-            else -> craters(c, plat, top, left, right, w, h, pal, alpha)
-        }
+        // Each world builds its platforms out of something different - see PlatformArt. The
+        // footprint is the same rectangle everywhere, because that is the collision box.
+        PlatformArt.draw(
+            c, Palettes.current.fauna, plat, pal, left, right, top, w, h, bodyColor, topColor, alpha
+        )
 
         when (plat.kind) {
             PlatKind.CRUMBLE -> breakCue(c, plat, top, left, right, w, h, skin, alpha, pal, false)

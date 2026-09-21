@@ -29,7 +29,7 @@ class ScoresScreen(private val g: Game) {
         if (ui.backButton(c, Id.BACK, ui.safeLeft + 78f, ui.safeTop + 78f, 52f)) {
             g.tap(); g.goto(Game.Screen.MENU)
         }
-        ui.text(c, "BEST RUNS", g.worldW * 0.5f, ui.safeTop + 100f, 66f, Theme.TEXT, ui.title)
+        ui.text(c, "BEST RUNS", g.worldW * 0.5f, ui.safeTop + 100f, 66f, Theme.TEXT, ui.title, true, ui.headerWidth(g.worldW))
 
         val entries = g.save.scores()
         val w = min(g.worldW - ui.safeLeft - ui.safeRight - 80f, 860f)
