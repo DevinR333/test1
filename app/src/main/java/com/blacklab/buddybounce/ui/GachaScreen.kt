@@ -405,11 +405,6 @@ class GachaScreen(private val g: Game) {
         rect.set(cx - w * 0.42f, bodyTop - w * 0.06f, cx - w * 0.28f, bodyBottom - h * 0.06f)
         c.drawRoundRect(rect, w * 0.05f, w * 0.05f, p)
 
-        p.color = Theme.ACCENT
-        rect.set(cx - w * 0.36f, bodyTop + w * 0.02f, cx + w * 0.36f, bodyTop + w * 0.20f)
-        c.drawRoundRect(rect, w * 0.05f, w * 0.05f, p)
-        ui.text(c, "BUDDY PRIZES", cx, bodyTop + w * 0.155f, w * 0.10f, 0xFF2A1D04.toInt(), ui.title, false)
-
         p.color = 0xFFE2E8F2.toInt()
         rect.set(cx - domeR * 1.06f, domeCY + domeR * 0.52f, cx + domeR * 1.06f, domeCY + domeR * 0.92f)
         c.drawRoundRect(rect, domeR * 0.2f, domeR * 0.2f, p)
@@ -439,10 +434,28 @@ class GachaScreen(private val g: Game) {
         path.close()
         c.drawPath(path, p)
         p.style = Paint.Style.STROKE
-        p.strokeWidth = w * 0.022f
-        p.color = 0xFFF2F5FA.toInt()
+        p.strokeWidth = w * 0.03f
+        p.color = 0xFFF2F5FA.toInt()          // opaque: the glass has a rim, it does not fade out
         c.drawCircle(cx, domeCY, domeR, p)
         p.style = Paint.Style.FILL
+
+        // The nameplate goes on LAST and sits clear of the dome.
+        //
+        // It used to be painted before the glass and tucked under it, so the bottom of the dome
+        // - a translucent disc reaching a little past the machine's shoulder - lay across the
+        // lettering and washed it out. Placing it below the rim and drawing it after everything
+        // means nothing is ever over it.
+        val signTop = maxOf(bodyTop + w * 0.04f, domeCY + domeR + w * 0.035f)
+        p.color = Theme.ACCENT
+        rect.set(cx - w * 0.36f, signTop, cx + w * 0.36f, signTop + w * 0.18f)
+        c.drawRoundRect(rect, w * 0.05f, w * 0.05f, p)
+        p.color = ColorX.withAlpha(0xFF000000.toInt(), 0.12f)
+        rect.set(cx - w * 0.36f, signTop + w * 0.13f, cx + w * 0.36f, signTop + w * 0.18f)
+        c.drawRoundRect(rect, w * 0.04f, w * 0.04f, p)
+        ui.text(
+            c, "BUDDY PRIZES", cx, signTop + w * 0.135f, w * 0.10f,
+            0xFF2A1D04.toInt(), ui.title, false, w * 0.68f
+        )
 
         val crankCX = cx + w * 0.26f
         val crankCY = bodyTop + w * 0.36f

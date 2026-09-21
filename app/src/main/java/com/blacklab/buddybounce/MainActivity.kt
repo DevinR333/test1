@@ -292,12 +292,14 @@ class MainActivity : Activity(), SensorEventListener, Game.Host {
         card.addView(title)
         nameTitle = title
 
+        // No explanation under the prompt. "What's your name?" is the whole question, and the
+        // line that used to sit here read like a translation.
         val blurb = TextView(this)
-        blurb.text = "It goes on the leaderboard next to your best run."
+        blurb.text = ""
         blurb.setTextColor(Theme.TEXT_DIM)
         blurb.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
         blurb.gravity = Gravity.CENTER
-        blurb.setPadding(0, 0, 0, dp(18f))
+        blurb.setPadding(0, 0, 0, dp(10f))
         card.addView(blurb)
 
         val input = EditText(this)

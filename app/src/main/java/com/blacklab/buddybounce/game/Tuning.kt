@@ -187,6 +187,19 @@ object Tuning {
     // the height bonus at the end, the rest from the handful of coins actually on the way up.
     const val COIN_VALUE = 1
     const val BONE_COIN_VALUE = 5
+
+    /** What the silver coin pays. Deliberately more than ten machine pulls. */
+    const val SILVER_COIN_VALUE = 1000
+
+    /**
+     * The chance that a RUN contains a silver coin. One roll per run, not one per coin.
+     *
+     * Per-coin was the first attempt and it was wrong: a run only places about four coins, so
+     * a 1/4000 per-coin roll works out at roughly one sighting in a thousand runs - rare enough
+     * that nobody would ever see it. Rolling once per run means the number says exactly what it
+     * looks like it says.
+     */
+    const val SILVER_COIN_CHANCE = 1f / 4000f
     /** Halos are worth one each; 1000 of them buys the ghost look permanently. */
     const val HALO_VALUE = 1
     const val HALOS_FOR_GHOST = 1000

@@ -118,7 +118,16 @@ object PickupKind {
     /** Heaven's currency. Replaces coins there, and is only ever a pick-up. */
     const val HALO = 7
 
-    fun isCurrency(kind: Int): Boolean = kind == COIN || kind == BONE || kind == HALO
+    /**
+     * The silver coin: a thousand coins, and about a one-in-eight-runs sighting.
+     *
+     * Rare enough that most runs never see one, common enough that it is a thing that happens
+     * to you rather than a rumour. Never in Heaven, where coins are not the currency.
+     */
+    const val SILVER = 8
+
+    fun isCurrency(kind: Int): Boolean =
+        kind == COIN || kind == BONE || kind == HALO || kind == SILVER
 }
 
 class Pickup : Poolable {

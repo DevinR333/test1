@@ -183,7 +183,7 @@ class MenuScreen(private val g: Game) {
         }
         val machineReady = g.save.coins >= Tuning.GACHA_COST
         if (ui.button(c, Id.GACHA, x + halfW + 24f, cy, halfW, rowH, "COIN MACHINE", Ui.ButtonStyle.SECONDARY,
-                sublabel = if (machineReady) "ready to pull!" else "${Tuning.GACHA_COST} coins a go")) {
+                sublabel = if (machineReady) "ready to pull!" else "${Tuning.GACHA_COST - g.save.coins} coins to go")) {
             g.tap(); g.goto(Game.Screen.GACHA)
         }
         if (machineReady) {

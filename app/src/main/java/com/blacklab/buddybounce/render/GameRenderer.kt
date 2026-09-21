@@ -496,6 +496,7 @@ class GameRenderer(private val art: Art) {
             PickupKind.SHIELD -> shieldIcon(c, pk.x, y, time)
             PickupKind.MAGNET -> magnetIcon(c, pk.x, y)
             PickupKind.HALO -> haloPickup(c, pk.x, y, time + pk.t)
+            PickupKind.SILVER -> silverCoin(c, pk.x, y, time + pk.t)
         }
     }
 
@@ -715,5 +716,58 @@ class GameRenderer(private val art: Art) {
         // The role is fixed by the simulation; the creature wearing it belongs to the scene.
         enemyArt.draw(c, e.kind, Palettes.current.fauna, time, e.phase, e.facing, fade)
         c.restore()
+    }
+
+    /**
+     * The silver coin: a thousand coins on a platform somewhere, once in a very long while.
+     *
+     * It has to be unmistakable from across the screen and from the corner of your eye, so it
+     * is not a recoloured coin - it is bigger, it is ringed by a halo of light, and it throws
+     * out slowly turning rays. If you see one you should know immediately that you have to go
+     * and get it.
+     */
+    private fun silverCoin(c: Canvas, x: Float, y: Float, t: Float) {
+        val rad = 40f
+        val pulse = 0.72f + sin(t * 2.6f) * 0.28f
+
+        // the light coming off it
+        art.drawGlow(c, x, y, rad * 4.4f, 0xFFEAF4FF.toInt(), 0.34f * pulse)
+        p.reset(); p.isAntiAlias = true
+        for (i in 0 until 8) {
+            val a = t * 0.7f + i * 0.7854f
+            val len = rad * (2.5f + sin(t * 3.1f + i) * 0.5f)
+            p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.2f * pulse)
+            path.reset()
+            path.moveTo(x + cos(a) * rad * 0.9f, y + sin(a) * rad * 0.9f)
+            path.lineTo(x + cos(a + 0.1f) * len, y + sin(a + 0.1f) * len)
+            path.lineTo(x + cos(a - 0.1f) * len, y + sin(a - 0.1f) * len)
+            path.close()
+            c.drawPath(path, p)
+        }
+
+        // the coin itself, turning
+        val squash = abs(cos(t * 1.7f)).coerceAtLeast(0.2f)
+        p.color = 0xFF8E9AAC.toInt()
+        r.set(x - rad * squash, y - rad, x + rad * squash, y + rad)
+        c.drawOval(r, p)
+        p.color = 0xFFDDE6F2.toInt()
+        r.set(x - rad * squash * 0.84f, y - rad * 0.84f, x + rad * squash * 0.84f, y + rad * 0.84f)
+        c.drawOval(r, p)
+        p.color = 0xFFF7FBFF.toInt()
+        r.set(x - rad * squash * 0.6f, y - rad * 0.6f, x + rad * squash * 0.6f, y + rad * 0.6f)
+        c.drawOval(r, p)
+        // a paw stamped in the middle, so it reads as HIS treasure
+        p.color = ColorX.withAlpha(0xFF8E9AAC.toInt(), 0.9f)
+        if (squash > 0.42f) {
+            c.drawCircle(x, y + rad * 0.12f, rad * 0.24f, p)
+            for (i in 0 until 3) {
+                val a = -1.9f + i * 0.62f
+                c.drawCircle(x + cos(a) * rad * 0.3f * squash, y + sin(a) * rad * 0.32f, rad * 0.11f, p)
+            }
+        }
+        // the catch-light that sells it as metal
+        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.85f * pulse)
+        r.set(x - rad * squash * 0.5f, y - rad * 0.62f, x - rad * squash * 0.1f, y - rad * 0.2f)
+        c.drawOval(r, p)
     }
 }

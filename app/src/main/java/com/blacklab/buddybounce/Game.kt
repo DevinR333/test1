@@ -1081,6 +1081,18 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         audio.play(Audio.COIN, 0.35f, 1.3f)
     }
 
+    override fun onSilverCoin(x: Float, y: Float) {
+        // Once in a very long while. It gets the full treatment - if a player only ever sees
+        // one, it should be the moment they remember.
+        audio.play(Audio.FANFARE, 0.8f)
+        audio.play(Audio.COIN, 0.9f, 1.3f)
+        fx.sparkle(x, y, 0xFFF7FBFF.toInt(), 34)
+        fx.pop(x, y + 60f, "+${Tuning.SILVER_COIN_VALUE} SILVER!", 0xFFEAF4FF.toInt(), 62f)
+        flashScreen(0.45f)
+        shakeScreen(0.35f)
+        haptics.prize(3)
+    }
+
     override fun onRedundantPickup(pickup: Pickup, coins: Int) {
         audio.play(Audio.COIN, 0.55f, 1.18f)
         fx.sparkle(pickup.x, pickup.y, Theme.ACCENT, 10)

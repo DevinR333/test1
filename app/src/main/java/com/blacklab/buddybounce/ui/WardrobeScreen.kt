@@ -35,6 +35,9 @@ class WardrobeScreen(private val g: Game) {
     }
 
     private val tabLabels = arrayOf("OUTFITS", "TRAILS")
+
+    /** The picture never gets less than this, whatever the panel has to spare. */
+    private val MIN_ART = 200f
     private var tab = Tab.OUTFITS
     private var selected = 0
     private var trailSelected = 0
@@ -102,7 +105,9 @@ class WardrobeScreen(private val g: Game) {
             drawGrid(c, gridX, top, g.worldW - gridX - ui.safeRight - 40f, avail, 4)
         } else {
             // The preview takes a share, never so much that the grid stops being usable.
-            val previewH = (avail * 0.44f).coerceIn(260f, 430f).coerceAtMost(avail - 190f)
+            // The preview needs real room: it is the only place you see the outfit you are
+            // choosing, and the grid below it is still usable when it is a row shorter.
+            val previewH = (avail * 0.52f).coerceIn(320f, 500f).coerceAtMost(avail - 170f)
             drawPreview(c, ui.safeLeft + 36f, top + rise, bodyW, previewH)
             val gridTop = top + previewH + 22f
             drawGrid(c, ui.safeLeft + 36f, gridTop, bodyW,
@@ -114,6 +119,43 @@ class WardrobeScreen(private val g: Game) {
         val ui = g.ui
         scroll.update(dt, ui.pointerDown, ui.scrollDrag, maxScroll)
     }
+
+    private class ArtBox(
+        val top: Float, val bottom: Float, val buddyY: Float,
+        val nameY: Float, val nameSize: Float, val blurbSize: Float
+    ) {
+        val height: Float get() = bottom - top
+    }
+
+    /**
+     * Splits a preview panel between the picture and the two lines under it.
+     *
+     * Clipping the art alone was not enough and swung the problem the other way: on a short
+     * panel the box left for it collapsed to nothing and the outfit got cut in half. The
+     * PICTURE gets first claim here - never less than [MIN_ART] - and the text band takes what
+     * is left, shrinking its two lines to fit rather than pushing the art out of existence.
+     */
+    private fun artBox(y: Float, ctaTop: Float, h: Float): ArtBox {
+        val top = y + 92f
+        var bottom = ctaTop - 96f                       // the roomy case: two lines at full size
+        if (bottom - top < MIN_ART) bottom = (top + MIN_ART).coerceAtMost(ctaTop - 44f)
+        val band = ctaTop - bottom
+        val nameSize = (band * 0.46f).coerceIn(26f, 44f)
+        val blurbSize = (band * 0.29f).coerceIn(17f, 27f)
+        return ArtBox(top, bottom, bottom - 4f, bottom + nameSize, nameSize, blurbSize)
+    }
+
+    /**
+     * Buddy sized to the box he is standing in, not to the panel.
+     *
+     * The numbers are the TALLEST and WIDEST thing that can stand there, not the average dog:
+     * a party cone reaches about 220 units above his paws, and Developer Approved is a whole
+     * human at around 205 - so 230 is the height the box has to hold, with headroom for the
+     * next hat. Width is the dog's, nose to tail. Scaling to the panel instead of to the box is
+     * what let him grow out through the lid in the first place.
+     */
+    private fun buddyScale(w: Float, artH: Float): Float =
+        min((w - 60f) / 190f, (artH - 14f) / 230f).coerceAtLeast(0.35f)
 
     private fun drawPreview(c: Canvas, x: Float, y: Float, w: Float, h: Float) {
         if (tab == Tab.TRAILS) { drawTrailPreview(c, x, y, w, h); return }
@@ -150,38 +192,35 @@ class WardrobeScreen(private val g: Game) {
         // over the name and the blurb underneath - the two bits of text the card exists to
         // show. He is also scaled to the box rather than to the whole panel, so on a short
         // preview he gets smaller instead of growing out through the lid.
-        val artTop = y + 92f
-        val artBottom = nameY - 46f
-        val artH = (artBottom - artTop).coerceAtLeast(90f)
-        val buddyY = artBottom - 6f
+        val art = artBox(y, ctaTop, h)
         c.save()
-        c.clipRect(x + 6f, artTop, x + w - 6f, artBottom)
+        c.clipRect(x + 6f, art.top, x + w - 6f, art.bottom)
         if (owned) {
-            g.art.drawGlow(c, x + w * 0.5f, buddyY - artH * 0.42f, min(260f, artH * 0.9f),
-                outfit.rarity.glow or 0xFF000000.toInt(), 0.22f)
+            g.art.drawGlow(c, x + w * 0.5f, art.buddyY - art.height * 0.42f,
+                min(260f, art.height * 0.85f), outfit.rarity.glow or 0xFF000000.toInt(), 0.22f)
             // The equipped trail belongs in the OUTFIT preview too. Without it "randomize all"
             // looked broken: it rolled a new trail, but the dog you were looking at never showed
             // one, because trails were only drawn on the trails tab.
             if (g.save.equippedTrail != Trails.NONE_ID) {
                 g.drawTrailSample(
-                    c, x + w * 0.5f - w * 0.1f, buddyY - artH * 0.62f, w * 0.56f, artH * 0.2f,
-                    g.save.equippedTrail, ui.time
+                    c, x + w * 0.5f - w * 0.1f, art.buddyY - art.height * 0.66f,
+                    w * 0.54f, art.height * 0.18f, g.save.equippedTrail, ui.time
                 )
             }
-            g.drawPosedBuddy(c, x + w * 0.5f, buddyY, min(w / 300f, artH / 215f) * 1.5f, outfit.id, ui.time)
+            g.drawPosedBuddy(c, x + w * 0.5f, art.buddyY, buddyScale(w, art.height), outfit.id, ui.time)
         } else {
-            val r = min(96f, artH * 0.34f)
+            val r = min(96f, art.height * 0.32f)
             p.color = 0xFF2A3350.toInt()
-            c.drawCircle(x + w * 0.5f, buddyY - artH * 0.45f, r, p)
-            ui.text(c, "?", x + w * 0.5f, buddyY - artH * 0.45f + r * 0.4f, r * 1.35f,
+            c.drawCircle(x + w * 0.5f, art.buddyY - art.height * 0.45f, r, p)
+            ui.text(c, "?", x + w * 0.5f, art.buddyY - art.height * 0.45f + r * 0.4f, r * 1.35f,
                 0xFF4A5675.toInt(), ui.title, false)
         }
         c.restore()
 
         ui.text(c, g.displayName(outfit.id, outfit.name).uppercase(),
-            x + w * 0.5f, nameY, 44f, Theme.TEXT, ui.title, false, w - 50f)
+            x + w * 0.5f, art.nameY, art.nameSize, Theme.TEXT, ui.title, false, w - 50f)
         ui.text(c, g.displayBlurb(outfit.id, outfit.blurb, owned),
-            x + w * 0.5f, ctaTop - 16f, 27f, Theme.TEXT_DIM, ui.body, false, w - 50f)
+            x + w * 0.5f, ctaTop - 14f, art.blurbSize, Theme.TEXT_DIM, ui.body, false, w - 50f)
         if (owned) {
             if (equipped) {
                 ui.pill(c, bx, by - 6f, bw, 62f, 0x332AE08A)
@@ -381,28 +420,26 @@ class WardrobeScreen(private val g: Game) {
         // Same clipped art box as the outfit tab, and for the same reason - a trail sample is
         // the worst offender of the lot, throwing particles a good way past the height it is
         // asked for.
-        val artTop = y + 92f
-        val artBottom = nameY - 46f
-        val artH = (artBottom - artTop).coerceAtLeast(90f)
-        val buddyY = artBottom - 6f
+        val art = artBox(y, ctaTop, h)
         c.save()
-        c.clipRect(x + 6f, artTop, x + w - 6f, artBottom)
+        c.clipRect(x + 6f, art.top, x + w - 6f, art.bottom)
         if (owned) {
             if (trail != null) {
-                g.drawTrailSample(c, x + w * 0.5f, buddyY - artH * 0.6f, w * 0.72f, artH * 0.26f, id, ui.time)
+                g.drawTrailSample(c, x + w * 0.5f, art.buddyY - art.height * 0.64f,
+                    w * 0.7f, art.height * 0.22f, id, ui.time)
             }
-            g.drawPosedBuddy(c, x + w * 0.5f, buddyY, min(w / 300f, artH / 215f) * 1.25f, g.equippedOutfit, ui.time)
+            g.drawPosedBuddy(c, x + w * 0.5f, art.buddyY, buddyScale(w, art.height), g.equippedOutfit, ui.time)
         } else {
-            val r = min(88f, artH * 0.32f)
+            val r = min(88f, art.height * 0.3f)
             p.color = 0xFF2A3350.toInt()
-            c.drawCircle(x + w * 0.5f, buddyY - artH * 0.45f, r, p)
-            ui.text(c, "?", x + w * 0.5f, buddyY - artH * 0.45f + r * 0.4f, r * 1.35f,
+            c.drawCircle(x + w * 0.5f, art.buddyY - art.height * 0.45f, r, p)
+            ui.text(c, "?", x + w * 0.5f, art.buddyY - art.height * 0.45f + r * 0.4f, r * 1.35f,
                 0xFF4A5675.toInt(), ui.title, false)
         }
         c.restore()
 
         val name = if (trail == null) "No Trail" else g.displayName(trail.id, trail.name)
-        ui.text(c, name.uppercase(), x + w * 0.5f, nameY, 42f, Theme.TEXT, ui.title, false, w - 50f)
+        ui.text(c, name.uppercase(), x + w * 0.5f, art.nameY, art.nameSize, Theme.TEXT, ui.title, false, w - 50f)
         val blurb = when {
             trail == null -> "Clean paws. Nothing behind him."
             else -> g.displayBlurb(trail.id, trail.blurb, owned)

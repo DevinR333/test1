@@ -26,6 +26,9 @@ class World(worldWidth: Float, private val events: Events) {
         fun onFlightStart(kind: Int) {}
         fun onFlightEnd(kind: Int) {}
         fun onStomp(enemy: Enemy) {}
+
+        /** The one-in-thousands coin. Worth a fuss. */
+        fun onSilverCoin(x: Float, y: Float) {}
         fun onShieldBreak(x: Float, y: Float) {}
         fun onRescue(x: Float, y: Float) {}
         fun onDeath(cause: Int) {}
@@ -83,6 +86,12 @@ class World(worldWidth: Float, private val events: Events) {
 
     /** Where Buddy's feet were at the top of this frame. See the stomp test in updateEnemies. */
     private var buddyPrevFoot = 0f
+
+    /**
+     * Which coin of this run is the silver one, or -1 for the overwhelming majority of runs
+     * that do not have one. Decided once, at reset - see Tuning.SILVER_COIN_CHANCE.
+     */
+    private var silverOnCoin = -1
     private var rowsSinceSolid = 0
     private var lastWasHazard = false
     private var lastPlatX = 0f
@@ -124,6 +133,8 @@ class World(worldWidth: Float, private val events: Events) {
         maxY = startY
         runCoins = 0
         runHalos = 0
+        // One roll for the whole run. Placed a few coins in, so a run that has one reaches it.
+        silverOnCoin = if (rand(0f, 1f) < Tuning.SILVER_COIN_CHANCE) 2 + rng.nextInt(3) else -1
         bonusScore = 0
         reportedBonusCoins = 0
         finished = false
@@ -591,6 +602,10 @@ class World(worldWidth: Float, private val events: Events) {
             PickupKind.HALO -> runHalos += Tuning.HALO_VALUE
             PickupKind.COIN -> runCoins += Tuning.COIN_VALUE * coinMultiplier
             PickupKind.BONE -> runCoins += Tuning.BONE_COIN_VALUE * coinMultiplier
+            PickupKind.SILVER -> {
+                runCoins += Tuning.SILVER_COIN_VALUE * coinMultiplier
+                events.onSilverCoin(c.x, c.y)
+            }
             PickupKind.SHIELD -> { b.shieldTime = Tuning.SHIELD_TIME }
             PickupKind.MAGNET -> { b.magnetTime = Tuning.MAGNET_TIME }
             PickupKind.PROPELLER -> startFlight(Flight.PROPELLER, Tuning.PROPELLER_TIME)
@@ -902,7 +917,9 @@ class World(worldWidth: Float, private val events: Events) {
         coinsPlaced++
         val c = pickups.obtain()
         c.kind = when {
+            // Heaven pays in halos, so there is nothing for a silver coin to be worth there.
             haloMode -> PickupKind.HALO
+            coinsPlaced == silverOnCoin -> PickupKind.SILVER
             coinsPlaced % Tuning.BONE_EVERY == 0 -> PickupKind.BONE
             else -> PickupKind.COIN
         }
