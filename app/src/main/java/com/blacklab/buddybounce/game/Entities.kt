@@ -65,6 +65,12 @@ class Platform : Poolable {
     var boost = Boost.NONE
 
     var vx = 0f           // sliders
+    /**
+     * Where the top surface was at the start of this frame, before [PlatKind.HOVER] moved it.
+     * The landing test needs it: comparing Buddy's old position against the platform's NEW one
+     * lets a rising platform capture him from below, which is a bounce he never earned.
+     */
+    var prevY = 0f
     var baseY = 0f        // hover origin
     var phase = 0f        // hover phase
     var biome = 0
@@ -94,7 +100,7 @@ class Platform : Poolable {
     override fun reset() {
         x = 0f; y = 0f; w = 0f
         kind = PlatKind.SOLID; boost = Boost.NONE
-        vx = 0f; baseY = 0f; phase = 0f; biome = 0; seed = 0
+        vx = 0f; prevY = 0f; baseY = 0f; phase = 0f; biome = 0; seed = 0
         isGround = false; rescue = false
         state = 0; timer = 0f; hitAnim = 0f; boostAnim = 0f
         alpha = 1f; fallVy = 0f; tilt = 0f

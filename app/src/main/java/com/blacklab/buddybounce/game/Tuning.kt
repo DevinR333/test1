@@ -156,6 +156,14 @@ object Tuning {
     const val SHIELD_TIME = 12f
     const val MAGNET_TIME = 7f
     const val MAGNET_RANGE = 830f
+    // Seek speed as a MULTIPLE of Buddy's own top speed, at the edge of the magnet's reach and
+    // then the extra it gains closing in. Multiples, not absolutes: a fixed number that felt
+    // brisk in portrait was slower than he runs in landscape, so coins simply never caught him.
+    // Anything above 1.0 guarantees the coin closes no matter how he moves.
+    const val MAGNET_SPEED_FAR = 1.5f
+    const val MAGNET_SPEED_NEAR_GAIN = 1.2f
+    /** How fast a coin re-aims at Buddy, 1/s. High enough that he cannot outrun it. */
+    const val MAGNET_TURN = 14f
     const val ENEMY_STOMP_V = 2200f       // a stomp is a nudge, not a launch
     const val FLIGHT_EXIT_V = 400f        // velocity handed back to gravity when flight ends
 
@@ -165,6 +173,8 @@ object Tuning {
     const val COIN_VALUE = 1
     const val BONE_COIN_VALUE = 5
     const val GACHA_COST = 100
+    /** Paid out when a pick-up duplicates a power-up that is already running. */
+    const val REDUNDANT_PICKUP_COINS = 1
     const val DUPLICATE_REFUND = 35
     /** Points per coin awarded at the end of a run. */
     const val SCORE_PER_BONUS_COIN = 300

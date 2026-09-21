@@ -249,6 +249,7 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         applyScene()
         world.reset()
         lastScore = 0; lastRunCoins = 0; lastBonusCoins = 0; lastCoins = 0
+        coinFlash = 0; coinFlashT = 0f
         lastRank = -1; lastNewBest = false
         chosenPowerup = null
         pendingPowerup = null
@@ -350,6 +351,7 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         flash = MathX.approach(flash, 0f, 5f, dt)
         if (biomeToast > 0f) biomeToast -= dt
         if (noticeT > 0f) noticeT -= dt
+        if (coinFlashT > 0f) coinFlashT -= dt
         ui.beginFrame(dt)
 
         when (screen) {
@@ -714,19 +716,34 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
     // World.Events - juice lives here
     // -------------------------------------------------------------------------------------
 
+    /**
+     * Where Buddy's paws actually met the plank.
+     *
+     * The effects used to come off the platform's CENTRE, which is fine for a 170-wide ledge but
+     * absurd on the full-width starting ground: the puff appeared in the middle of the yard no
+     * matter where he came down. His own x is the contact point; clamping it to the platform's
+     * span keeps the dust on the wood for narrow planks he has caught by the corner.
+     */
+    private fun contactX(platform: Platform): Float {
+        val half = platform.w * 0.5f
+        val d = MathX.wrapDelta(world.buddy.x, platform.x, world.worldW)
+        return platform.x + MathX.clamp(d, -half, half)
+    }
+
     override fun onBounce(platform: Platform, strength: Float) {
         val pal = Palettes.get(platform.biome)
-        fx.dust(platform.x, platform.y, if (strength > 1f) 12 else 7, ColorX.tint(pal.platTop, 0.35f), strength)
+        val cx = contactX(platform)
+        fx.dust(cx, platform.y, if (strength > 1f) 12 else 7, ColorX.tint(pal.platTop, 0.35f), strength)
         when {
             strength >= Tuning.TRAMPOLINE_MULT -> {
                 audio.play(Audio.TRAMPOLINE, 0.9f)
-                fx.ring(platform.x, platform.y + 20f, 0xFF7FB2FF.toInt(), 90f)
+                fx.ring(cx, platform.y + 20f, 0xFF7FB2FF.toInt(), 90f)
                 shake = 0.5f
                 haptic(18)
             }
             strength > 1f -> {
                 audio.play(Audio.SPRING, 0.8f)
-                fx.ring(platform.x, platform.y + 20f, Theme.ACCENT, 70f)
+                fx.ring(cx, platform.y + 20f, Theme.ACCENT, 70f)
                 shake = 0.28f
                 haptic(12)
             }
@@ -766,6 +783,34 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
                 haptic(14)
             }
         }
+    }
+
+    /**
+     * A power-up you already had. It pays out instead of vanishing, so the feedback is the coin
+     * sound and a plain "+N ALREADY HAD IT" rather than the power-up fanfare - the player needs
+     * to see that it did something, but not to think a second magnet started.
+     */
+    // ---- the "+N" that flashes over the HUD coin counter ----
+    /** How many coins the last height threshold paid, and how long the flash has left. */
+    var coinFlash = 0
+        private set
+    var coinFlashT = 0f
+        private set
+
+    override fun onHeightCoins(gained: Int, total: Int) {
+        // Height coins are the quiet half of the economy - they accrue with the climb and you
+        // never see them until the run ends. Flashing the increment over the counter is the
+        // whole point: you find out WHEN you earned them, and how many.
+        coinFlash = if (coinFlashT > 0f) coinFlash + gained else gained
+        coinFlashT = COIN_FLASH_TIME
+        audio.play(Audio.COIN, 0.35f, 1.3f)
+    }
+
+    override fun onRedundantPickup(pickup: Pickup, coins: Int) {
+        audio.play(Audio.COIN, 0.55f, 1.18f)
+        fx.sparkle(pickup.x, pickup.y, Theme.ACCENT, 10)
+        fx.pop(pickup.x, pickup.y + 50f, "+$coins ALREADY HAD IT", Theme.ACCENT, 46f)
+        haptic(6)
     }
 
     private fun labelFor(kind: Int): String = when (kind) {
@@ -883,6 +928,8 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         const val COUNTDOWN_SECONDS = 3.9f
         /** How much faster the 3-2-1-GO count runs while a finger is held down. */
         const val COUNTDOWN_SKIP_RATE = 4.5f
+        /** Seconds the "+N coins" flash stays up over the HUD counter. */
+        const val COIN_FLASH_TIME = 1.1f
         /** Testing back door - enter as the player name to unlock every collectable. */
         const val UNLOCK_CODE = "u7d%4>"
     }

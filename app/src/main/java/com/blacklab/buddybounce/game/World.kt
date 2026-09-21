@@ -19,6 +19,10 @@ class World(worldWidth: Float, private val events: Events) {
         fun onBounce(platform: Platform, strength: Float) {}
         fun onPlatformBreak(platform: Platform) {}
         fun onPickup(pickup: Pickup) {}
+        /** A power-up that was already running, converted to [coins] instead of being wasted. */
+        fun onRedundantPickup(pickup: Pickup, coins: Int) {}
+        /** Climbing past a height threshold has just earned [gained] more banked coins. */
+        fun onHeightCoins(gained: Int, total: Int) {}
         fun onFlightStart(kind: Int) {}
         fun onFlightEnd(kind: Int) {}
         fun onStomp(enemy: Enemy) {}
@@ -80,6 +84,8 @@ class World(worldWidth: Float, private val events: Events) {
     private var dragTargetX = 0f
     private var wasDragging = false
     private var nextCoinY = 0f
+    /** Last value of [heightBonusCoins] we told anyone about, so we can report the increments. */
+    private var reportedBonusCoins = 0
     private var coinsPlaced = 0
 
     val screens: Float get() = (maxY - startY) / Tuning.VIEW_H
@@ -104,6 +110,7 @@ class World(worldWidth: Float, private val events: Events) {
         maxY = startY
         runCoins = 0
         bonusScore = 0
+        reportedBonusCoins = 0
         finished = false
         deathSettled = false
         biome = 0
@@ -271,6 +278,14 @@ class World(worldWidth: Float, private val events: Events) {
         buddy.updateAnim(dt, metrics.maxVx)
         if (lowGravityTime > 0f) lowGravityTime -= dt
 
+        // Height coins accrue continuously with the score; tell the HUD about each step up so
+        // the player can see WHEN they earned them rather than only at the end of the run.
+        val bonus = heightBonusCoins
+        if (bonus > reportedBonusCoins) {
+            events.onHeightCoins(bonus - reportedBonusCoins, bonus)
+            reportedBonusCoins = bonus
+        }
+
         val b = Tuning.biomeIndex(screens).coerceAtMost(Tuning.BIOME_COUNT * 6)
         if (b != biome) {
             biome = b
@@ -368,6 +383,7 @@ class World(worldWidth: Float, private val events: Events) {
         p.x = clamp(b.x, Tuning.PLAT_EDGE_MARGIN + p.w * 0.5f, worldW - Tuning.PLAT_EDGE_MARGIN - p.w * 0.5f)
         p.y = camY + Tuning.VIEW_H * 0.14f
         p.baseY = p.y
+        p.prevY = p.y
         p.seed = rng.nextInt(1024)
         p.rescue = true
         b.x = p.x
@@ -384,7 +400,12 @@ class World(worldWidth: Float, private val events: Events) {
         var bestY = -Float.MAX_VALUE
         for (p in platforms.items) {
             if (!p.alive || p.state != 0) continue
-            if (prevFoot < p.y - 2f || b.y > p.y) continue
+            // Buddy must have been ABOVE this platform's surface where that surface was at the
+            // start of the frame, and be at or below where it is now. Testing his old position
+            // against the platform's new one let a rising HOVER platform sweep up through him
+            // and count as a landing - which is exactly the "I lived without hitting anything"
+            // bounce at the bottom of the screen.
+            if (prevFoot < p.prevY - 2f || b.y > p.y) continue
             val dx = wrapDelta(b.x, p.x, worldW)
             val span = p.w * 0.5f + Tuning.BUDDY_FOOT_HALF
             if (abs(dx) > span) {
@@ -435,6 +456,8 @@ class World(worldWidth: Float, private val events: Events) {
     private fun updatePlatforms(dt: Float) {
         for (p in platforms.items) {
             if (!p.alive) continue
+            // Where the surface was before this frame moved it. See Platform.prevY.
+            p.prevY = p.y
             p.hitAnim = MathX.approach(p.hitAnim, 0f, 6f, dt)
             p.boostAnim = MathX.approach(p.boostAnim, 0f, 5f, dt)
 
@@ -483,18 +506,26 @@ class World(worldWidth: Float, private val events: Events) {
                 c.y += c.vy * dt
             }
 
-            if (magnet && PickupKind.isCurrency(c.kind) && carrier == null) {
+            if (PickupKind.isCurrency(c.kind) && carrier == null && (magnet || c.magnetised)) {
                 val dx = wrapDelta(b.x, c.x, worldW)
                 val dy = (b.y + Tuning.BUDDY_H * 0.5f) - c.y
                 val d2 = dx * dx + dy * dy
-                if (d2 < Tuning.MAGNET_RANGE * Tuning.MAGNET_RANGE) {
+                // Once a coin has committed to him it keeps seeking even if he outruns the
+                // magnet's radius - otherwise a coin that was already on its way gets abandoned
+                // half-travelled, which looks like the magnet giving up.
+                if (c.magnetised || d2 < Tuning.MAGNET_RANGE * Tuning.MAGNET_RANGE) {
                     val d = MathX.sqrtf(d2).coerceAtLeast(1f)
-                    val pull = 4200f * dt
                     c.magnetised = true
-                    c.vx += dx / d * pull
-                    c.vy += dy / d * pull
-                    c.vx = clamp(c.vx, -3800f, 3800f)
-                    c.vy = clamp(c.vy, -3800f, 3800f)
+                    // Re-AIM the velocity at where he is now, rather than adding to whatever it
+                    // already was. The old version accumulated impulses, so a coin built up
+                    // sideways momentum and sailed past a moving Buddy in a long arc - which is
+                    // exactly the "they avoid him if you move" behaviour. A seek that rewrites
+                    // the velocity every frame converges on him no matter how he moves.
+                    val closeness = 1f - clamp(d / Tuning.MAGNET_RANGE, 0f, 1f)
+                    val speed = metrics.maxVx *
+                        (Tuning.MAGNET_SPEED_FAR + closeness * Tuning.MAGNET_SPEED_NEAR_GAIN)
+                    c.vx = MathX.approach(c.vx, dx / d * speed, Tuning.MAGNET_TURN, dt)
+                    c.vy = MathX.approach(c.vy, dy / d * speed, Tuning.MAGNET_TURN, dt)
                 }
             }
 
@@ -509,9 +540,37 @@ class World(worldWidth: Float, private val events: Events) {
         }
     }
 
+    /**
+     * True when this pick-up would do nothing because the very same power-up is already running.
+     *
+     * Deliberately SAME-TYPE only: grabbing a magnet while a magnet is up is a wasted pick-up and
+     * gets paid out, but grabbing a magnet while a shield is up is just two power-ups, and is
+     * left alone.
+     */
+    private fun isRedundant(kind: Int): Boolean {
+        val b = buddy
+        return when (kind) {
+            PickupKind.SHIELD -> b.shieldTime > 0f
+            PickupKind.MAGNET -> b.magnetTime > 0f || magnetForever
+            PickupKind.PROPELLER -> b.flight == Flight.PROPELLER
+            PickupKind.JETPACK -> b.flight == Flight.JETPACK
+            PickupKind.ROCKET -> b.flight == Flight.ROCKET
+            else -> false
+        }
+    }
+
     private fun collect(c: Pickup) {
         val b = buddy
         c.alive = false
+
+        if (isRedundant(c.kind)) {
+            // Can't stack it, so it pays instead of evaporating.
+            val paid = Tuning.REDUNDANT_PICKUP_COINS * coinMultiplier
+            runCoins += paid
+            events.onRedundantPickup(c, paid)
+            return
+        }
+
         when (c.kind) {
             PickupKind.COIN -> runCoins += Tuning.COIN_VALUE * coinMultiplier
             PickupKind.BONE -> runCoins += Tuning.BONE_COIN_VALUE * coinMultiplier

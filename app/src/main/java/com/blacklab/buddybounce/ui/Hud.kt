@@ -59,14 +59,19 @@ class Hud(private val g: Game) {
         rect.set(pcx + 5f, pcy - 19f, pcx + 17f, pcy + 19f)
         c.drawRoundRect(rect, 5f, 5f, p)
 
-        // coins picked up this run (they bank when the run ends)
-        val coinText = g.world.runCoins.toString()
+        // Everything this run is worth so far: the coins picked up PLUS the height bonus earned
+        // so far. The bonus used to be invisible until the run ended, which made the "+N" flash
+        // below meaningless - there was no number for it to be an increment of.
+        val runTotal = g.world.runCoins + g.world.heightBonusCoins
+        val coinText = runTotal.toString()
         val cw = ui.measure(coinText, 40f, ui.bodyLeft) + 104f
         val cx = g.worldW - ui.safeRight - cw - 18f
         val cy = pcy + 74f
         ui.pill(c, cx, cy, cw, 58f, 0xCC101728.toInt())
         coinIcon(c, cx + 34f, cy + 29f, 20f)
         ui.text(c, coinText, cx + 62f, cy + 42f, 40f, Theme.ACCENT, ui.bodyLeft, false)
+
+        drawCoinFlash(c, cx + cw * 0.5f, cy)
 
         drawPowerBar(c, left, top + 148f)
 
@@ -136,6 +141,23 @@ class Hud(private val g: Game) {
         c.drawCircle(cx - r * 0.3f, cy - r * 0.22f, r * 0.14f, p)
         c.drawCircle(cx, cy - r * 0.38f, r * 0.14f, p)
         c.drawCircle(cx + r * 0.3f, cy - r * 0.22f, r * 0.14f, p)
+    }
+
+    /**
+     * The "+N" that pops over the coin counter when a height threshold pays out. Rises a little
+     * and fades quickly - it is a receipt, not a notification.
+     */
+    private fun drawCoinFlash(c: Canvas, cx: Float, pillTop: Float) {
+        val t = g.coinFlashT
+        if (t <= 0f) return
+        val k = clamp01(t / Game.COIN_FLASH_TIME)
+        val rise = (1f - k) * 46f
+        // a quick overshoot on arrival, so it reads as a hit rather than a fade-in
+        val pop = if (k > 0.86f) 1f + (k - 0.86f) * 2.6f else 1f
+        g.ui.text(
+            c, "+" + g.coinFlash, cx, pillTop - 14f - rise, 42f * pop,
+            ColorX.withAlpha(Theme.ACCENT, clamp01(k * 1.6f)), g.ui.title, true, 220f
+        )
     }
 
     // ---- pause -------------------------------------------------------------------------
