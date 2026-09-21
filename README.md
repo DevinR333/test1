@@ -12,12 +12,16 @@ is **Buddy**, a black lab, and the higher he gets the better your score.
 * Scarce coins, mostly earned as a height bonus at the end of a run. 100 of them buys a pull on
   the **prize machine**, which hands out consumable **power-ups** (74%), **trails** (15%),
   **outfits** (10%) and, at 1%, a **whole new world** to climb.
-* **42 outfits**, **40 trails** and **5 worlds**, all swappable freely, any time, for free —
+* **43 outfits**, **41 trails** and **10 worlds**, all swappable freely, any time, for free —
   with one-tap **randomize** buttons in the wardrobe.
+* **Music for every world**, synthesised in code — breezy in the backyard, techno in Neon City,
+  a music box in Hollow Hill — with independent mute and volume for music and effects.
+* A **secret eleventh world** that opens only when you have unlocked everything else.
 * Hazards are **themed to the world you're in** — bees over the lawn, pufferfish and angler fish
   underwater, flame imps and molten rock in Emberfall.
-* Testing: enter **`u7d%4>`** as your name to unlock everything — every outfit, trail and world,
-  five of each power-up and 1 000 coins.
+* Testing: enter one of these as your name — **`u7d%4>`** unlocks everything, **`u7d%4<`**
+  unlocks everything except one trail (so you can watch the last unlock open the secret world),
+  and **`u7d%4=`** makes prize-machine pulls free.
 * A **local leaderboard** under the name you enter on first launch.
 
 The reverse-engineering notes the whole thing is built from — platform taxonomy, the power-up
@@ -131,7 +135,7 @@ app/src/main/java/com/blacklab/buddybounce/
 ├── render/                everything visual, drawn as vectors on a Canvas
 │   ├── BuddyArt.kt        the dog rig: squash, stretch, lean, ear flap, tail wag
 │   ├── OutfitArt.kt       41 outfits composed onto that same rig
-│   ├── EnemyArt.kt        20 hazard designs: four roles × five worlds
+│   ├── EnemyArt.kt        40 hazard designs: four roles × ten worlds
 │   ├── TrailArt.kt        the 14 trail draw styles
 │   ├── GameRenderer.kt    platforms, coins, power-ups, hazards
 │   ├── Backdrop.kt        parallax sky, biomes, cross-fades
@@ -143,7 +147,10 @@ app/src/main/java/com/blacklab/buddybounce/
 │   ├── WardrobeScreen.kt  outfits and trails, on two tabs
 │   └── ScenesScreen.kt    the worlds you have unlocked
 ├── input/Controls.kt      tilt (display-rotation aware), gamepad, and the positional drag
-├── audio/Audio.kt         all sound effects synthesised at first launch, no audio assets
+├── audio/
+│   ├── Audio.kt           sound effects, synthesised at first launch - no audio assets
+│   ├── Music.kt           one looping track per world, also synthesised in code
+│   └── Wav.kt             the WAV writer both of them share
 └── data/                  SharedPreferences save, outfit catalogue
 ```
 

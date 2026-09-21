@@ -343,6 +343,19 @@ class Save(ctx: Context) {
         get() = prefs.getBoolean(KEY_SOUND, true)
         set(value) = editAsync { it.putBoolean(KEY_SOUND, value) }
 
+    var musicOn: Boolean
+        get() = prefs.getBoolean(KEY_MUSIC, true)
+        set(value) = editAsync { it.putBoolean(KEY_MUSIC, value) }
+
+    /** 0..1, scaling each mix independently of its on/off switch. */
+    var musicVolume: Float
+        get() = prefs.getFloat(KEY_MUSIC_VOL, 0.7f)
+        set(value) = editAsync { it.putFloat(KEY_MUSIC_VOL, value.coerceIn(0f, 1f)) }
+
+    var sfxVolume: Float
+        get() = prefs.getFloat(KEY_SFX_VOL, 1f)
+        set(value) = editAsync { it.putFloat(KEY_SFX_VOL, value.coerceIn(0f, 1f)) }
+
     var hapticsOn: Boolean
         get() = prefs.getBoolean(KEY_HAPTICS, true)
         set(value) = editAsync { it.putBoolean(KEY_HAPTICS, value) }
@@ -385,6 +398,9 @@ class Save(ctx: Context) {
         private const val KEY_TILT_INVERT = "tiltInvert"
         private const val KEY_SOUND = "sound"
         private const val KEY_HAPTICS = "haptics"
+        private const val KEY_MUSIC = "music"
+        private const val KEY_MUSIC_VOL = "musicVol"
+        private const val KEY_SFX_VOL = "sfxVol"
         private const val KEY_LAST_SEEN = "lastSeen"
 
         fun sanitizeName(raw: String): String {

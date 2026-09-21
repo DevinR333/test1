@@ -2,6 +2,7 @@ package com.blacklab.buddybounce
 
 import android.graphics.Canvas
 import com.blacklab.buddybounce.audio.Audio
+import com.blacklab.buddybounce.audio.Music
 import com.blacklab.buddybounce.data.Outfits
 import com.blacklab.buddybounce.data.Powerups
 import com.blacklab.buddybounce.data.Save
@@ -50,7 +51,7 @@ import kotlin.math.sin
  * the camera zoom - the world view is 2560 units tall, so Buddy and the platforms sit small in
  * a lot of sky, while the menus stay exactly the size they were.
  */
-class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
+class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) : World.Events {
 
     interface Host {
         fun setLandscape(landscape: Boolean)
@@ -236,6 +237,8 @@ class Game(val save: Save, val audio: Audio, val host: Host) : World.Events {
         // Heaven changes the economy, not just the wallpaper: halos on the ground, and height
         // pays nothing at all.
         world.haloMode = save.selectedScene == Scenes.HEAVEN_ID
+        // The soundtrack belongs to the world, so it changes the moment the world does.
+        music.setWorld(save.selectedScene)
     }
 
     /** True when the dog should be drawn blessed: in Heaven, after a Second Life, or by choice. */

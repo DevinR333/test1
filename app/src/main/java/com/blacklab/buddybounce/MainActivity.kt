@@ -31,6 +31,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.blacklab.buddybounce.audio.Audio
+import com.blacklab.buddybounce.audio.Music
 import com.blacklab.buddybounce.data.Save
 import com.blacklab.buddybounce.ui.Theme
 
@@ -53,13 +54,15 @@ class MainActivity : Activity(), SensorEventListener, Game.Host {
     private var nameInput: EditText? = null
     private var nameTitle: TextView? = null
     private var nameCancel: Button? = null
+    private lateinit var music: Music
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         save = Save(this)
         audio = Audio(this, save)
-        game = Game(save, audio, this)
+        music = Music(this, save)
+        game = Game(save, audio, music, this)
 
         applyOrientation(save.landscape)
 
@@ -93,6 +96,7 @@ class MainActivity : Activity(), SensorEventListener, Game.Host {
             sensorManager?.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
         }
         surface.startLoop()
+        music.resume()
         surface.requestFocus()
     }
 
@@ -101,11 +105,13 @@ class MainActivity : Activity(), SensorEventListener, Game.Host {
         sensorManager?.unregisterListener(this)
         game.onPauseApp()
         surface.stopLoop()
+        music.pause()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         audio.release()
+        music.release()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

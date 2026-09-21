@@ -318,6 +318,18 @@ Outfit rarity runs Common 60 / Rare 27 / Epic 10 / Legendary 3, and a rarity you
 rolls down into one you haven't, so late pulls keep feeling like progress. 41 outfits are
 collectable; every one you own can be swapped freely in the wardrobe, any time, for free.
 
+### Music
+
+Ten looping tracks, one per world, synthesised in `audio/Music.kt` and cached as WAVs the first
+time a world is played - the app ships with no audio assets at all. What separates them is
+timbre and rhythm rather than harmony: a square-wave bass on straight eighths under a
+four-to-the-floor kick is a techno loop whatever notes it plays, and the same notes on a soft
+sine with a shaker are the backyard. Tempos run from 60 BPM in Heaven to 134 in Sugar Rush.
+
+Every loop is written to join itself cleanly - a note running past the end of the buffer wraps
+round to the beginning instead of being cut off - and the whole thing is normalised to 0.82
+peak. Music and effects have independent mute switches and volume sliders in Settings.
+
 ### Trails
 
 40 of them, on the second tab of the wardrobe, and **every one has its own shape**.

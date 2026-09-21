@@ -88,13 +88,14 @@ class Audio(private val ctx: Context, private val save: Save) {
     fun play(sound: Int, volume: Float = 1f, rate: Float = 1f) {
         if (!save.soundOn || !ready) return
         if (sound < 0 || sound >= COUNT || !loaded[sound]) return
-        val v = volume.coerceIn(0f, 1f)
+        val v = (volume * save.sfxVolume).coerceIn(0f, 1f)
         pool.play(ids[sound], v, v, 1, 0, rate.coerceIn(0.5f, 2f))
     }
 
     fun startJet(rate: Float) {
         if (!save.soundOn || !ready || !loaded[JET] || jetStream != 0) return
-        jetStream = pool.play(ids[JET], 0.55f, 0.55f, 1, -1, rate.coerceIn(0.5f, 2f))
+        val jv = (0.55f * save.sfxVolume).coerceIn(0f, 1f)
+        jetStream = pool.play(ids[JET], jv, jv, 1, -1, rate.coerceIn(0.5f, 2f))
     }
 
     fun stopJet() {
@@ -254,35 +255,6 @@ class Audio(private val ctx: Context, private val save: Save) {
 
     private fun attack(t: Float): Float = if (t < 0.004f) t / 0.004f else 1f
 
-    private fun writeWav(file: File, samples: FloatArray) {
-        val bytes = ByteArray(samples.size * 2)
-        for (i in samples.indices) {
-            val v = (samples[i].coerceIn(-1f, 1f) * 32000f).toInt()
-            bytes[i * 2] = (v and 0xFF).toByte()
-            bytes[i * 2 + 1] = ((v shr 8) and 0xFF).toByte()
-        }
-        FileOutputStream(file).use { out ->
-            val dataLen = bytes.size
-            val header = ByteArray(44)
-            fun put(offset: Int, s: String) {
-                for (i in s.indices) header[offset + i] = s[i].code.toByte()
-            }
-            fun putInt(offset: Int, value: Int) {
-                header[offset] = (value and 0xFF).toByte()
-                header[offset + 1] = ((value shr 8) and 0xFF).toByte()
-                header[offset + 2] = ((value shr 16) and 0xFF).toByte()
-                header[offset + 3] = ((value shr 24) and 0xFF).toByte()
-            }
-            fun putShort(offset: Int, value: Int) {
-                header[offset] = (value and 0xFF).toByte()
-                header[offset + 1] = ((value shr 8) and 0xFF).toByte()
-            }
-            put(0, "RIFF"); putInt(4, 36 + dataLen); put(8, "WAVE")
-            put(12, "fmt "); putInt(16, 16); putShort(20, 1); putShort(22, 1)
-            putInt(24, RATE); putInt(28, RATE * 2); putShort(32, 2); putShort(34, 16)
-            put(36, "data"); putInt(40, dataLen)
-            out.write(header)
-            out.write(bytes)
-        }
-    }
+    private fun writeWav(file: File, samples: FloatArray) = Wav.write(file, samples, RATE)
+
 }
