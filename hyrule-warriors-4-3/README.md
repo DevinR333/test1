@@ -1,167 +1,124 @@
 # Hyrule Warriors: Definitive Edition -> true 4:3 on Eden (Android)
 
-Title ID: **`0100AE00096EA000`**
+**Ready to install:** `HWDE-Force-4-3.zip`, or the `mod/` folder.
+Title ID `0100AE00096EA000` · **game version 1.0.0 only** (build ID
+`0C869F41B8B9175E29B2329F594E0A4F`).
 
-## Why "Force 4:3" alone looks squished
+This is a real projection change — correct proportions with the sides cropped,
+not a squashed 16:9 picture.
 
-Eden's Aspect Ratio setting is a *display* setting. The game still draws a 16:9
-scene; Force 4:3 just compresses that scene into a narrower box. Link gets tall
-and thin. That is the squish you're seeing.
+## Install
 
-The fix is not to avoid that setting — it's to make **the game itself** draw a
-4:3 scene. Then the same setting presents it at the right proportions.
+1. Unzip. You get `0100AE00096EA000/Force 4-3/exefs/4-3.pchtxt`.
+2. Drop the `0100AE00096EA000` folder into the **`load`** folder inside your
+   Eden user folder (the folder you picked the first time you opened Eden).
+   Final path:
+   ```
+   <Eden user folder>/load/0100AE00096EA000/Force 4-3/exefs/4-3.pchtxt
+   ```
+3. In Eden: long-press the game → **Add-ons** (or **Mods**) → tick **Force 4-3**.
+4. Long-press the game → **Properties → Graphics → Aspect Ratio → Force 4:3**.
 
-| | Result |
-| --- | --- |
-| Force 4:3 only | squished (16:9 scene crushed into a 4:3 box) |
-| Patch only | stretched (4:3 scene smeared across a 16:9 box) |
-| **Patch + Force 4:3** | **true 4:3 — correct proportions, sides cropped** |
+**Step 4 is not optional.** The patch makes the game *draw* a 4:3 scene; the
+setting is what *presents* it at the right proportions. Patch without the
+setting = stretched. Setting without the patch = squished (what you had).
+Both = true 4:3.
 
-So you need both halves. The patch is the half that doesn't exist yet, and
-that's what `make_43_patch.py` builds.
+## Check it worked
 
-## Why I can't just hand you a finished .pchtxt
+Load a battle and find something you know is round — a shield boss, a circular
+HUD element, the compass ring. An even circle means it's working. A vertical
+egg means the patch isn't applying. A horizontal egg means step 4 is off.
 
-A `.pchtxt` is a list of byte offsets into one specific build of one specific
-game. The offsets don't exist without that executable in front of you, and they
-change with every game update and region. So the script does the
-offset-finding on your device: it reads your `main`, pulls the build ID out of
-it, finds the values that control the aspect, and writes a `.pchtxt` that is
-already correct for your copy.
+## If it doesn't show up, or nothing changes
 
-It's pure Python with no dependencies, so it runs in Termux on the phone. It
-uploads nothing.
+You're almost certainly not on v1.0.0. Eden checks the build ID inside the
+patch against your game and silently skips it if they differ — which is the
+safety net that stops a wrong patch corrupting anything, but it fails quietly.
+
+Updated copies of the game have a different build ID, and the offsets move too,
+so the file has to be rebuilt against your exact version. That's what
+`make_43_patch.py` is for — see below.
+
+## What the patch actually does
+
+The game loads its aspect ratio as a float into register `W25` via a two
+instruction pair. Stock it loads 16/9; this rewrites both halves to 4/3:
+
+```
+003DF5A8  MOVZ W25, #0x3FAA, LSL #16
+003DF5B0  MOVK W25, #0xAAAB
+          => W25 = 0x3FAAAAAB = 1.3333334 = 4/3
+```
+
+Credit where it's due: **the offsets are [theboy181's](https://github.com/theboy181/switch-ptchtxt-mods)**,
+taken from their 21:9 mod for this same build. Their pair loads `0x40155555`
+(21/9) at exactly these two addresses. Only the loaded value differs here.
 
 ---
 
-## Step 1 — get the game's `main` file
+## Rebuilding it for a different game version
 
-It lives in the game's exefs. Either extract the XCI/NSP with hactoolnet or
-nstool, or dump it from Eden: long-press the game → Properties → the ExeFS dump
-option (wording moves between builds).
+You need the game's `main` file — the executable from its ExeFS. Your NSP
+contains it, but not in a form anything can read directly: an NSP is a PFS0
+container of encrypted NCAs, so extracting it needs `prod.keys` (the same keys
+Eden already uses to run the game).
 
-## Step 2 — run the script
+**Easiest route — Ryujinx on a PC:** add the NSP to your library, right-click
+the game → **Extract Data → ExeFS**. `main` lands in the output folder.
+
+**Command line:** with `hactoolnet` and `prod.keys`:
+
+```sh
+hactoolnet -k prod.keys -t pfs0 game.nsp --outdir nsp_out
+# the Program NCA is the large one
+hactoolnet -k prod.keys -t nca --exefsdir exefs nsp_out/<program>.nca
+# -> exefs/main
+```
+
+Note that **Eden and yuzu cannot do this** — they dump RomFS, not ExeFS. (I
+said otherwise earlier in this project; that was wrong.)
+
+Then:
 
 ```sh
 python3 make_43_patch.py /path/to/main
 ```
 
-The title ID defaults to Definitive Edition's, so there's nothing else to pass.
-It prints what it found and writes **two** mods — one per route:
+It reads the build ID out of your dump, finds the values controlling the
+aspect, and writes ready `.pchtxt` mods — one per route:
 
-```
-out/0100AE00096EA000/Force 4-3 (resolution)/exefs/<BUILDID>.pchtxt
-out/0100AE00096EA000/Force 4-3 (projection)/exefs/<BUILDID>.pchtxt
-```
+- **resolution** — narrows the render target to a 4:3 shape (1920x1080 →
+  1440x1080), so the game derives 4:3 itself. Also cheaper to render.
+- **projection** — rewrites a hard-coded 16/9 constant, like the shipped patch
+  above does.
 
-**These are alternatives. Enable one at a time, never both** — they would
-double-correct and you'd be back to a wrong shape.
+They're alternatives; enable one at a time. Pure Python, no dependencies, runs
+in Termux. `--split N` and `--only 2,5` help when several candidates turn up.
 
-### Route 1: resolution (try this first)
+## Caveats
 
-Definitive Edition renders internally at 1920x1080 — it supersamples from 1080p
-even in handheld. Engines that size their render target this way derive the
-aspect ratio from it, so narrowing the width to the 4:3 partner of the same
-height makes the game compute a genuine 4:3 projection by itself:
-
-| Instead of | Becomes |
-| --- | --- |
-| 1920 x 1080 | 1440 x 1080 |
-| 1280 x 720 | 960 x 720 |
-
-The height is deliberately left alone — that preserves vertical detail, and the
-narrower frame is *cheaper* to render, which matters on Android.
-
-This route is the more reliable one here, and it's known to work on this game:
-people have already shipped 720p and 540p resolution patches for Definitive
-Edition, which means these values really are stored in the executable where the
-script can find them.
-
-### Route 2: projection constant
-
-If the game hard-codes `1.7777778` (16/9) somewhere and builds its camera
-matrix from it, rewriting that constant to `1.3333334` (4/3) gives true 4:3
-directly. The script looks for it as f32 and f64, in both the `16/9` and `9/16`
-forms.
-
-## Step 3 — install
-
-Copy the `0100AE00096EA000` folder into the `load` folder inside your Eden user
-folder (the folder you picked the first time you opened Eden):
-
-```
-<Eden user folder>/load/0100AE00096EA000/Force 4-3 (resolution)/exefs/<BUILDID>.pchtxt
-```
-
-Long-press the game → **Add-ons** (or **Mods**) → tick the one you want. If it
-doesn't appear, the layout is wrong — the `exefs` level is the one people miss.
-
-## Step 4 — set Eden to Force 4:3
-
-Long-press the game → Properties → Graphics → Aspect Ratio → **Force 4:3**.
-Per-game, so it won't affect the rest of your library.
-
-## Step 5 — check it's actually true 4:3
-
-Load a battle and look at something you know is round — a shield boss, a
-circular HUD element, the compass ring on the map. If it's an even circle,
-you're done. If it's a vertical egg, the image is still squished: the patch
-isn't applying (check the build ID matches) or you're on the wrong route.
-A horizontal egg means the display setting isn't on.
-
----
-
-## If several candidates turn up
-
-Expect it, especially on the projection route — `1.7777778` shows up in menus,
-the minimap and cutscene letterboxing too, not just the camera. Patch them all
-first, see what breaks, then narrow:
-
-```sh
-# split one route's candidates into 4 mods, enable them one at a time
-python3 make_43_patch.py /path/to/main --mode projection --split 4
-
-# once you know which hits you want, keep only those
-python3 make_43_patch.py /path/to/main --mode projection --only 2,5
-```
-
-Nothing here is permanent — untick the add-on and you're back to stock. Worst
-case is a crash on boot or a mangled HUD.
-
-## If the script finds nothing
-
-Then the game builds its framebuffer size at runtime rather than storing it,
-and there's no constant to hit. At that point the remaining option is to open
-an existing community resolution mod for this game in a text editor and edit
-the values it sets to a 4:3 pair — those mods already contain the correct build
-ID and the hard-won offsets. `templates/example.pchtxt` shows the exact byte
-formatting (little-endian, so 1440 = `0x5A0` is written `A0050000`).
-
-## Caveats — worth knowing before you spend an evening on this
-
-- **The HUD will not follow.** This is confirmed on Definitive Edition: people
-  who shipped resolution patches for it report the UI doesn't rescale, so some
-  elements sit wrong or go off-screen. The patch changes the camera, not the
-  UI layout. This is the single most likely thing to annoy you.
+- **The HUD does not follow.** Confirmed on this game by people who shipped
+  resolution patches for it: the UI doesn't rescale, so some elements sit wrong
+  or run off-screen. The patch changes the camera, not the UI layout. This is
+  the thing most likely to annoy you, and there's no clean fix short of editing
+  the game's UI layouts.
 - Cutscenes are authored as fixed 16:9 compositions and can crop badly.
-- True 4:3 crops the sides, so you see less of the battlefield — flanking
-  captains will surprise you more than you're used to.
-- A game update invalidates the patch: the build ID stops matching and Eden
-  silently skips it. Re-run the script after updating.
+- You see less of the battlefield — flanking captains will surprise you.
+- Nothing here is permanent. Untick the add-on and you're back to stock.
 
-## Files here
+## Files
 
-- `make_43_patch.py` — reads your `main`, writes ready `.pchtxt` mods for both
-  routes. No dependencies; uses python-lz4 if present, else its own LZ4 decoder.
-- `templates/example.pchtxt` — annotated format reference for hand-editing.
+- `HWDE-Force-4-3.zip` / `mod/` — the installable patch, v1.0.0.
+- `make_43_patch.py` — rebuilds the patch for any other version from `main`.
+- `templates/example.pchtxt` — annotated format reference.
 
-For **Age of Calamity** instead, pass `--title-id 01002B00111A2000`. One extra
-note there: that game glitches above roughly 810p, so prefer the 960x720 pair.
+For **Age of Calamity**, pass `--title-id 01002B00111A2000`; prefer the 960x720
+pair there, as it glitches above roughly 810p.
 
 ## Sources
 
-- [Digital Foundry via My Nintendo News](https://mynintendonews.com/2018/06/02/digital-foundry-hyrule-warriors-definitive-edition-handheld-super-samples-from-1080p-rather-than-dropping-resolution/) — Definitive Edition renders at 1080p internally and supersamples in handheld
-- [GBAtemp: HWDE 720p patch request](https://gbatemp.net/threads/request-hyrule-warriors-definitive-edition-720p-patch.674882/) — 720p/540p resolution patches exist for this game, and the UI doesn't scale with them
-- [ChanseyIsTheBest/NX-60FPS-RES-GFX-Cheats — Definitive Edition](https://github.com/ChanseyIsTheBest/NX-60FPS-RES-GFX-Cheats/blob/main/titles/0100AE00096EA000/Hyrule%20Warriors%20Definitive%20Edition.txt) — title ID
-- [theboy181/switch-ptchtxt-mods — Definitive Edition](https://github.com/theboy181/switch-ptchtxt-mods/tree/main/Hyrule%20Warriors:%20Definitive%20Edition) — existing pchtxt mods for this game
-- [eden-emulator/eden-overrides](https://github.com/eden-emulator/eden-overrides) — per-game setting overrides
+- [theboy181/switch-ptchtxt-mods](https://github.com/theboy181/switch-ptchtxt-mods) — the 21:9 mod whose offsets this reuses
+- [Digital Foundry via My Nintendo News](https://mynintendonews.com/2018/06/02/digital-foundry-hyrule-warriors-definitive-edition-handheld-super-samples-from-1080p-rather-than-dropping-resolution/) — internal 1080p rendering
+- [GBAtemp: HWDE 720p patch](https://gbatemp.net/threads/request-hyrule-warriors-definitive-edition-720p-patch.674882/) — resolution patches work, UI doesn't scale
+- [yuzu game modding docs](https://yuzu-mirror.github.io/help/feature/game-modding/) — load folder layout

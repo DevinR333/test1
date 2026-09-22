@@ -1,0 +1,29 @@
+@nsobid-0C869F41B8B9175E29B2329F594E0A4F
+
+# Hyrule Warriors: Definitive Edition [0100AE00096EA000] v1.0.0 - 4:3
+#
+# Rewrites the aspect ratio the game builds its camera from: 16:9 -> 4:3.
+# This is a real projection change, not a stretch: correct proportions, with
+# the sides cropped.
+#
+#   003DF5A8  MOVZ W25, #0x3FAA, LSL #16
+#   003DF5B0  MOVK W25, #0xAAAB
+#   => W25 = 0x3FAAAAAB = 1.3333334 = 4/3
+#
+# Pair this with Eden: Aspect Ratio -> Force 4:3. The patch makes the game draw
+# a 4:3 scene; that setting is what presents it at the right proportions.
+# Without it you get a correct 4:3 image smeared across a 16:9 window.
+#
+# Offsets are theboy181's, taken from their 21:9 mod for this same build
+# (https://github.com/theboy181/switch-ptchtxt-mods). Only the loaded value
+# differs: their pair loads 0x40155555 (21/9), this one loads 4/3.
+
+@flag print_values
+@flag offset_shift 0x100
+
+// Aspect 4:3
+
+@enabled
+003DF5A8 59F5A752
+003DF5B0 79559572
+@stop

@@ -1,7 +1,8 @@
 # Annotated .pchtxt reference -- copy this shape when hand-editing a patch.
 #
-# File name MUST be <BUILD ID>.pchtxt, and it must live at:
-#   <Eden user folder>/load/<TITLE ID>/<mod name>/exefs/<BUILD ID>.pchtxt
+# The file name is free-form (theboy181 names them after the game version).
+# What matters is the @nsobid- line inside. It must live at:
+#   <Eden user folder>/load/<TITLE ID>/<mod name>/exefs/<anything>.pchtxt
 
 # The build ID of the exact game version this patch targets. Eden refuses to
 # apply the patch if this does not match your dump, which is the safety net
