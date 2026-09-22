@@ -12,7 +12,7 @@ and writes a .pchtxt that is already correct for your copy.
 Usage
 -----
     python3 make_43_patch.py /path/to/main
-    python3 make_43_patch.py /path/to/main --title-id 01002B00111A2000 --out-dir ./out
+    python3 make_43_patch.py /path/to/main --out-dir ./out
     python3 make_43_patch.py /path/to/main --only 0,3,7        # keep some hits
     python3 make_43_patch.py /path/to/main --split 8           # bisecting set
 
@@ -318,7 +318,9 @@ def parse_only(spec: str, count: int) -> set[int]:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Build a 4:3 .pchtxt from a game's `main` NSO.")
     ap.add_argument("nso", type=Path, help="path to the game's exefs `main` file")
-    ap.add_argument("--title-id", default="TITLEID", help="16-hex-char title ID, used for the output folder name")
+    ap.add_argument("--title-id", default="0100AE00096EA000",
+                    help="16-hex-char title ID for the output folder name "
+                         "(default: Hyrule Warriors: Definitive Edition)")
     ap.add_argument("--title", default="Force 4-3", help="human-readable mod name")
     ap.add_argument("--out-dir", type=Path, default=Path("out"), help="where to write the mod folder")
     ap.add_argument("--only", help="comma-separated hit indexes / ranges to patch, e.g. 0,2,5-7")
