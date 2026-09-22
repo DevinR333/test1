@@ -1,0 +1,29 @@
+# Annotated .pchtxt reference -- copy this shape when hand-editing a patch.
+#
+# File name MUST be <BUILD ID>.pchtxt, and it must live at:
+#   <Eden user folder>/load/<TITLE ID>/<mod name>/exefs/<BUILD ID>.pchtxt
+
+# The build ID of the exact game version this patch targets. Eden refuses to
+# apply the patch if this does not match your dump, which is the safety net
+# that stops a patch for v1.0.0 corrupting v1.1.1.
+@nsobid-0000000000000000000000000000000000000000
+
+# pchtxt offsets are relative to the decompressed NSO image, but emulators
+# index from the start of the 0x100-byte NSO header. This line bridges the two.
+# Practically every working mod has it. Keep it.
+@flag offset_shift 0x100
+
+# Everything after @enabled is applied; @disabled skips the block.
+@enabled
+
+// 16:9 -> 4:3 projection constant
+// Format is: OFFSET  NEW_BYTES
+// Bytes are written in file order, so a little-endian float 1.3333334
+// (0x3FAAAAAB) is written ABAAAA3F.
+00000000 ABAAAA3F
+
+// Render width 1920 -> 1440 (a 4:3 pair with 1080). Little-endian u32:
+// 1440 = 0x000005A0 -> A0050000
+00000000 A0050000
+
+@stop
