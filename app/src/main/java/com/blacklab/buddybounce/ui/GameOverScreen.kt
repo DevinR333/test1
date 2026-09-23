@@ -57,7 +57,7 @@ class GameOverScreen(private val g: Game) {
         // the size of the score is decoration, so the number shrinks for them rather than the
         // other way round. What is left pays for the headline, POINTS and any rank pill; the
         // number consumes its own size plus a quarter of it again in descender and gap.
-        val scoreRoom = (stackTop - STATS_FULL_H - 38f - 24f) - (y + 138f) - (44f + rankH)
+        val scoreRoom = (stackTop - STATS_FULL_H - 38f - STATS_TOP_GAP) - (y + 138f) - (44f + rankH)
         val scoreSize = min(w * 0.30f, 200f).coerceAtMost((scoreRoom / 1.24f).coerceAtLeast(56f))
 
         var ty = y + 104f
@@ -85,7 +85,7 @@ class GameOverScreen(private val g: Game) {
         // Whatever is genuinely left between the score and the stack. On a card too short to
         // hold all of it the block SHEDS lines from the bottom rather than overlapping the
         // buttons - a missing line is a smaller card, a line under a button is a broken one.
-        val gap = stackTop - 8f - (ty + 24f)
+        val gap = stackTop - 8f - (ty + STATS_TOP_GAP)
         val statsBlockH = when {
             gap >= STATS_FULL_H -> STATS_FULL_H
             gap >= STATS_ONE_LINE_H -> STATS_ONE_LINE_H
@@ -95,7 +95,7 @@ class GameOverScreen(private val g: Game) {
         val showStats = statsBlockH > 0f
         val showPickupLine = statsBlockH >= STATS_ONE_LINE_H
         val roomForBankLine = statsBlockH >= STATS_FULL_H
-        val statsY = ty + 24f + (gap - statsBlockH).coerceAtLeast(0f) * 0.4f
+        val statsY = ty + STATS_TOP_GAP + (gap - statsBlockH).coerceAtLeast(0f) * 0.4f
         val third = w / 3f
         if (showStats) {
             stat(c, x + third * 0.5f, statsY, g.lastCoins.toString(), "COINS EARNED", Theme.ACCENT, third)
@@ -106,13 +106,13 @@ class GameOverScreen(private val g: Game) {
         if (showPickupLine) {
             ui.text(
                 c, "${g.lastRunCoins} picked up  +  ${g.lastBonusCoins} for the height  \u2192  banked",
-                x + w * 0.5f, statsY + 78f, 25f, Theme.TEXT_DIM, ui.body, false, w - 72f
+                x + w * 0.5f, statsY + PICKUP_BASE, 25f, Theme.TEXT_DIM, ui.body, false, w - 72f
             )
         }
         if (roomForBankLine) {
             ui.text(
                 c, "${g.save.coins} coins in the bank",
-                x + w * 0.5f, statsY + 114f, 27f, ColorX.withAlpha(Theme.ACCENT, 0.9f), ui.body, false, w - 72f
+                x + w * 0.5f, statsY + BANK_BASE, 27f, ColorX.withAlpha(Theme.ACCENT, 0.9f), ui.body, false, w - 72f
             )
         }
 
@@ -164,13 +164,20 @@ class GameOverScreen(private val g: Game) {
         g.drawPosedBuddy(c, x + w - 96f, y + 18f, 0.85f, g.equippedOutfit, ui.time * 0.7f)
     }
 
-    /** One of the three end-of-run figures. [colW] is its share of the panel, so a long band
-     *  name like "CLOUDLINE III" shrinks instead of running into its neighbours. */
-    private fun stat(c: Canvas, cx: Float, cy: Float, value: String, label: String, color: Int, colW: Float) {
+    /**
+     * One of the three end-of-run figures. [top] is the TOP of the block, not a baseline.
+     *
+     * It used to be a baseline, while everything around it was laid out from the top - so the
+     * 46-unit digits reached about 37 units ABOVE the y they were handed and sat on the bottom
+     * of the rank pill above them. The layout checker agreed with the layout and disagreed with
+     * the drawing, which is why it passed. [colW] is the column's share of the panel, so a long
+     * band name like "CLOUDLINE III" shrinks instead of running into its neighbours.
+     */
+    private fun stat(c: Canvas, cx: Float, top: Float, value: String, label: String, color: Int, colW: Float) {
         val ui = g.ui
         val box = colW - 16f
-        ui.text(c, value, cx, cy, 46f, color, ui.title, false, box)
-        ui.text(c, label, cx, cy + 34f, 24f, Theme.TEXT_DIM, ui.body, false, box)
+        ui.text(c, value, cx, top + VALUE_BASE, 44f, color, ui.title, false, box)
+        ui.text(c, label, cx, top + LABEL_BASE, 24f, Theme.TEXT_DIM, ui.body, false, box)
     }
 
     private companion object {
@@ -179,11 +186,24 @@ class GameOverScreen(private val g: Game) {
         /** What a SECOND LIFE button adds to the stack: its height plus the gap under it. */
         const val SECOND_LIFE_ROW_H = 124f
 
-        /** The stats strip with both coin lines under it. */
-        const val STATS_FULL_H = 122f
+        // Every line in the stats block is a BASELINE measured down from the top of the block,
+        // so the block's height and what it actually paints cannot drift apart again.
+        /** Baseline of the 44-unit figure, clear of its own cap height. */
+        /** Clear air between whatever the score column ends with and the top of the block. */
+        const val STATS_TOP_GAP = 30f
+        const val VALUE_BASE = 40f
+        /** Baseline of the 24-unit caption under it. */
+        const val LABEL_BASE = 72f
+        /** Baseline of "N picked up + N for the height -> banked". */
+        const val PICKUP_BASE = 110f
+        /** Baseline of "N coins in the bank". */
+        const val BANK_BASE = 148f
+
+        /** The stats strip with both coin lines under it: BANK_BASE plus its descender. */
+        const val STATS_FULL_H = 158f
         /** The strip plus the "picked up ... banked" line, the bank total dropped. */
-        const val STATS_ONE_LINE_H = 88f
+        const val STATS_ONE_LINE_H = 120f
         /** The three values and their labels, nothing else. */
-        const val STATS_BARE_H = 46f
+        const val STATS_BARE_H = 80f
     }
 }

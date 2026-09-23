@@ -12,20 +12,56 @@ sheets over the nearer bands and the sky.
 Mirror of Backdrop.band. Run: python3 tools/backdrop/bands.py
 """
 import math
+import os
+import re
 
 VIEW_H = 2560.0
 
-# (name, parallax, band height) - every band() call site in Backdrop.kt
-BANDS = [
-    ("hills", 0.14, VIEW_H * 1.1), ("trees", 0.26, VIEW_H * 0.8),
-    ("pines", 0.26, VIEW_H * 0.8), ("dunes", 0.16, VIEW_H * 1.05),
-    ("canopy", 0.22, VIEW_H * 0.75), ("sweets", 0.19, VIEW_H * 0.9),
-    ("tombs", 0.24, VIEW_H * 0.8), ("peaks", 0.17, VIEW_H * 1.1),
-    ("cloudBanks", 0.12, VIEW_H), ("aurora", 0.1, VIEW_H),
-    ("kelp", 0.2, VIEW_H * 0.95), ("reef", 0.16, VIEW_H),
-    ("nebula", 0.12, VIEW_H), ("city", 0.3, VIEW_H * 0.7),
-    ("lava", 0.11, VIEW_H), ("glow", 0.15, VIEW_H),
+# Every band() call site, read straight out of the source. Listing them by hand meant the
+# table drifted from the code - it had sixteen entries while the two files between them have
+# many more, and a new style could be wrong for as long as nobody updated the list.
+SOURCES = [
+    "app/src/main/java/com/blacklab/buddybounce/render/Backdrop.kt",
+    "app/src/main/java/com/blacklab/buddybounce/render/BandArt.kt",
 ]
+
+CALL = re.compile(r"\bband\(camY,\s*([0-9.]+)f,\s*([^)]+?)\)\s*\{")
+LOCAL_H = re.compile(r"\bval h = Tuning\.VIEW_H(?:\s*\*\s*([0-9.]+)f)?")
+FUNC = re.compile(r"\bfun ([a-zA-Z]+)\(")
+
+
+def scan():
+    """(name, parallax, height) for every band() call in the render code."""
+    out = []
+    for path in SOURCES:
+        src = open(path).read()
+        fname = "?"
+        h_local = None
+        pos = 0
+        for line in src.split("\n"):
+            m = FUNC.search(line)
+            if m:
+                fname = m.group(1)
+                h_local = None
+            m = LOCAL_H.search(line)
+            if m:
+                h_local = VIEW_H * (float(m.group(1)) if m.group(1) else 1.0)
+            m = CALL.search(line)
+            if not m:
+                continue
+            p = float(m.group(1))
+            expr = m.group(2).strip()
+            if expr == "h":
+                if h_local is None:
+                    raise SystemExit(f"{path}: band() in {fname} uses h before it is set")
+                height = h_local
+            elif expr.startswith("Tuning.VIEW_H"):
+                mult = expr.split("*")
+                height = VIEW_H * (float(mult[1].strip().rstrip("f")) if len(mult) > 1 else 1.0)
+            else:
+                raise SystemExit(f"{path}: band() in {fname} has an unreadable height: {expr}")
+            out.append((f"{os.path.basename(path)[:-3]}.{fname}", p, height))
+    return out
 
 
 def repeats(cam_y, p, height):
@@ -44,7 +80,8 @@ def repeats(cam_y, p, height):
 def main():
     bad = 0
     checked = 0
-    for name, p, height in BANDS:
+    bands = scan()
+    for name, p, height in bands:
         for cam_y in [c * 137.0 for c in range(0, 400)]:
             order = repeats(cam_y, p, height)
             checked += 1
@@ -58,7 +95,7 @@ def main():
             else:
                 continue
             break
-    print(f"checked {checked} camera positions across {len(BANDS)} bands")
+    print(f"checked {checked} camera positions across {len(bands)} band call sites")
     print("clean" if bad == 0 else f"{bad} band(s) painting back to front")
     return 1 if bad else 0
 

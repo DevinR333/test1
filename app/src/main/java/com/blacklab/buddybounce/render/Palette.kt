@@ -36,6 +36,51 @@ object ColorX {
 
     /** Pushes a colour toward white by [t]. */
     fun tint(c: Int, t: Float): Int = lerp(c, 0xFFFFFFFF.toInt(), t)
+
+    /** The most [readable] will move a colour's brightness. */
+    private const val MAX_SHIFT = 0.19f
+
+    /** Perceived brightness, 0 (black) to 1 (white). */
+    fun lum(c: Int): Float =
+        (red(c) * 0.299f + green(c) * 0.587f + blue(c) * 0.114f) / 255f
+
+    /**
+     * Moves [c] away from [bg] until there is at least [minDelta] of brightness between them,
+     * keeping its hue.
+     *
+     * Every band's silhouettes are painted in that band's own three shape colours, and a good
+     * few of those were picked to sit a shade off the band's sky. Drawn as a flat wash that is
+     * subtle; drawn as roots, trunks, ferns and fences at 40% alpha it is invisible, and the
+     * band reads as an empty gradient no matter how much is in it. Rather than re-picking fifty
+     * palettes by eye, every shape colour is pushed clear of the sky it is drawn against.
+     */
+    fun readable(c: Int, bg: Int, minDelta: Float): Int {
+        val lc = lum(c)
+        val lb = lum(bg)
+        val d = lc - lb
+        if (d >= minDelta || d <= -minDelta) return c
+        // Which way to move. Following whichever way it already leans is wrong at the ends of
+        // the range: a pale cloud over a pale sky leans lighter, and pushing it lighter runs it
+        // into white without ever separating. So a direction is only allowed if it can actually
+        // reach the gap - the cloud goes grey instead, which is what a cloud does anyway.
+        val canUp = lb + minDelta <= 0.94f
+        val canDown = lb - minDelta >= 0.06f
+        val up = when {
+            canUp && !canDown -> true
+            canDown && !canUp -> false
+            else -> if (d > 0.004f) true else if (d < -0.004f) false else lb < 0.5f
+        }
+        // and never move it far. Separation is the point, not a repaint: asking for a quarter of
+        // the range against a near-black sky turned Emberfall's basalt into pale grey-pink, which
+        // separated beautifully and stopped looking like rock.
+        return if (up) {
+            val target = (lb + minDelta).coerceAtMost(0.97f).coerceAtMost(lc + MAX_SHIFT)
+            tint(c, ((target - lc) / (1f - lc + 1e-4f)).coerceIn(0f, 0.92f))
+        } else {
+            val target = (lb - minDelta).coerceAtLeast(0.03f).coerceAtLeast(lc - MAX_SHIFT)
+            shade(c, (target / (lc + 1e-4f)).coerceIn(0.06f, 1f))
+        }
+    }
 }
 
 /** Which backdrop flourish a band draws. */
@@ -56,6 +101,30 @@ object BandStyle {
     const val CANOPY = 12       // layered jungle leaf with hanging vines
     const val SWEETS = 13       // stacked confectionery
     const val TOMBS = 14        // leaning headstones and bare branches
+
+    // The styles below exist because a band was wearing art that did not belong to it. Before
+    // these, ten of the fifty bands were a duplicate of the band next to them and four more were
+    // two cloud puffs over empty sky - the jungle's root floor drew the treetop canopy, the
+    // bakery floor and the gumdrop hills were the same picture, and the back alley, the rooftops
+    // and the skyline were the same three towers. See render/BandArt.kt.
+    const val YARDLOW = 15      // fence, kennel, sunflowers, washing line
+    const val ROOTS = 16        // buttress roots and ferns on the forest floor
+    const val FLOWERS = 17      // blossom garlands strung through the high branches
+    const val SHALLOWS = 18     // the underside of the sea, shoals, a sandbar
+    const val SEASKY = 19       // out of the water: islands, sails, gulls, cumulus
+    const val MESA = 20         // stratified flat-topped buttes
+    const val SANDSTORM = 21    // blowing dust sheets, grit, tumbleweed
+    const val OASIS = 22        // the mirage: a false lake, palms, a far caravan
+    const val SNOWFIELD = 23    // deep drifts and a buried fence
+    const val BAKERY = 24       // tiered cakes, cookies, a rolling pin
+    const val LIQUORICE = 25    // twisted liquorice towers and candy canes
+    const val CANDYFLOSS = 26   // spun floss, gumballs, falling sprinkles
+    const val ALLEY = 27        // brick wall, fire escape, dumpsters, neon
+    const val ROOFTOPS = 28     // water tanks, AC units, aerials
+    const val DEADWOOD = 29     // bare gnarled trees and crows
+    const val BELFRY = 30       // the bell tower, its clock, and bats
+    const val EMBERSKY = 31     // floating cinder islands and falling ash
+    const val CHOIR = 32        // organ pipes, stained arches, harps
 }
 
 /** How the very bottom of a run is dressed, before the camera leaves it behind. */
@@ -92,7 +161,23 @@ class BiomePalette(
     val cloudAlpha: Float = 0.8f,
     val haze: Int = skyLow,
     val sunColor: Int = rim
-)
+) {
+    // What the backdrop actually paints its silhouettes with. See ColorX.readable: the raw
+    // shape colours are often a shade off this band's own sky, which makes the scenery
+    // disappear into it. These are computed once, at construction, so the game loop pays
+    // nothing for them. The nearest layer gets the most separation because it is the one
+    // behind the platforms, where a silhouette that does not read is most obvious.
+    /** [farShape], guaranteed to read against the top of the sky. */
+    val farInk: Int = ColorX.readable(farShape, skyTop, 0.09f)
+    /** [midShape], guaranteed to read against the middle of the sky. */
+    val midInk: Int = ColorX.readable(midShape, skyMid, 0.12f)
+    /** [nearShape], guaranteed to read against the bottom of the sky. */
+    val nearInk: Int = ColorX.readable(nearShape, skyLow, 0.15f)
+    /** [rim] as backdrop decoration - blossoms, lights, embers - against the middle of the sky. */
+    val rimInk: Int = ColorX.readable(rim, skyMid, 0.17f)
+    /** [platAccent] as backdrop decoration, same idea. */
+    val accentInk: Int = ColorX.readable(platAccent, skyMid, 0.17f)
+}
 
 /**
  * Which set of creatures a scene is populated with. A hazard's *role* never changes - the
@@ -138,7 +223,7 @@ object Scenes {
         GroundStyle.YARD, 0xFF7FC25C.toInt(), Fauna.YARD,
         listOf(
             BiomePalette(
-                "Backyard", BandStyle.HILLS,
+                "Backyard", BandStyle.YARDLOW,
                 0xFF63B8E8.toInt(), 0xFFA6DCF2.toInt(), 0xFFE7F5D8.toInt(),
                 0xFF7FB77E.toInt(), 0xFF5E9A66.toInt(), 0xFF3F7A53.toInt(),
                 0xFFC08A4E.toInt(), 0xFF8E5F35.toInt(), 0xFF6B462A.toInt(), 0xFF7FC25C.toInt(),
@@ -204,14 +289,14 @@ object Scenes {
                 0xFFFFF0D0.toInt(), cloudAlpha = 0.4f
             ),
             BiomePalette(
-                "Sunlit Shallows", BandStyle.CLOUDS,
+                "Sunlit Shallows", BandStyle.SHALLOWS,
                 0xFF2A9BC4.toInt(), 0xFF7FD4E8.toInt(), 0xFFDFF6FF.toInt(),
                 0xFFEAFBFF.toInt(), 0xFFC4EEFA.toInt(), 0xFF9FDCEF.toInt(),
                 0xFFFFF4E0.toInt(), 0xFFE0D2B8.toInt(), 0xFFAFA189.toInt(), 0xFF6FD6C0.toInt(),
                 0xFFFFFFFF.toInt(), cloudAlpha = 0.9f
             ),
             BiomePalette(
-                "Open Sky", BandStyle.CLOUDS,
+                "Open Sky", BandStyle.SEASKY,
                 0xFF4FA6DC.toInt(), 0xFF9FDDF7.toInt(), 0xFFEAF7FF.toInt(),
                 0xFFFFFFFF.toInt(), 0xFFEAF6FE.toInt(), 0xFFCFE6F6.toInt(),
                 0xFFF4FAFF.toInt(), 0xFFCFE2F2.toInt(), 0xFFA7C2DC.toInt(), 0xFF8FD3F4.toInt(),
@@ -228,14 +313,14 @@ object Scenes {
         GroundStyle.STREET, 0xFFFF3CAC.toInt(), Fauna.NEON,
         listOf(
             BiomePalette(
-                "Back Alley", BandStyle.CITY,
+                "Back Alley", BandStyle.ALLEY,
                 0xFF0A0A14.toInt(), 0xFF14142A.toInt(), 0xFF221B3A.toInt(),
                 0xFF2A2A4A.toInt(), 0xFF1A1A32.toInt(), 0xFF101020.toInt(),
                 0xFF4A4A66.toInt(), 0xFF2E2E44.toInt(), 0xFF1A1A28.toInt(), 0xFFFF3CAC.toInt(),
                 0xFFFF7AD9.toInt(), starAlpha = 0.12f, cloudAlpha = 0.25f
             ),
             BiomePalette(
-                "Rooftops", BandStyle.CITY,
+                "Rooftops", BandStyle.ROOFTOPS,
                 0xFF140F2E.toInt(), 0xFF2A1B4A.toInt(), 0xFF4A2A6E.toInt(),
                 0xFF3A2A6A.toInt(), 0xFF261A4A.toInt(), 0xFF150F2E.toInt(),
                 0xFF6E5AA8.toInt(), 0xFF453473.toInt(), 0xFF2A1F4A.toInt(), 0xFF4FE8FF.toInt(),
@@ -273,7 +358,7 @@ object Scenes {
         GroundStyle.SNOW, 0xFF9FE0F5.toInt(), Fauna.FROST,
         listOf(
             BiomePalette(
-                "Snowfield", BandStyle.PEAKS,
+                "Snowfield", BandStyle.SNOWFIELD,
                 0xFF6FAEDC.toInt(), 0xFFBFE0F5.toInt(), 0xFFF0FAFF.toInt(),
                 0xFFC8DCEC.toInt(), 0xFFA8C4DC.toInt(), 0xFF8FA8C0.toInt(),
                 0xFFFFFFFF.toInt(), 0xFFD8E8F5.toInt(), 0xFFA8BFD4.toInt(), 0xFF7FD4FF.toInt(),
@@ -339,7 +424,7 @@ object Scenes {
                 0xFFFFCFA0.toInt(), starAlpha = 0.3f, cloudAlpha = 0.9f
             ),
             BiomePalette(
-                "Ember Sky", BandStyle.NEBULA,
+                "Ember Sky", BandStyle.EMBERSKY,
                 0xFF180810.toInt(), 0xFF3A1418.toInt(), 0xFF6E2A20.toInt(),
                 0xFFFF7A3C.toInt(), 0xFFB03A6E.toInt(), 0xFF2A1018.toInt(),
                 0xFF7A5A50.toInt(), 0xFF4E3630.toInt(), 0xFF2E2020.toInt(), 0xFFFFD07A.toInt(),
@@ -383,7 +468,7 @@ object Scenes {
                 0xFFFFFFFF.toInt(), starAlpha = 0.12f, cloudAlpha = 0.95f
             ),
             BiomePalette(
-                "Choir", BandStyle.AURORA,
+                "Choir", BandStyle.CHOIR,
                 0xFF8FB6E4.toInt(), 0xFFBBD6F0.toInt(), 0xFFE6EFFA.toInt(),
                 0xFFFFE9A8.toInt(), 0xFFEFD9F2.toInt(), 0xFFC9D8F0.toInt(),
                 0xFFFFF8E6.toInt(), 0xFFE8D4A8.toInt(), 0xFFC0A87C.toInt(), 0xFFFFF0C0.toInt(),
@@ -421,21 +506,21 @@ object Scenes {
                 0xFFFFF0C8.toInt(), cloudAlpha = 0.4f
             ),
             BiomePalette(
-                "Canyon", BandStyle.PEAKS,
+                "Canyon", BandStyle.MESA,
                 0xFFD07A44.toInt(), 0xFFE2A268.toInt(), 0xFFF4CE9E.toInt(),
                 0xFFA85436.toInt(), 0xFF7E3A28.toInt(), 0xFF56261C.toInt(),
                 0xFFC08454.toInt(), 0xFF8E5C36.toInt(), 0xFF5E3C22.toInt(), 0xFFFFB055.toInt(),
                 0xFFFFDCA8.toInt(), cloudAlpha = 0.35f
             ),
             BiomePalette(
-                "Sandstorm", BandStyle.CLOUDS,
+                "Sandstorm", BandStyle.SANDSTORM,
                 0xFFC69A5E.toInt(), 0xFFDCB77E.toInt(), 0xFFF0D8A8.toInt(),
                 0xFFE8CC96.toInt(), 0xFFC4A068.toInt(), 0xFF9E7A46.toInt(),
                 0xFFE0C08E.toInt(), 0xFFAE8A56.toInt(), 0xFF7E6236.toInt(), 0xFFFFE0A0.toInt(),
                 0xFFFFF4D8.toInt(), cloudAlpha = 1f
             ),
             BiomePalette(
-                "Mirage", BandStyle.HILLS,
+                "Mirage", BandStyle.OASIS,
                 0xFF7FB6D8.toInt(), 0xFFAFD4E8.toInt(), 0xFFE4E6D0.toInt(),
                 0xFFC8CC96.toInt(), 0xFF9AA870.toInt(), 0xFF6E7E50.toInt(),
                 0xFFE8D8A8.toInt(), 0xFFB89C68.toInt(), 0xFF867040.toInt(), 0xFFFFE28E.toInt(),
@@ -459,28 +544,28 @@ object Scenes {
         GroundStyle.LOAM, 0xFF6ABE5C.toInt(), Fauna.JUNGLE,
         listOf(
             BiomePalette(
-                "Root Floor", BandStyle.CANOPY,
+                "Root Floor", BandStyle.ROOTS,
                 0xFF16301C.toInt(), 0xFF244A2C.toInt(), 0xFF396A40.toInt(),
                 0xFF2E6B38.toInt(), 0xFF1E4A28.toInt(), 0xFF132E1A.toInt(),
                 0xFF7A5A34.toInt(), 0xFF56401F.toInt(), 0xFF342612.toInt(), 0xFF8FE060.toInt(),
                 0xFFCFF2A0.toInt(), cloudAlpha = 0.3f
             ),
             BiomePalette(
-                "Understorey", BandStyle.CANOPY,
+                "Understorey", BandStyle.TREES,
                 0xFF1E4426.toInt(), 0xFF2F6636.toInt(), 0xFF4D8C4A.toInt(),
                 0xFF418A44.toInt(), 0xFF2A6030.toInt(), 0xFF1A3C1E.toInt(),
                 0xFF6E8A3E.toInt(), 0xFF4C6428.toInt(), 0xFF2E3E18.toInt(), 0xFFA8E863.toInt(),
                 0xFFDCF8B0.toInt(), cloudAlpha = 0.45f
             ),
             BiomePalette(
-                "Canopy", BandStyle.TREES,
+                "Canopy", BandStyle.CANOPY,
                 0xFF3C7E4E.toInt(), 0xFF5FA463.toInt(), 0xFF96C87E.toInt(),
                 0xFF68B45E.toInt(), 0xFF43863E.toInt(), 0xFF2A5C28.toInt(),
                 0xFF8FA84E.toInt(), 0xFF647C30.toInt(), 0xFF3E4E1C.toInt(), 0xFFC4F06A.toInt(),
                 0xFFE8FCC0.toInt(), cloudAlpha = 0.7f
             ),
             BiomePalette(
-                "Flowerline", BandStyle.HILLS,
+                "Flowerline", BandStyle.FLOWERS,
                 0xFF6FA8D0.toInt(), 0xFF9CC8E2.toInt(), 0xFFD8EEDC.toInt(),
                 0xFFE070A8.toInt(), 0xFFB04E84.toInt(), 0xFF7E3660.toInt(),
                 0xFFA8C468.toInt(), 0xFF7A9444.toInt(), 0xFF4E6428.toInt(), 0xFFFF9CC8.toInt(),
@@ -504,7 +589,7 @@ object Scenes {
         GroundStyle.FROSTING, 0xFFFF8FC4.toInt(), Fauna.CANDY,
         listOf(
             BiomePalette(
-                "Bakery Floor", BandStyle.SWEETS,
+                "Bakery Floor", BandStyle.BAKERY,
                 0xFFFFC9DE.toInt(), 0xFFFFE0EC.toInt(), 0xFFFFF4F8.toInt(),
                 0xFFE8A05C.toInt(), 0xFFC47C3E.toInt(), 0xFF96582A.toInt(),
                 0xFFFFE8C0.toInt(), 0xFFE0BC8A.toInt(), 0xFFAE8C5E.toInt(), 0xFFFF6FA8.toInt(),
@@ -518,14 +603,14 @@ object Scenes {
                 0xFFFFFAE0.toInt(), cloudAlpha = 0.7f
             ),
             BiomePalette(
-                "Liquorice Spires", BandStyle.PEAKS,
+                "Liquorice Spires", BandStyle.LIQUORICE,
                 0xFFC98FD8.toInt(), 0xFFE0B4EC.toInt(), 0xFFF6E0F8.toInt(),
                 0xFF4A3252.toInt(), 0xFF342438.toInt(), 0xFF201622.toInt(),
                 0xFFF2C8E0.toInt(), 0xFFC496B2.toInt(), 0xFF8E6880.toInt(), 0xFFFF9CE0.toInt(),
                 0xFFFFE4F6.toInt(), cloudAlpha = 0.5f
             ),
             BiomePalette(
-                "Candyfloss", BandStyle.CLOUDS,
+                "Candyfloss", BandStyle.CANDYFLOSS,
                 0xFFFFA8D4.toInt(), 0xFFFFC8E4.toInt(), 0xFFFFEAF4.toInt(),
                 0xFFFFD8EC.toInt(), 0xFFF2B0D4.toInt(), 0xFFD088AE.toInt(),
                 0xFFFFE4F2.toInt(), 0xFFE4B2D0.toInt(), 0xFFB0809C.toInt(), 0xFFFFF07A.toInt(),
@@ -556,7 +641,7 @@ object Scenes {
                 0xFFBFF2CE.toInt(), starAlpha = 0.5f, cloudAlpha = 0.5f
             ),
             BiomePalette(
-                "Dead Wood", BandStyle.TOMBS,
+                "Dead Wood", BandStyle.DEADWOOD,
                 0xFF1A1226.toInt(), 0xFF2C1E3C.toInt(), 0xFF46305C.toInt(),
                 0xFF3E3050.toInt(), 0xFF2A2038.toInt(), 0xFF171022.toInt(),
                 0xFF6A5442.toInt(), 0xFF463828.toInt(), 0xFF2A2018.toInt(), 0xFFB08FE8.toInt(),
@@ -570,7 +655,7 @@ object Scenes {
                 0xFFD0F2E0.toInt(), starAlpha = 0.4f, cloudAlpha = 1f
             ),
             BiomePalette(
-                "Belfry", BandStyle.PEAKS,
+                "Belfry", BandStyle.BELFRY,
                 0xFF1E1830.toInt(), 0xFF342A4E.toInt(), 0xFF50406E.toInt(),
                 0xFF2E2642.toInt(), 0xFF1E1830.toInt(), 0xFF120E1E.toInt(),
                 0xFF585070.toInt(), 0xFF3A3450.toInt(), 0xFF221E32.toInt(), 0xFFFFD87A.toInt(),
