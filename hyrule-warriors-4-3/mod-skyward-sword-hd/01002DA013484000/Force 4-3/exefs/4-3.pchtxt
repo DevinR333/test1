@@ -1,0 +1,45 @@
+@nsobid-D824D4B1BBD45D03668380D6D041BA4CA00A64FF
+
+# The Legend of Zelda: Skyward Sword HD [01002DA013484000] v1.0.0 - 4:3
+#
+# EXPERIMENTAL -- unlike the Hyrule Warriors patch, this one is inferred.
+# No aspect-ratio mod exists for this game, so there is no known-good 16:9
+# constant to rewrite. Instead this narrows the render target to a 4:3 shape
+# and relies on the game deriving its aspect from that.
+#
+# If the game does derive it, you get true 4:3. If it hard-codes 16:9 instead,
+# you will get a squished picture -- in which case this route does not work for
+# this game and the patch should be removed. Check a round object to tell.
+#
+# Only the WIDTHS are changed. Every height is left at stock, so vertical
+# detail is untouched and the narrower frame is cheaper to render:
+#
+#   docked    1920 x 1080  ->  1440 x 1080
+#   handheld  1280 x  720  ->   960 x  720
+#
+# Offsets are theboy181's, from their 2K and 4K resolution mods for this same
+# build (https://github.com/theboy181/switch-ptchtxt-mods). Those mods write a
+# (width, height) u32 pair at each address, and MOVZ W8 immediates at 00EC803C
+# (width) and 00EC8068 (height). This writes only the width half of each.
+#
+# Pair this with Eden: Aspect Ratio -> Force 4:3.
+
+@flag print_values
+@flag offset_shift 0x100
+
+// docked render width 1920 -> 1440, height left at 1080
+@enabled
+016CAC94 A0050000
+013A916C A0050000
+
+// the same width set as a MOVZ W8 immediate: MOVZ W8, #1440
+00EC803C 08B48052
+
+// handheld render width 1280 -> 960, height left at 720
+013A915C C0030000
+@stop
+
+# Note: theboy181's 4K mod also touches 013A9164, a third entry in the same
+# resolution table. Its stock height is unknown, so it is deliberately left
+# alone here. If the picture is right in one mode but not the other, that entry
+# is the first thing to look at.
