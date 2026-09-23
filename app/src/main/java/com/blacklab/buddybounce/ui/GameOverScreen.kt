@@ -39,23 +39,36 @@ class GameOverScreen(private val g: Game) {
             g.lastRank in 0..2 -> "GOOD BOY!"
             else -> "NICE RUN"
         }
-        ui.text(c, headline, x + w * 0.5f, y + 104f, 66f, if (g.lastNewBest) Theme.ACCENT else Theme.TEXT, ui.title, true, w - 60f)
+        // The whole score block flows downward from one running y rather than hanging off a
+        // stack of fixed offsets. The offsets had "POINTS" landing exactly on the descenders of
+        // the big number above it, and the further down the card you went the tighter it got.
+        // Each line now advances past its own ink before the next one is placed.
+        var ty = y + 104f
+        ui.text(c, headline, x + w * 0.5f, ty, 66f,
+            if (g.lastNewBest) Theme.ACCENT else Theme.TEXT, ui.title, true, w - 60f)
+        ty += 34f
 
-        // score
         val scoreSize = min(w * 0.30f, 200f)
         val bounce = if (k < 1f) (1f - k) * 30f else sin(ui.time * 2.2f) * 3f
-        ui.text(c, g.lastScore.toString(), x + w * 0.5f, y + 104f + scoreSize + bounce, scoreSize, Theme.TEXT, ui.title, true, w - 60f)
-        ui.text(c, "POINTS", x + w * 0.5f, y + 130f + scoreSize + 34f, 28f, Theme.TEXT_DIM, ui.body, false)
+        ty += scoreSize
+        ui.text(c, g.lastScore.toString(), x + w * 0.5f, ty + bounce, scoreSize, Theme.TEXT, ui.title, true, w - 60f)
+        ty += scoreSize * 0.24f + 10f          // past the digits' descenders
+
+        ty += 24f
+        ui.text(c, "POINTS", x + w * 0.5f, ty, 28f, Theme.TEXT_DIM, ui.body, false, w - 60f)
+        ty += 20f
 
         if (g.lastRank in 0..9) {
             val label = "#${g.lastRank + 1} ON THE BOARD"
             val pw = ui.measure(label, 30f, ui.body) + 60f
-            ui.pill(c, x + (w - pw) * 0.5f, y + 130f + scoreSize + 56f, pw, 52f, ColorX.withAlpha(Theme.ACCENT, 0.2f))
-            ui.text(c, label, x + w * 0.5f, y + 130f + scoreSize + 92f, 30f, Theme.ACCENT, ui.title, false, w - 60f)
+            ty += 16f
+            ui.pill(c, x + (w - pw) * 0.5f, ty, pw, 52f, ColorX.withAlpha(Theme.ACCENT, 0.2f))
+            ui.text(c, label, x + w * 0.5f, ty + 36f, 30f, Theme.ACCENT, ui.title, false, w - 60f)
+            ty += 52f
         }
 
-        // stats strip
-        val statsY = y + h * 0.60f
+        // stats strip - below the score block wherever that ended up, not at a fixed fraction
+        val statsY = maxOf(y + h * 0.60f, ty + 42f)
         val third = w / 3f
         stat(c, x + third * 0.5f, statsY, g.lastCoins.toString(), "COINS EARNED", Theme.ACCENT, third)
         stat(c, x + third * 1.5f, statsY, ((g.world.heightWu / Tuning.VIEW_H).toInt()).toString(), "SCREENS", Theme.TEXT, third)
@@ -63,11 +76,11 @@ class GameOverScreen(private val g: Game) {
 
         ui.text(
             c, "${g.lastRunCoins} picked up  +  ${g.lastBonusCoins} for the height  \u2192  banked",
-            x + w * 0.5f, statsY + 72f, 25f, Theme.TEXT_DIM, ui.body, false, w - 72f
+            x + w * 0.5f, statsY + 78f, 25f, Theme.TEXT_DIM, ui.body, false, w - 72f
         )
         ui.text(
             c, "${g.save.coins} coins in the bank",
-            x + w * 0.5f, statsY + 106f, 27f, ColorX.withAlpha(Theme.ACCENT, 0.9f), ui.body, false, w - 72f
+            x + w * 0.5f, statsY + 114f, 27f, ColorX.withAlpha(Theme.ACCENT, 0.9f), ui.body, false, w - 72f
         )
 
         // buttons

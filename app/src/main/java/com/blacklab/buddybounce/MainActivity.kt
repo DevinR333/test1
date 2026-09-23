@@ -207,7 +207,15 @@ class MainActivity : Activity(), SensorEventListener, Game.Host {
             getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
         } ?: return
         if (!vibrator.hasVibrator()) return
-        val amp = if (amplitude <= 0) VibrationEffect.DEFAULT_AMPLITUDE else amplitude
+        // Plenty of phones have a vibrator with no amplitude control at all. Handing one a
+        // custom amplitude gets it silently ignored, which turned the softer rungs of the
+        // ladder into nothing at all - so on those, ask for the default strength instead and
+        // let the DURATION carry the difference.
+        val amp = when {
+            amplitude <= 0 -> VibrationEffect.DEFAULT_AMPLITUDE
+            !vibrator.hasAmplitudeControl() -> VibrationEffect.DEFAULT_AMPLITUDE
+            else -> amplitude
+        }
         vibrator.vibrate(VibrationEffect.createOneShot(ms, amp))
     }
 

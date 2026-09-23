@@ -402,6 +402,9 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
     //
     //   uu4*=^7  the developer skin. The ONLY way to get it - it is not in the prize
     //            pool, and the wardrobe does not admit it exists until this is entered.
+    //
+    //   u7d%4~   every power-up, always, and spending one costs nothing. Second Life
+    //            included, so a run can be continued as many times as you like.
     // -------------------------------------------------------------------------------------
 
     fun isUnlockCode(raw: String): Boolean {
@@ -410,7 +413,8 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
             t.equals(ALMOST_CODE, ignoreCase = true) ||
             t.equals(FREE_SPINS_CODE, ignoreCase = true) ||
             t.equals(HALO_PRIME_CODE, ignoreCase = true) ||
-            t.equals(DEV_SKIN_CODE, ignoreCase = true)
+            t.equals(DEV_SKIN_CODE, ignoreCase = true) ||
+            t.equals(INFINITE_POWERUPS_CODE, ignoreCase = true)
     }
 
     fun applyUnlockCode(raw: String) {
@@ -422,6 +426,14 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
                     "BACK DOOR", "Free spins on",
                     "Every pull at the coin machine is free from now on. Keep going until the " +
                         "last thing you are missing turns up."
+                )
+            }
+            t.equals(INFINITE_POWERUPS_CODE, ignoreCase = true) -> {
+                save.infinitePowerups = true
+                unlockPopup.queueMessage(
+                    "BACK DOOR", "Power-ups unlimited",
+                    "Every power-up is stocked and nothing you spend runs out - Second Life " +
+                        "too, so a run can be continued as often as you like."
                 )
             }
             t.equals(DEV_SKIN_CODE, ignoreCase = true) -> {
@@ -1178,19 +1190,19 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
     inner class Haptics {
         /** @param level 0 power-up, 1 trail, 2 outfit, 3 world and everything above the pool. */
         fun prize(level: Int) = when (level.coerceIn(0, 3)) {
-            0 -> haptic(18L, 70)
-            1 -> haptic(34L, 120)
-            2 -> haptic(60L, 180)
+            0 -> haptic(30L, 80)
+            1 -> haptic(55L, 130)
+            2 -> haptic(90L, 190)
             else -> {
                 // Two beats rather than one long buzz: a long buzz on a phone just reads as an
                 // error. A thump and a heavier thump reads as something landing.
-                haptic(45L, 160)
-                host.vibrateLater(110L, 130L, 255)
+                haptic(70L, 170)
+                host.vibrateLater(150L, 180L, 255)
             }
         }
 
         /** While the capsules tumble: a light, repeated knock, one per capsule strike. */
-        fun juggle() = haptic(12L, 55)
+        fun juggle() = haptic(16L, 60)
     }
 
     val haptics = Haptics()
@@ -1320,6 +1332,8 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         const val HALO_PRIME_CODE = "u7d%4+"
         /** The developer skin. Not a testing aid - the only way to get it at all. */
         const val DEV_SKIN_CODE = "uu4*=^7"
+        /** Every power-up, always, and spending one costs nothing. */
+        const val INFINITE_POWERUPS_CODE = "u7d%4~"
         /** How far a menu stick must be pushed to count as one step. */
         const val STICK_ON = 0.55f
     }

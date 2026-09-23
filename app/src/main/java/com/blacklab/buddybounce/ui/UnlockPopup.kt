@@ -179,7 +179,9 @@ class UnlockPopup(private val g: Game) {
         }
 
         ui.panel(c, x, y, w, h)
-        ui.shimmer(c, x, y, w, h, Theme.RADIUS, 1f)
+        // No shimmer on a card this size. It is a bright band that sweeps the full width every
+        // few seconds, which on a small badge reads as a sparkle and on a full-screen panel
+        // reads as the background changing tone on its own - the "shifting" in the grey.
 
         ui.text(c, e.banner, g.worldW * 0.5f, y + 96f, 52f, Theme.ACCENT, ui.title, true, w - 48f)
         // Only a prize gets the category pill - a message or the chooser has no category.

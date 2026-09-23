@@ -55,6 +55,12 @@ class GachaScreen(private val g: Game) {
     private enum class State { IDLE, CRANK, DROP, REVEAL }
 
     private companion object {
+        const val CAPSULES = 16
+        /** Capsule radius, in dome-local units where 1 is the glass. */
+        const val CAP_R = 0.15f
+        /** Gravity, in dome-radii per second squared. Enough to cross the ball in a beat. */
+        const val CAP_G = 7.5f
+
         // The machine's split. Scenes are the jackpot, trails are the regular treat, outfits
         // sit between them, and everything else is a power-up so most pulls still give you
         // something to spend next run.
@@ -83,6 +89,21 @@ class GachaScreen(private val g: Game) {
     private var duplicate = false
     private var revealAnim = 0f
     private var juggleT = 0f
+
+    // ---- the capsules in the dome ------------------------------------------------------------
+    //
+    // They are a physical thing in a glass ball, so they behave like one: tilt the phone and
+    // they roll that way and settle at the bottom. Positions live in dome-local units where 1
+    // is the inner wall, so the same state works whatever size the machine is drawn at.
+    //
+    // This deliberately ignores the control-scheme setting. Turning tilt STEERING off is a
+    // statement about how you want to play, not a request for the toy on the prize screen to
+    // stop working, and the accelerometer is being read either way.
+    private val capX = FloatArray(CAPSULES)
+    private val capY = FloatArray(CAPSULES)
+    private val capVX = FloatArray(CAPSULES)
+    private val capVY = FloatArray(CAPSULES)
+    private var capsulesReady = false
 
     /** Set when the prize was a power-up the shelf had no room for. */
     private var powerupFull = false
@@ -123,6 +144,82 @@ class GachaScreen(private val g: Game) {
             State.IDLE -> {}
         }
         if (coinDropT > 0f) coinDropT -= dt
+        updateCapsules(dt)
+    }
+
+    /** One step of the capsule tumble: gravity from the phone's tilt, walls, and each other. */
+    private fun updateCapsules(dt: Float) {
+        if (!capsulesReady) {
+            for (i in 0 until CAPSULES) {
+                val a = Hash.range(i, 301, 0f, 6.28f)
+                val rr = 0.22f + Hash.f(i, 303) * 0.62f
+                capX[i] = cos(a) * rr
+                capY[i] = sin(a) * rr * 0.86f
+                capVX[i] = 0f
+                capVY[i] = 0f
+            }
+            capsulesReady = true
+        }
+        val step = dt.coerceAtMost(0.033f)
+
+        // Gravity follows the phone. tiltRaw is acceleration along the screen's horizontal axis
+        // and is positive to the right - the same sign the steering uses - so the capsules fall
+        // the way the player leans. The vertical part is whatever is left of one g, which is
+        // what makes a lopsided phone send them sideways AND down rather than just sideways.
+        val gx = (g.controls.tiltRaw / 9.81f).coerceIn(-1f, 1f)
+        val gy = kotlin.math.sqrt((1f - gx * gx).coerceAtLeast(0f))
+        val shake = if (state == State.CRANK) 5.5f else 0f
+
+        for (i in 0 until CAPSULES) {
+            capVX[i] += (gx * CAP_G + (Hash.f(i * 7 + (g.ui.time * 20f).toInt(), 401) - 0.5f) * shake) * step
+            capVY[i] += (gy * CAP_G + (Hash.f(i * 11 + (g.ui.time * 20f).toInt(), 403) - 0.5f) * shake) * step
+            capVX[i] *= 0.985f
+            capVY[i] *= 0.985f
+            capX[i] += capVX[i] * step
+            capY[i] += capVY[i] * step
+        }
+
+        // keep them apart, so they pile rather than stacking in one spot
+        for (i in 0 until CAPSULES) {
+            for (j in i + 1 until CAPSULES) {
+                var dx = capX[j] - capX[i]
+                var dy = capY[j] - capY[i]
+                var d = kotlin.math.sqrt(dx * dx + dy * dy)
+                if (d < 0.0001f) { dx = 0.001f; dy = 0f; d = 0.001f }
+                val overlap = CAP_R * 2f - d
+                if (overlap <= 0f) continue
+                val nx = dx / d
+                val ny = dy / d
+                val push = overlap * 0.5f
+                capX[i] -= nx * push; capY[i] -= ny * push
+                capX[j] += nx * push; capY[j] += ny * push
+                // swap the closing part of their velocities, damped
+                val rel = (capVX[j] - capVX[i]) * nx + (capVY[j] - capVY[i]) * ny
+                if (rel < 0f) {
+                    val imp = rel * 0.5f * 1.3f
+                    capVX[i] += nx * imp; capVY[i] += ny * imp
+                    capVX[j] -= nx * imp; capVY[j] -= ny * imp
+                }
+            }
+        }
+
+        // and inside the glass
+        val wall = 1f - CAP_R
+        for (i in 0 until CAPSULES) {
+            val d = kotlin.math.sqrt(capX[i] * capX[i] + capY[i] * capY[i])
+            if (d <= wall) continue
+            val nx = capX[i] / d
+            val ny = capY[i] / d
+            capX[i] = nx * wall
+            capY[i] = ny * wall
+            val vn = capVX[i] * nx + capVY[i] * ny
+            if (vn > 0f) {
+                capVX[i] -= nx * vn * 1.45f      // bounce, with most of the energy gone
+                capVY[i] -= ny * vn * 1.45f
+                capVX[i] *= 0.86f                 // and friction along the glass
+                capVY[i] *= 0.86f
+            }
+        }
     }
 
     /**
@@ -412,16 +509,11 @@ class GachaScreen(private val g: Game) {
         p.color = ColorX.withAlpha(0xFFBDE8FF.toInt(), 0.35f)
         c.drawCircle(cx, domeCY, domeR, p)
 
-        val jiggle = if (state == State.CRANK) 1f else 0f
-        for (i in 0 until 16) {
-            val a = Hash.range(i, 301, 0f, 6.28f)
-            val rr = domeR * (0.22f + Hash.f(i, 303) * 0.62f)
-            val jx = sin(ui.time * 14f + i) * 5f * jiggle
-            val jy = sin(ui.time * 11f + i * 2f) * 5f * jiggle
-            val px = cx + cos(a) * rr + jx
-            val py = domeCY + sin(a) * rr * 0.86f + jy
+        for (i in 0 until CAPSULES) {
+            val px = cx + capX[i] * domeR
+            val py = domeCY + capY[i] * domeR
             p.color = capsuleColor(i)
-            c.drawCircle(px, py, domeR * 0.15f, p)
+            c.drawCircle(px, py, domeR * CAP_R, p)
             p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.55f)
             c.drawCircle(px - domeR * 0.05f, py - domeR * 0.05f, domeR * 0.045f, p)
         }
@@ -439,26 +531,31 @@ class GachaScreen(private val g: Game) {
         c.drawCircle(cx, domeCY, domeR, p)
         p.style = Paint.Style.FILL
 
-        // The nameplate goes on LAST and sits clear of the dome.
+        // The nameplate. Drawn LAST, so nothing translucent is ever over it, but sitting in the
+        // same narrow band it always did - between the dome's white base plate and the crank.
         //
-        // It used to be painted before the glass and tucked under it, so the bottom of the dome
-        // - a translucent disc reaching a little past the machine's shoulder - lay across the
-        // lettering and washed it out. Placing it below the rim and drawing it after everything
-        // means nothing is ever over it.
-        val signTop = maxOf(bodyTop + w * 0.04f, domeCY + domeR + w * 0.035f)
+        // Pushing it below the dome's outer edge was the wrong fix: that band is only about a
+        // tenth of the machine tall, and a sign sized for the old slot simply landed on the
+        // crank. What was actually covering the lettering was the white base plate above it,
+        // which reaches to bodyTop + 0.2*domeR, so the sign starts just past that and no
+        // further.
+        val plateBottom = domeCY + domeR * 0.92f
+        val signTop = plateBottom + w * 0.012f
+        val signH = w * 0.135f
         p.color = Theme.ACCENT
-        rect.set(cx - w * 0.36f, signTop, cx + w * 0.36f, signTop + w * 0.18f)
-        c.drawRoundRect(rect, w * 0.05f, w * 0.05f, p)
-        p.color = ColorX.withAlpha(0xFF000000.toInt(), 0.12f)
-        rect.set(cx - w * 0.36f, signTop + w * 0.13f, cx + w * 0.36f, signTop + w * 0.18f)
+        rect.set(cx - w * 0.36f, signTop, cx + w * 0.36f, signTop + signH)
+        c.drawRoundRect(rect, w * 0.045f, w * 0.045f, p)
+        p.color = ColorX.withAlpha(0xFF000000.toInt(), 0.13f)
+        rect.set(cx - w * 0.36f, signTop + signH * 0.72f, cx + w * 0.36f, signTop + signH)
         c.drawRoundRect(rect, w * 0.04f, w * 0.04f, p)
         ui.text(
-            c, "BUDDY PRIZES", cx, signTop + w * 0.135f, w * 0.10f,
-            0xFF2A1D04.toInt(), ui.title, false, w * 0.68f
+            c, "BUDDY PRIZES", cx, signTop + signH * 0.72f, w * 0.082f,
+            0xFF2A1D04.toInt(), ui.title, false, w * 0.64f
         )
 
         val crankCX = cx + w * 0.26f
-        val crankCY = bodyTop + w * 0.36f
+        // Low enough to leave the nameplate its band. Its own bottom still clears the body.
+        val crankCY = bodyTop + w * 0.42f
         crankX = crankCX; crankY = crankCY; crankR = w * 0.16f
         p.color = 0xFFD8DEE9.toInt()
         c.drawCircle(crankCX, crankCY, w * 0.12f, p)
@@ -685,4 +782,5 @@ class GachaScreen(private val g: Game) {
         c.drawRoundRect(rect, 22f, 22f, p)
         p.style = Paint.Style.FILL
     }
+
 }

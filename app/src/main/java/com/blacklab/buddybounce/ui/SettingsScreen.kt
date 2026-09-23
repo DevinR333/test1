@@ -57,14 +57,27 @@ class SettingsScreen(private val g: Game) {
         }
     }
 
+    /**
+     * A section heading, returning the y the next widget should start at.
+     *
+     * The headings used to be drawn with their BASELINE on the running y and the widget placed
+     * 18 below - but a 30pt cap reaches about 22 units ABOVE its baseline, so every heading
+     * climbed back into the control above it. "FEEL" sat on the effects slider, "PLAYER" on the
+     * vibration toggle, and so on down the column. Taking the ascender into account here fixes
+     * all of them at once, and keeps the spacing identical between sections.
+     */
+    private fun heading(c: Canvas, s: String, x: Float, y: Float): Float {
+        g.ui.text(c, s, x + 8f, y + 26f, 30f, Theme.TEXT_DIM, g.ui.bodyLeft, false)
+        return y + 46f
+    }
+
     /** @return the y coordinate just past the last row drawn. */
     private fun drawColumnA(c: Canvas, x: Float, top: Float, w: Float): Float {
         val ui = g.ui
         val save = g.save
         var y = top
 
-        ui.text(c, "SCREEN", x + 8f, y, 30f, Theme.TEXT_DIM, ui.bodyLeft, false)
-        y += 18f
+        y = heading(c, "SCREEN", x, y)
         val orientation = if (save.landscape) 1 else 0
         val picked = ui.segmented(c, Id.ORIENTATION, x, y, w, 92f, orientationLabels, orientation)
         if (picked != orientation) {
@@ -74,8 +87,7 @@ class SettingsScreen(private val g: Game) {
         }
         y += 116f
 
-        ui.text(c, "CONTROLS", x + 8f, y, 30f, Theme.TEXT_DIM, ui.bodyLeft, false)
-        y += 18f
+        y = heading(c, "CONTROLS", x, y)
         val mode = save.controlMode
         val pickedMode = ui.segmented(c, Id.CONTROLS, x, y, w, 92f, controlLabels, mode)
         if (pickedMode != mode) {
@@ -114,8 +126,7 @@ class SettingsScreen(private val g: Game) {
         val save = g.save
         var y = top
 
-        ui.text(c, "SOUND", x + 8f, y, 30f, Theme.TEXT_DIM, ui.bodyLeft, false)
-        y += 18f
+        y = heading(c, "SOUND", x, y)
 
         // The two mute buttons sit side by side as icons: a music note and a megaphone, each
         // with a slash struck through it when that mix is off. Faster to read at a glance than
@@ -149,16 +160,14 @@ class SettingsScreen(private val g: Game) {
         }
         y += 126f
 
-        ui.text(c, "FEEL", x + 8f, y, 30f, Theme.TEXT_DIM, ui.bodyLeft, false)
-        y += 18f
+        y = heading(c, "FEEL", x, y)
         if (ui.toggle(c, Id.HAPTICS, x, y, w, 88f, "Vibration", save.hapticsOn)) {
             save.hapticsOn = !save.hapticsOn
             g.tap()
         }
         y += 116f
 
-        ui.text(c, "PLAYER", x + 8f, y, 30f, Theme.TEXT_DIM, ui.bodyLeft, false)
-        y += 18f
+        y = heading(c, "PLAYER", x, y)
         if (ui.button(c, Id.NAME, x, y, w, 88f, "CHANGE NAME",
                 Ui.ButtonStyle.SECONDARY, sublabel = g.save.playerName.ifEmpty { "not set" })) {
             g.tap(); g.host.promptName(save.playerName, "Change your name")

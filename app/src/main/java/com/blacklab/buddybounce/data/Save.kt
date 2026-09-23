@@ -382,7 +382,18 @@ class Save(ctx: Context) {
 
     // ---- consumable power-ups ---------------------------------------------------------------
 
-    fun powerupCount(id: String): Int = prefs.getInt(KEY_POWERUP_PREFIX + id, 0)
+    /**
+     * Testing back door: every power-up, always, and spending one costs nothing.
+     *
+     * Kept as a flag rather than a huge stored count so it cannot be whittled away by play and
+     * cannot leave a save with an absurd number in it once it is turned off again.
+     */
+    var infinitePowerups: Boolean
+        get() = prefs.getBoolean(KEY_INFINITE_POWERUPS, false)
+        set(value) = editSync { it.putBoolean(KEY_INFINITE_POWERUPS, value) }
+
+    fun powerupCount(id: String): Int =
+        if (infinitePowerups) Tuning.POWERUP_MAX else prefs.getInt(KEY_POWERUP_PREFIX + id, 0)
 
     /**
      * Adds power-ups, up to the shelf limit.
@@ -405,6 +416,9 @@ class Save(ctx: Context) {
 
     /** Spends one. Returns false (and changes nothing) if the shelf is empty. */
     fun consumePowerup(id: String): Boolean {
+        // The back door hands them out without ever spending one, so the stored count is left
+        // exactly as the player earned it and comes back untouched when the flag goes off.
+        if (infinitePowerups) return true
         val have = powerupCount(id)
         if (have <= 0) return false
         editSync { it.putInt(KEY_POWERUP_PREFIX + id, have - 1) }
@@ -493,6 +507,7 @@ class Save(ctx: Context) {
         private const val KEY_HALOS = "halos"
         private const val KEY_HEAVEN_SEEN = "heavenAnnounced"
         private const val KEY_CONTROLS_ASKED = "controlsAsked"
+        private const val KEY_INFINITE_POWERUPS = "infinitePowerups"
         private const val KEY_GHOST_ON = "ghostOn"
         private const val KEY_FREE_SPINS = "freeSpins"
         private const val KEY_POWERUP_PREFIX = "pu_"

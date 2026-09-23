@@ -886,73 +886,98 @@ class TrailArt(private val art: Art) {
     }
 
     /**
-     * Glory Beam: a shaft of golden light standing upright, brightest at its core, with motes
-     * riding up it and a soft flare where it meets the ground.
+     * Glory Beam: a falling column of light, wider at the bottom than the top, with the light
+     * visibly POURING down it.
      *
-     * It is the only trail built from a straight vertical - everything else in the catalogue
-     * tumbles, drifts or streaks - which is what makes a column of it read as light falling on
-     * him rather than as sparks coming off him.
+     * The first pass was a stack of straight-edged wedges with a few motes in them, and at a
+     * glance it read as a handful of vertical lines rather than as one thing. What makes light
+     * look like light is that it flows: the edges here bow outward and wander, the brightness
+     * runs in bands that slide DOWN the shaft rather than sitting still, and the whole column
+     * overlaps its neighbours enough that a line of them reads as a continuous stream. It is
+     * also the biggest thing in the catalogue by some way - it should look like something is
+     * shining on him, not like he is dropping sparks.
      */
     private fun glory(c: Canvas, size: Float, rot: Float, col: Int, accent: Int, a: Float) {
-        // The longest and widest thing in the catalogue, deliberately - it is the reward for a
-        // thousand halos and it should look like a shaft of light falling on him, not a spark.
-        val hgt = size * 5.6f
-        val halfW = size * 0.95f
+        val hgt = size * 8.5f
+        val topW = size * 0.5f
+        val botW = size * 2.2f
 
-        // the outer shaft, widening as it falls
         p.reset(); p.isAntiAlias = true
-        p.color = ColorX.withAlpha(accent, a * 0.30f)
-        path.reset()
-        path.moveTo(-halfW * 0.34f, -hgt)
-        path.lineTo(halfW * 0.34f, -hgt)
-        path.lineTo(halfW, hgt * 0.30f)
-        path.lineTo(-halfW, hgt * 0.30f)
-        path.close()
-        c.drawPath(path, p)
 
-        // the core, narrower and near-white
-        p.color = ColorX.withAlpha(col, a * 0.72f)
-        path.reset()
-        path.moveTo(-halfW * 0.17f, -hgt)
-        path.lineTo(halfW * 0.17f, -hgt)
-        path.lineTo(halfW * 0.44f, hgt * 0.24f)
-        path.lineTo(-halfW * 0.44f, hgt * 0.24f)
-        path.close()
-        c.drawPath(path, p)
-        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), a * 0.55f)
-        path.reset()
-        path.moveTo(-halfW * 0.07f, -hgt * 0.94f)
-        path.lineTo(halfW * 0.07f, -hgt * 0.94f)
-        path.lineTo(halfW * 0.18f, hgt * 0.18f)
-        path.lineTo(-halfW * 0.18f, hgt * 0.18f)
-        path.close()
-        c.drawPath(path, p)
-
-        // motes riding up the beam, each a four-point sparkle rather than a dot
-        for (i in 0 until 8) {
-            val t = ((rot * 0.16f + i * 0.125f) % 1f)
-            val my = hgt * 0.24f - t * hgt * 1.15f
-            val mx = sin(rot * 1.6f + i * 2.1f) * halfW * 0.5f * (1f - t)
-            val ms = size * (0.30f - t * 0.16f)
-            if (ms <= 0f) continue
-            p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), a * (1f - t) * 0.9f)
+        // Three nested shafts, each narrower and brighter. Curved sides, so the column has a
+        // waist and a flare instead of being a triangle.
+        for (layer in 0 until 3) {
+            val k = layer / 2f
+            val tw = topW * (1f - k * 0.62f)
+            val bw = botW * (1f - k * 0.58f)
+            val sway = sin(rot * 0.6f + layer) * size * 0.18f
+            p.color = when (layer) {
+                0 -> ColorX.withAlpha(accent, a * 0.26f)
+                1 -> ColorX.withAlpha(col, a * 0.46f)
+                else -> ColorX.withAlpha(0xFFFFFFFF.toInt(), a * 0.62f)
+            }
             path.reset()
-            path.moveTo(mx, my - ms)
-            path.quadTo(mx + ms * 0.22f, my - ms * 0.22f, mx + ms, my)
-            path.quadTo(mx + ms * 0.22f, my + ms * 0.22f, mx, my + ms)
-            path.quadTo(mx - ms * 0.22f, my + ms * 0.22f, mx - ms, my)
-            path.quadTo(mx - ms * 0.22f, my - ms * 0.22f, mx, my - ms)
+            path.moveTo(-tw, -hgt * 0.5f)
+            path.cubicTo(
+                -tw - size * 0.2f + sway, -hgt * 0.1f,
+                -bw + sway, hgt * 0.2f,
+                -bw, hgt * 0.5f
+            )
+            path.lineTo(bw, hgt * 0.5f)
+            path.cubicTo(
+                bw - sway, hgt * 0.2f,
+                tw + size * 0.2f - sway, -hgt * 0.1f,
+                tw, -hgt * 0.5f
+            )
             path.close()
             c.drawPath(path, p)
         }
 
-        // the flare where it lands
-        p.color = ColorX.withAlpha(accent, a * 0.42f)
-        r.set(-halfW * 1.25f, hgt * 0.16f, halfW * 1.25f, hgt * 0.40f)
+        // The pour: bright bands sliding down the shaft. These are what stop it reading as a
+        // static wedge - the column stays put and the light inside it moves.
+        for (i in 0 until 5) {
+            val t = ((rot * 0.22f + i * 0.2f) % 1f)
+            val by = -hgt * 0.5f + t * hgt
+            val spread = 0.2f + t * 0.8f
+            val bw = topW + (botW - topW) * t
+            val fade = (1f - abs(t - 0.45f) * 1.6f).coerceAtLeast(0f)
+            p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), a * 0.3f * fade)
+            r.set(-bw * 0.78f, by - size * 0.3f * spread, bw * 0.78f, by + size * 0.3f * spread)
+            c.drawOval(r, p)
+        }
+
+        // motes riding the flow down, biggest and slowest near the bottom
+        for (i in 0 until 7) {
+            val t = ((rot * 0.16f + i * 0.143f) % 1f)
+            val my = -hgt * 0.5f + t * hgt
+            val lane = (Hash01(i) - 0.5f) * 2f
+            val mx = lane * (topW + (botW - topW) * t) * 0.72f + sin(rot * 1.4f + i) * size * 0.1f
+            val ms = size * (0.16f + t * 0.2f)
+            p.color = ColorX.withAlpha(0xFFFFF3C2.toInt(), a * (1f - abs(t - 0.5f) * 1.2f).coerceAtLeast(0f))
+            path.reset()
+            path.moveTo(mx, my - ms)
+            path.quadTo(mx + ms * 0.24f, my - ms * 0.24f, mx + ms, my)
+            path.quadTo(mx + ms * 0.24f, my + ms * 0.24f, mx, my + ms)
+            path.quadTo(mx - ms * 0.24f, my + ms * 0.24f, mx - ms, my)
+            path.quadTo(mx - ms * 0.24f, my - ms * 0.24f, mx, my - ms)
+            path.close()
+            c.drawPath(path, p)
+        }
+
+        // where it lands: a wide soft pool, so the shaft has somewhere to arrive
+        p.color = ColorX.withAlpha(accent, a * 0.34f)
+        r.set(-botW * 1.35f, hgt * 0.4f, botW * 1.35f, hgt * 0.66f)
         c.drawOval(r, p)
-        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), a * 0.34f)
-        r.set(-halfW * 0.52f, hgt * 0.21f, halfW * 0.52f, hgt * 0.33f)
+        p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), a * 0.3f)
+        r.set(-botW * 0.6f, hgt * 0.45f, botW * 0.6f, hgt * 0.59f)
         c.drawOval(r, p)
+    }
+
+    /** A stable 0..1 per index, so a mote keeps its lane instead of jumping about. */
+    private fun Hash01(i: Int): Float {
+        val h = (i * 374761393 + 668265263)
+        val x = (h xor (h shr 13)) * 1274126177
+        return ((x xor (x shr 16)) and 0xFFFF) / 65535f
     }
 
     /** A folded shell seen end-on, with the filling spilling over the near lip. */
