@@ -39,16 +39,31 @@ class GameOverScreen(private val g: Game) {
             g.lastRank in 0..2 -> "GOOD BOY!"
             else -> "NICE RUN"
         }
-        // The whole score block flows downward from one running y rather than hanging off a
-        // stack of fixed offsets. The offsets had "POINTS" landing exactly on the descenders of
-        // the big number above it, and the further down the card you went the tighter it got.
-        // Each line now advances past its own ink before the next one is placed.
+        // The card is laid out from BOTH ends. The button stack owns the foot of it, the score
+        // owns the top, and the stats strip goes in whatever is left between them.
+        //
+        // The stack used to be anchored to a single fixed offset and then, if a Second Life was
+        // on offer, shoved 124 units UPWARD to make room for the extra button - straight over
+        // the stats strip and the coin lines under it. Measuring the stack first and placing
+        // everything else above it means an extra button pushes the layout instead of covering
+        // it, and the score shrinks to fit rather than the two colliding.
+        val lives = g.save.powerupCount(Powerups.SECOND_LIFE)
+        val ranked = g.lastRank in 0..9
+        val rankH = if (ranked) 68f else 0f
+        val stackH = BUTTON_STACK_H + (if (lives > 0) SECOND_LIFE_ROW_H else 0f)
+        val stackTop = y + h - 44f - stackH
+
+        // The stats block gets first refusal on the middle: the coin lines are information and
+        // the size of the score is decoration, so the number shrinks for them rather than the
+        // other way round. What is left pays for the headline, POINTS and any rank pill; the
+        // number consumes its own size plus a quarter of it again in descender and gap.
+        val scoreRoom = (stackTop - STATS_FULL_H - 38f - 24f) - (y + 138f) - (44f + rankH)
+        val scoreSize = min(w * 0.30f, 200f).coerceAtMost((scoreRoom / 1.24f).coerceAtLeast(56f))
+
         var ty = y + 104f
         ui.text(c, headline, x + w * 0.5f, ty, 66f,
             if (g.lastNewBest) Theme.ACCENT else Theme.TEXT, ui.title, true, w - 60f)
         ty += 34f
-
-        val scoreSize = min(w * 0.30f, 200f)
         val bounce = if (k < 1f) (1f - k) * 30f else sin(ui.time * 2.2f) * 3f
         ty += scoreSize
         ui.text(c, g.lastScore.toString(), x + w * 0.5f, ty + bounce, scoreSize, Theme.TEXT, ui.title, true, w - 60f)
@@ -58,7 +73,7 @@ class GameOverScreen(private val g: Game) {
         ui.text(c, "POINTS", x + w * 0.5f, ty, 28f, Theme.TEXT_DIM, ui.body, false, w - 60f)
         ty += 20f
 
-        if (g.lastRank in 0..9) {
+        if (ranked) {
             val label = "#${g.lastRank + 1} ON THE BOARD"
             val pw = ui.measure(label, 30f, ui.body) + 60f
             ty += 16f
@@ -67,32 +82,48 @@ class GameOverScreen(private val g: Game) {
             ty += 52f
         }
 
-        // stats strip - below the score block wherever that ended up, not at a fixed fraction
-        val statsY = maxOf(y + h * 0.60f, ty + 42f)
+        // Whatever is genuinely left between the score and the stack. On a card too short to
+        // hold all of it the block SHEDS lines from the bottom rather than overlapping the
+        // buttons - a missing line is a smaller card, a line under a button is a broken one.
+        val gap = stackTop - 8f - (ty + 24f)
+        val statsBlockH = when {
+            gap >= STATS_FULL_H -> STATS_FULL_H
+            gap >= STATS_ONE_LINE_H -> STATS_ONE_LINE_H
+            gap >= STATS_BARE_H -> STATS_BARE_H
+            else -> 0f
+        }
+        val showStats = statsBlockH > 0f
+        val showPickupLine = statsBlockH >= STATS_ONE_LINE_H
+        val roomForBankLine = statsBlockH >= STATS_FULL_H
+        val statsY = ty + 24f + (gap - statsBlockH).coerceAtLeast(0f) * 0.4f
         val third = w / 3f
-        stat(c, x + third * 0.5f, statsY, g.lastCoins.toString(), "COINS EARNED", Theme.ACCENT, third)
-        stat(c, x + third * 1.5f, statsY, ((g.world.heightWu / Tuning.VIEW_H).toInt()).toString(), "SCREENS", Theme.TEXT, third)
-        stat(c, x + third * 2.5f, statsY, Palettes.label(g.lastBiome).uppercase(), "REACHED", Palettes.get(g.lastBiome).platAccent, third)
+        if (showStats) {
+            stat(c, x + third * 0.5f, statsY, g.lastCoins.toString(), "COINS EARNED", Theme.ACCENT, third)
+            stat(c, x + third * 1.5f, statsY, ((g.world.heightWu / Tuning.VIEW_H).toInt()).toString(), "SCREENS", Theme.TEXT, third)
+            stat(c, x + third * 2.5f, statsY, Palettes.label(g.lastBiome).uppercase(), "REACHED", Palettes.get(g.lastBiome).platAccent, third)
+        }
 
-        ui.text(
-            c, "${g.lastRunCoins} picked up  +  ${g.lastBonusCoins} for the height  \u2192  banked",
-            x + w * 0.5f, statsY + 78f, 25f, Theme.TEXT_DIM, ui.body, false, w - 72f
-        )
-        ui.text(
-            c, "${g.save.coins} coins in the bank",
-            x + w * 0.5f, statsY + 114f, 27f, ColorX.withAlpha(Theme.ACCENT, 0.9f), ui.body, false, w - 72f
-        )
+        if (showPickupLine) {
+            ui.text(
+                c, "${g.lastRunCoins} picked up  +  ${g.lastBonusCoins} for the height  \u2192  banked",
+                x + w * 0.5f, statsY + 78f, 25f, Theme.TEXT_DIM, ui.body, false, w - 72f
+            )
+        }
+        if (roomForBankLine) {
+            ui.text(
+                c, "${g.save.coins} coins in the bank",
+                x + w * 0.5f, statsY + 114f, 27f, ColorX.withAlpha(Theme.ACCENT, 0.9f), ui.body, false, w - 72f
+            )
+        }
 
         // buttons
         val bw = w - 96f
         val bx = x + 48f
-        var by = y + h - 268f
+        var by = stackTop
 
         // A Second Life is spent HERE, not chosen before a run - it is the answer to "no, not
         // yet". Offering it above BOUNCE AGAIN puts it where the thumb already is.
-        val lives = g.save.powerupCount(Powerups.SECOND_LIFE)
         if (lives > 0) {
-            by -= 124f
             if (ui.button(
                     c, Id.CONTINUE, bx, by, bw, 108f, "SECOND LIFE", Ui.ButtonStyle.PRIMARY,
                     sublabel = "carry on from here \u00b7 $lives left"
@@ -101,7 +132,7 @@ class GameOverScreen(private val g: Game) {
                 g.tap(); g.reviveWithSecondLife()
             }
             ui.shimmer(c, bx, by, bw, 108f, 36f, 0.4f + 0.35f * sin(ui.time * 3.4f))
-            by += 124f
+            by += SECOND_LIFE_ROW_H
         }
 
         if (ui.button(c, Id.RETRY, bx, by, bw, 116f,
@@ -140,5 +171,19 @@ class GameOverScreen(private val g: Game) {
         val box = colW - 16f
         ui.text(c, value, cx, cy, 46f, color, ui.title, false, box)
         ui.text(c, label, cx, cy + 34f, 24f, Theme.TEXT_DIM, ui.body, false, box)
+    }
+
+    private companion object {
+        /** BOUNCE AGAIN (116) + gap (16) + the three-across row (92). */
+        const val BUTTON_STACK_H = 224f
+        /** What a SECOND LIFE button adds to the stack: its height plus the gap under it. */
+        const val SECOND_LIFE_ROW_H = 124f
+
+        /** The stats strip with both coin lines under it. */
+        const val STATS_FULL_H = 122f
+        /** The strip plus the "picked up ... banked" line, the bank total dropped. */
+        const val STATS_ONE_LINE_H = 88f
+        /** The three values and their labels, nothing else. */
+        const val STATS_BARE_H = 46f
     }
 }
