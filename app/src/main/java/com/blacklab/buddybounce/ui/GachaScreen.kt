@@ -484,27 +484,40 @@ class GachaScreen(private val g: Game) {
 
     private fun drawMachine(c: Canvas, cx: Float, top: Float, w: Float, h: Float) {
         val ui = g.ui
-        val domeR = w * 0.42f
-        val domeCY = top + domeR + w * 0.06f
-        val bodyTop = domeCY + domeR * 0.72f
+        // The machine is laid out so that nothing sits on top of anything else. The globe RESTS
+        // on the body rather than sinking into it - it used to be buried by 0.28 of its own
+        // radius, which put its bottom below the body's top edge where the nameplate then
+        // clipped it - and the body below is divided into four bands that do not touch:
+        // nameplate, then the slot and crank side by side, then the chute at the foot.
+        val domeR = w * 0.38f
+        val domeCY = top + domeR + w * 0.05f
+        val bodyTop = domeCY + domeR                 // the glass sits ON the cabinet
         val bodyBottom = top + h
+        val bodyH = bodyBottom - bodyTop
+
+        val signTop = bodyTop + bodyH * 0.086f
+        val signH = bodyH * 0.207f
+        val rowCY = bodyTop + bodyH * 0.527f         // slot and crank share this line
+        val chuteTop = bodyTop + bodyH * 0.794f
+        val chuteH = bodyH * 0.147f
 
         g.art.drawShadow(c, cx, bodyBottom + 12f, w * 1.15f, h * 0.22f, 0.55f)
         p.reset(); p.isAntiAlias = true
 
         p.color = 0xFFC0392B.toInt()
-        rect.set(cx - w * 0.5f, bodyTop - w * 0.12f, cx + w * 0.5f, bodyBottom)
+        rect.set(cx - w * 0.5f, bodyTop - w * 0.04f, cx + w * 0.5f, bodyBottom)
         c.drawRoundRect(rect, w * 0.1f, w * 0.1f, p)
         p.color = 0xFFA5302A.toInt()
         rect.set(cx - w * 0.5f, bodyBottom - h * 0.09f, cx + w * 0.5f, bodyBottom)
         c.drawRoundRect(rect, w * 0.1f, w * 0.1f, p)
         p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), 0.16f)
-        rect.set(cx - w * 0.42f, bodyTop - w * 0.06f, cx - w * 0.28f, bodyBottom - h * 0.06f)
+        rect.set(cx - w * 0.42f, bodyTop - w * 0.02f, cx - w * 0.28f, bodyBottom - h * 0.06f)
         c.drawRoundRect(rect, w * 0.05f, w * 0.05f, p)
 
+        // The collar the globe seats into, straddling the join so there is no visible seam.
         p.color = 0xFFE2E8F2.toInt()
-        rect.set(cx - domeR * 1.06f, domeCY + domeR * 0.52f, cx + domeR * 1.06f, domeCY + domeR * 0.92f)
-        c.drawRoundRect(rect, domeR * 0.2f, domeR * 0.2f, p)
+        rect.set(cx - domeR * 1.02f, bodyTop - domeR * 0.24f, cx + domeR * 1.02f, bodyTop + domeR * 0.1f)
+        c.drawRoundRect(rect, domeR * 0.16f, domeR * 0.16f, p)
 
         p.color = ColorX.withAlpha(0xFFBDE8FF.toInt(), 0.35f)
         c.drawCircle(cx, domeCY, domeR, p)
@@ -539,9 +552,6 @@ class GachaScreen(private val g: Game) {
         // crank. What was actually covering the lettering was the white base plate above it,
         // which reaches to bodyTop + 0.2*domeR, so the sign starts just past that and no
         // further.
-        val plateBottom = domeCY + domeR * 0.92f
-        val signTop = plateBottom + w * 0.012f
-        val signH = w * 0.135f
         p.color = Theme.ACCENT
         rect.set(cx - w * 0.36f, signTop, cx + w * 0.36f, signTop + signH)
         c.drawRoundRect(rect, w * 0.045f, w * 0.045f, p)
@@ -549,18 +559,19 @@ class GachaScreen(private val g: Game) {
         rect.set(cx - w * 0.36f, signTop + signH * 0.72f, cx + w * 0.36f, signTop + signH)
         c.drawRoundRect(rect, w * 0.04f, w * 0.04f, p)
         ui.text(
-            c, "BUDDY PRIZES", cx, signTop + signH * 0.72f, w * 0.082f,
+            c, "BUDDY PRIZES", cx, signTop + signH * 0.73f, signH * 0.62f,
             0xFF2A1D04.toInt(), ui.title, false, w * 0.64f
         )
 
         val crankCX = cx + w * 0.26f
-        // Low enough to leave the nameplate its band. Its own bottom still clears the body.
-        val crankCY = bodyTop + w * 0.42f
-        crankX = crankCX; crankY = crankCY; crankR = w * 0.16f
+        val crankCY = rowCY
+        // The press target is a touch wider than the knob, but no wider - it used to reach far
+        // enough to meet the chute below it.
+        crankX = crankCX; crankY = crankCY; crankR = w * 0.135f
         p.color = 0xFFD8DEE9.toInt()
-        c.drawCircle(crankCX, crankCY, w * 0.12f, p)
+        c.drawCircle(crankCX, crankCY, w * 0.105f, p)
         p.color = 0xFF98A2B3.toInt()
-        c.drawCircle(crankCX, crankCY, w * 0.09f, p)
+        c.drawCircle(crankCX, crankCY, w * 0.08f, p)
         c.save()
         c.rotate(crankAngle, crankCX, crankCY)
         p.color = 0xFF5B6478.toInt()
@@ -572,13 +583,13 @@ class GachaScreen(private val g: Game) {
 
         // coin slot
         val slotCX = cx - w * 0.26f
-        val slotCY = bodyTop + w * 0.33f
+        val slotCY = rowCY
         slotX = slotCX; slotY = slotCY
         p.color = 0xFF8E9AAE.toInt()
-        rect.set(cx - w * 0.38f, bodyTop + w * 0.27f, cx - w * 0.14f, bodyTop + w * 0.39f)
+        rect.set(cx - w * 0.38f, slotCY - w * 0.06f, cx - w * 0.14f, slotCY + w * 0.06f)
         c.drawRoundRect(rect, w * 0.03f, w * 0.03f, p)
         p.color = 0xFF3A2320.toInt()
-        rect.set(cx - w * 0.36f, bodyTop + w * 0.30f, cx - w * 0.16f, bodyTop + w * 0.36f)
+        rect.set(cx - w * 0.36f, slotCY - w * 0.03f, cx - w * 0.16f, slotCY + w * 0.03f)
         c.drawRoundRect(rect, w * 0.03f, w * 0.03f, p)
 
         // the coin going in, on its way to buying this pull
@@ -602,19 +613,22 @@ class GachaScreen(private val g: Game) {
             c.restore()
         }
 
-        val chuteY = bodyBottom - h * 0.19f
+        // The mouth. Smaller and lower than it was: at its old size it reached up over the
+        // bottom of the coin slot and across the left of the crank, and being drawn after both
+        // it simply painted over them.
+        val chuteY = chuteTop
         p.color = 0xFF7E241F.toInt()
-        rect.set(cx - w * 0.28f, chuteY, cx + w * 0.28f, chuteY + h * 0.11f)
-        c.drawRoundRect(rect, w * 0.05f, w * 0.05f, p)
-        p.color = ColorX.withAlpha(0xFF000000.toInt(), 0.35f)
-        rect.set(cx - w * 0.24f, chuteY + h * 0.012f, cx + w * 0.24f, chuteY + h * 0.085f)
+        rect.set(cx - w * 0.19f, chuteY, cx + w * 0.19f, chuteY + chuteH)
         c.drawRoundRect(rect, w * 0.04f, w * 0.04f, p)
+        p.color = ColorX.withAlpha(0xFF000000.toInt(), 0.35f)
+        rect.set(cx - w * 0.155f, chuteY + chuteH * 0.13f, cx + w * 0.155f, chuteY + chuteH * 0.82f)
+        c.drawRoundRect(rect, w * 0.03f, w * 0.03f, p)
 
         if (state == State.DROP || state == State.REVEAL) {
             val k = if (state == State.DROP) smoothstep(0f, 1f, 1f - clamp01(timer / 0.75f)) else 1f
-            val capY = domeCY + (chuteY + h * 0.05f - domeCY) * k
+            val capY = domeCY + (chuteY + chuteH * 0.5f - domeCY) * k
             val bounce = if (k > 0.92f) sin((k - 0.92f) * 60f) * 8f else 0f
-            drawCapsule(c, cx, capY + bounce, w * 0.15f, prizeTint())
+            drawCapsule(c, cx, capY + bounce, w * 0.13f, prizeTint())
         }
     }
 
