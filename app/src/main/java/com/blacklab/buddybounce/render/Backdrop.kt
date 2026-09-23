@@ -261,10 +261,20 @@ class Backdrop(private val art: Art) {
         }
     }
 
-    /** Runs a repeating parallax band and hands each repeat's base screen Y to [body]. */
+    /**
+     * Runs a repeating parallax band and hands each repeat's base screen Y to [body].
+     *
+     * FARTHEST FIRST. baseY falls as idx rises, so counting k upward would hand out the repeats
+     * bottom of the screen first and top of the screen last - which is back to front for
+     * painting. Every band that fills DOWNWARD from its base line (hills, peaks, dunes, lava,
+     * reef, and the grounds under the pines, the graves and the gumdrops) then had its highest,
+     * most distant repeat drawn last, so that repeat's ground sheeted over the nearer repeats
+     * and over the sky itself. Handing them out in descending idx paints the far ones first and
+     * lets the near ones cover them, which is the order a horizon actually stacks in.
+     */
     private inline fun band(camY: Float, p: Float, height: Float, body: (idx: Int, baseY: Float) -> Unit) {
         val i0 = floor((camY * p) / height).toInt()
-        for (k in 0..2) {
+        for (k in 2 downTo 0) {
             val idx = i0 + k
             val baseY = Tuning.VIEW_H - (idx * height - camY * p)
             if (baseY < -height * 1.6f || baseY > Tuning.VIEW_H + height) continue
