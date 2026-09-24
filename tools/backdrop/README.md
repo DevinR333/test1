@@ -69,3 +69,26 @@ The fix is `deep()` in Backdrop.kt and BandArt.kt: a downward fill ends past the
 frame instead of at a fixed depth. Whatever is nearer is painted after and covers it, and below
 a horizon there is supposed to be more of the same rather than sky. A fill entirely ABOVE the
 screen is left alone - stretching that one down would drop a slab over the whole frame.
+
+## FilmStrip.kt + png.py - measuring pop by looking at pixels
+
+Every probe built out of draw *calls* eventually lied. Mark counts pass when the art is present
+but wrong. Bounding-box coverage saturates at ~1.0 everywhere. Ink area counts paint that
+something else covers a moment later. The only measurement that matched what the screen
+actually does is the one that rasterises.
+
+FilmStrip renders a run of frames per scene as SVG - 20 frames, 0.12 screens apart, starting
+from `startScreens` - driving the game's own `Tuning.biomeIndex`/`biomeBlend` so the band
+cross-fade is the real one and not an approximation. Chromium turns each SVG into a PNG
+(`/opt/pw-browsers/chromium-*/chrome-linux/chrome --headless --screenshot`), and `png.py` -
+a pure-Python decoder, since the container has neither PIL nor numpy - reads the pixels back.
+
+Two numbers per scene: the worst single-frame difference (the "jump", a pop), and the mean
+frame-to-frame difference (the "step", how smoothly it scrolls). Both are only meaningful in
+comparison, so render the same strips from a known-good commit and diff:
+
+    git worktree add /tmp/approved <good-sha>
+
+then build and run FilmStrip against each tree and compare scene by scene. Two sweeps are
+worth taking - the first area from 0 screens, and across the cross-fade from 6.6 screens.
+A change ships when no scene is worse than the approved build in either sweep.

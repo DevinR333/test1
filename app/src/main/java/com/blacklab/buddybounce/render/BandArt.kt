@@ -42,6 +42,11 @@ internal class BandArt(private val art: Art) {
     private val path = Path()
     private val rect = RectF()
 
+    /** True while painting the lowest band of a scene - the one with the floor in it. */
+    var firstBand = false
+    /** Which repeat of the current band is being painted; see band(). */
+    private var curIdx = 0
+
     private companion object {
         /** How far above the top of the screen a ground line fades out over. */
         const val GROUND_FADE = 260f
@@ -56,12 +61,28 @@ internal class BandArt(private val art: Art) {
      * FIRST. See Backdrop.band: counting the repeats upward paints the most distant one last,
      * which sheets it over everything nearer.
      */
-    private inline fun band(camY: Float, p: Float, height: Float, body: (idx: Int, baseY: Float) -> Unit) {
+    /**
+     * [once] restricts the band to the repeat at the bottom of the world. A layer that carries
+     * the GROUND - the floor and everything standing on it - is not scenery to be tiled up the
+     * sky: repeated, you climb off the ground, through sky, and back onto ground again before
+     * the world has even changed. The lowest band of a scene passes this, so its floor is laid
+     * once and then scrolls away for good. Higher bands do not: a treeline or a drift recurring
+     * up a mountainside is scenery, not a floor.
+     *
+     * Gating the ground FILL alone is not enough and looks worse - the graves and fences that
+     * stand on it carry on repeating and end up hanging in the air.
+     */
+    private inline fun band(
+        camY: Float, p: Float, height: Float, once: Boolean = false,
+        body: (idx: Int, baseY: Float) -> Unit
+    ) {
         val i0 = floor((camY * p) / height).toInt()
         for (k in 2 downTo 0) {
             val idx = i0 + k
+            if (once && idx > 0) continue
             val baseY = Tuning.VIEW_H - (idx * height - camY * p)
             if (baseY < -height * 1.6f || baseY > Tuning.VIEW_H + height) continue
+            curIdx = idx
             body(idx, baseY)
         }
     }
@@ -71,18 +92,17 @@ internal class BandArt(private val art: Art) {
      * Where a downward fill should end so its bottom edge never shows.
      *
      * Ground, water, rock and buildings are all drawn as a silhouette filled DOWNWARD from its
-     * own line, and every one of them stopped at a fixed depth. Whenever that depth happened to
-     * land inside the frame you got a hard horizontal rule straight across the screen with sky
-     * underneath it - the seams in the reef, the lava ridge, the mountains, the city towers and
-     * the desert buttes were all this one thing.
+     * own line, and every one of them stopped at a fixed depth. Whenever that depth landed
+     * inside the frame you got a hard horizontal rule straight across the screen with sky
+     * underneath it.
      *
-     * Pushing the bottom past the frame costs nothing: whatever is nearer is painted after and
-     * covers it, and below a horizon there is supposed to be more of the same rather than sky.
-     *
-     * A fill that is entirely ABOVE the screen is left alone - it is invisible either way, and
-     * stretching it down would drop a slab of it over the whole frame.
+     * This is a fixed OFFSET, not a jump to a fixed place. Snapping the bottom to just past the
+     * frame made the shape's size depend on which side of the top of the screen its bottom edge
+     * was on: a hand's breadth of climbing turned a shape that was just off the top into one
+     * that filled the whole frame, which is what made the backdrop pop as you went up. Moving
+     * the edge down by a fixed amount is continuous - the shape only ever slides.
      */
-    private fun deep(y: Float): Float = if (y <= 0f) y else maxOf(y, Tuning.VIEW_H + 400f)
+    private fun deep(y: Float): Float = y + Tuning.VIEW_H * 1.35f
 
     /**
      * The repeat nearest the viewer - the one whose ground line is lowest on screen.
@@ -173,7 +193,7 @@ internal class BandArt(private val art: Art) {
         val h = Tuning.VIEW_H * 1.0f
 
         // FAR - the roofs over the fence, and a couple of kites
-        band(camY, 0.09f, h) { idx, baseY ->
+        band(camY, 0.09f, h, once = firstBand) { idx, baseY ->
             val roofY = baseY - h * 0.52f
             paint.color = ColorX.withAlpha(ColorX.tint(pal.farInk, 0.45f), alpha * 0.45f)
             var x = -80f
@@ -216,7 +236,7 @@ internal class BandArt(private val art: Art) {
         }
 
         // MID - the hedge row
-        band(camY, 0.15f, h) { idx, baseY ->
+        band(camY, 0.15f, h, once = firstBand) { idx, baseY ->
             mounds(
                 c, worldW, baseY - h * 0.2f, 300f,
                 ColorX.withAlpha(ColorX.shade(pal.midInk, 1.05f), alpha * 0.8f), idx, 4
@@ -224,7 +244,7 @@ internal class BandArt(private val art: Art) {
         }
 
         // NEAR - fence, kennel, sunflowers, washing line
-        band(camY, 0.24f, h) { idx, baseY ->
+        band(camY, 0.24f, h, once = firstBand) { idx, baseY ->
             val footY = baseY + h * 0.06f
             ground(c, worldW, footY, h, h * 0.035f, ColorX.withAlpha(pal.nearInk, alpha * 0.95f), idx * 3)
 
@@ -365,7 +385,7 @@ internal class BandArt(private val art: Art) {
         }
 
         // NEAR - buttress roots spreading onto the litter floor, plus ferns
-        band(camY, 0.3f, h) { idx, baseY ->
+        band(camY, 0.3f, h, once = firstBand) { idx, baseY ->
             val footY = baseY + h * 0.08f
             ground(
                 c, worldW, footY, h, h * 0.03f,
@@ -477,7 +497,7 @@ internal class BandArt(private val art: Art) {
         }
 
         // NEAR - a flowering bank at the foot of the band, and petals drifting past
-        band(camY, 0.27f, h) { idx, baseY ->
+        band(camY, 0.27f, h, once = firstBand) { idx, baseY ->
             val footY = baseY + h * 0.05f
             ground(
                 c, worldW, footY, h, h * 0.045f,
@@ -597,7 +617,7 @@ internal class BandArt(private val art: Art) {
         }
 
         // NEAR - the pale sandbar and its ripples, with a few sea fans standing on it
-        band(camY, 0.28f, h) { idx, baseY ->
+        band(camY, 0.28f, h, once = firstBand) { idx, baseY ->
             val footY = baseY + h * 0.1f
             // the sandbar. Tinted a quarter of the way to white it was a cream wall that
             // everything standing on it disappeared into.
@@ -778,7 +798,7 @@ internal class BandArt(private val art: Art) {
         }
 
         // MID+NEAR - the big buttes, each one banded with its rock strata
-        band(camY, 0.17f, h) { idx, baseY ->
+        band(camY, 0.17f, h, once = firstBand) { idx, baseY ->
             val footY = baseY + h * 0.22f
             var x = -140f
             var i = 0
@@ -921,7 +941,7 @@ internal class BandArt(private val art: Art) {
         }
 
         // NEAR - drifted sand, half-buried rocks, and tumbleweed bowling past
-        band(camY, 0.3f, h) { idx, baseY ->
+        band(camY, 0.3f, h, once = firstBand) { idx, baseY ->
             val footY = baseY + h * 0.08f
             ground(
                 c, worldW, footY, h, h * 0.06f,
@@ -1021,7 +1041,7 @@ internal class BandArt(private val art: Art) {
         }
 
         // NEAR - the false lake, the palms round it, and the flats it lies on
-        band(camY, 0.23f, h) { idx, baseY ->
+        band(camY, 0.23f, h, once = firstBand) { idx, baseY ->
             val footY = baseY + h * 0.02f
             // the flats are sand; the green belongs to the oasis, not to the whole band
             ground(
@@ -1119,25 +1139,32 @@ internal class BandArt(private val art: Art) {
                 c, worldW, baseY - h * 0.1f, 280f,
                 ColorX.withAlpha(ColorX.tint(pal.midInk, 0.45f), alpha * 0.75f), idx, 4
             )
-            paint.color = ColorX.withAlpha(ColorX.shade(pal.nearInk, 0.75f), alpha * 0.6f)
+            // Frozen grass poking out of the drift. Three fat strokes from a single point, set
+            // below the snow line, read as a stray V sticker floating in the sky rather than as
+            // anything growing: they sit ON the drift now, and a tuft has more than three blades.
+            ink.color = ColorX.withAlpha(ColorX.shade(pal.nearInk, 0.75f), alpha * 0.5f)
             for (i in 0 until 8) {
                 val key = idx * 29 + i
                 val sx = Hash.f(key, 809) * worldW
-                val sy = baseY - h * 0.08f
-                val sh = 40f + Hash.f(key, 811) * 60f
-                ink.color = paint.color
-                ink.strokeWidth = 6f
-                for (b in 0 until 3) {
+                val sy = baseY - h * 0.1f - 30f - Hash.f(key, 813) * 90f
+                val sh = 34f + Hash.f(key, 811) * 40f
+                ink.strokeWidth = 3.5f
+                for (b in 0 until 6) {
+                    val lean = (b - 2.5f) * 0.42f
+                    val len = sh * (0.6f + Hash.f(key * 5 + b, 817) * 0.7f)
                     path.reset()
                     path.moveTo(sx, sy)
-                    path.quadTo(sx + (b - 1) * 26f, sy - sh * 0.6f, sx + (b - 1) * 44f, sy - sh)
+                    path.quadTo(
+                        sx + lean * len * 0.5f, sy - len * 0.65f,
+                        sx + lean * len * 1.15f, sy - len
+                    )
                     c.drawPath(path, ink)
                 }
             }
         }
 
         // NEAR - the drift you stand on, fence posts, and snow falling in front
-        band(camY, 0.26f, h) { idx, baseY ->
+        band(camY, 0.26f, h, once = firstBand) { idx, baseY ->
             val footY = baseY + h * 0.04f
             ground(
                 c, worldW, footY, h, h * 0.07f,
@@ -1282,7 +1309,7 @@ internal class BandArt(private val art: Art) {
         }
 
         // NEAR - the icing floor, scattered cookies and a rolling pin
-        band(camY, 0.27f, h) { idx, baseY ->
+        band(camY, 0.27f, h, once = firstBand) { idx, baseY ->
             val footY = baseY + h * 0.05f
             ground(
                 c, worldW, footY, h, h * 0.035f,
@@ -1352,7 +1379,7 @@ internal class BandArt(private val art: Art) {
         }
 
         // MID+NEAR - the twisted liquorice towers themselves
-        band(camY, 0.19f, h) { idx, baseY ->
+        band(camY, 0.19f, h, once = firstBand) { idx, baseY ->
             val footY = baseY + h * 0.2f
             var x = -100f
             var i = 0
@@ -1513,54 +1540,40 @@ internal class BandArt(private val art: Art) {
         paint.reset(); paint.isAntiAlias = true
         val h = Tuning.VIEW_H * 1.0f
 
-        // FAR - the tops of the buildings the alley runs between
-        band(camY, 0.1f, h) { idx, baseY ->
-            paint.color = ColorX.withAlpha(ColorX.shade(pal.nearInk, 1.35f), alpha * 0.55f)
-            var x = -60f
-            var i = 0
-            while (x < worldW + 60f) {
-                val key = idx * 89 + i
-                val w = 200f + Hash.f(key, 1087) * 220f
-                val hh = h * (0.55f + Hash.f(key, 1091) * 0.6f)
-                rect.set(x, baseY - hh, x + w, deep(baseY + h))
+        // The wall is ONE face, not a vignette repeated up the screen.
+        //
+        // Drawn per repeat it had to start somewhere, and wherever it started was a join. Opaque,
+        // that join was a rule across the screen with the bins of the repeat behind it sliced off
+        // along it; faded, you could see straight through it to that repeat's own windows, fire
+        // escape and sign, which is worse. An alley wall has no top: it fills the frame, and the
+        // brick courses scroll through it with the parallax rather than restarting.
+        paint.color = ColorX.withAlpha(pal.nearInk, alpha)
+        rect.set(-40f, -40f, worldW + 40f, Tuning.VIEW_H + 40f)
+        c.drawRect(rect, paint)
+
+        paint.color = ColorX.withAlpha(ColorX.shade(pal.nearInk, 1.15f), alpha * 0.5f)
+        val scroll = camY * 0.22f
+        val row0 = floor(scroll / 58f).toInt()
+        val off = scroll - row0 * 58f
+        var r = 0
+        while (true) {
+            val by = -58f + off + r * 58f
+            if (by > Tuning.VIEW_H + 58f) break
+            // parity from the ABSOLUTE course number, so the stagger does not flip as it scrolls
+            var bx = -40f + (((row0 + r) % 2) + 2) % 2 * 60f
+            while (bx < worldW + 40f) {
+                rect.set(bx, by, bx + 108f, by + 46f)
                 c.drawRect(rect, paint)
-                x += w + 20f
-                i++
+                bx += 120f
             }
+            r++
         }
 
-        // MID - the wall itself, with its fire escape and its windows
+        // and the things ON the wall, which do belong to each repeat
         val nearestAlley = nearestIdx(camY, 0.22f, h)
         band(camY, 0.22f, h) { idx, baseY ->
             val wallTop = baseY - h * 0.95f
             val footY = baseY + h * 0.08f
-            // The wall of the repeat behind this one is the same wall, so where this one starts
-            // there should be nothing to see. At 95% opaque and a straight top edge there was: a
-            // rule across the screen, with the dumpsters and blocks of the repeat behind it
-            // sliced off along it. Fading the top in over a couple of brick courses hides the
-            // join and leaves the wall itself exactly as it was.
-            val brick = ColorX.withAlpha(pal.nearInk, alpha * 0.95f)
-            paint.shader = LinearGradient(
-                0f, wallTop, 0f, wallTop + 190f,
-                intArrayOf(ColorX.withAlpha(brick, 0f), brick), null, Shader.TileMode.CLAMP
-            )
-            rect.set(-40f, wallTop, worldW + 40f, footY)
-            c.drawRect(rect, paint)
-            paint.shader = null
-            // courses of brick
-            paint.color = ColorX.withAlpha(ColorX.shade(pal.nearInk, 1.15f), alpha * 0.5f)
-            var by = wallTop
-            var row = 0
-            while (by < footY) {
-                var bx = -40f + (row % 2) * 60f
-                while (bx < worldW + 40f) {
-                    rect.set(bx, by, bx + 108f, by + 46f)
-                    c.drawRect(rect, paint)
-                    bx += 120f
-                }
-                by += 58f
-                row++
-            }
             // windows, some lit
             for (i in 0 until 8) {
                 val key = idx * 97 + i
@@ -1815,7 +1828,7 @@ internal class BandArt(private val art: Art) {
         }
 
         // MID+NEAR - the big trees, branching, with crows and a fog bank at their feet
-        band(camY, 0.24f, h) { idx, baseY ->
+        band(camY, 0.24f, h, once = firstBand) { idx, baseY ->
             val footY = baseY + h * 0.06f
             ground(
                 c, worldW, footY, h, h * 0.03f,
@@ -1921,7 +1934,7 @@ internal class BandArt(private val art: Art) {
         }
 
         // MID+NEAR - the tower itself
-        band(camY, 0.2f, h) { idx, baseY ->
+        band(camY, 0.2f, h, once = firstBand) { idx, baseY ->
             val footY = baseY + h * 0.25f
             val tx = Hash.f(idx, 1301) * (worldW - 420f) + 210f
             val tw = 230f

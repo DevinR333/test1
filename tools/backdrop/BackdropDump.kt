@@ -16,16 +16,16 @@ import java.io.File
  *
  * Run: see tools/backdrop/README.md. Output: one SVG per world, five bands side by side.
  */
-private const val W = 900f
-private const val VIEW = Tuning.VIEW_H
+internal const val W = 900f
+internal const val VIEW = Tuning.VIEW_H
 
-private fun hex(c: Int): String = "#%06X".format(c and 0xFFFFFF)
-private fun alphaOf(c: Int): Float = ((c ushr 24) and 0xFF) / 255f
+internal fun hex(c: Int): String = "#%06X".format(c and 0xFFFFFF)
+internal fun alphaOf(c: Int): Float = ((c ushr 24) and 0xFF) / 255f
 
-private var gradId = 0
+internal var gradId = 0
 
 /** Turns a recorded gradient into an SVG <defs> entry and gives back its id. */
-private fun gradDef(sh: android.graphics.Shader, alpha: Float, defs: StringBuilder): String {
+internal fun gradDef(sh: android.graphics.Shader, alpha: Float, defs: StringBuilder): String {
     val id = "g${gradId++}"
     val stops = StringBuilder()
     for (i in sh.colors.indices) {
@@ -44,9 +44,11 @@ private fun gradDef(sh: android.graphics.Shader, alpha: Float, defs: StringBuild
     return id
 }
 
-private fun panel(backdrop: Backdrop, biome: Int, camY: Float, ox: Float): String {
+internal fun panel(
+    backdrop: Backdrop, biome: Int, camY: Float, ox: Float, blend: Float = 0f
+): String {
     Rec.clear()
-    backdrop.draw(android.graphics.Canvas(), W, camY, 12.5f, biome, 0f)
+    backdrop.draw(android.graphics.Canvas(), W, camY, 12.5f, biome, blend)
     val defs = StringBuilder()
     val sb = StringBuilder()
     sb.append("<g transform=\"translate(%.0f,0)\">".format(ox))
