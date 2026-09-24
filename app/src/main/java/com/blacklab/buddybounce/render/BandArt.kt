@@ -84,6 +84,17 @@ internal class BandArt(private val art: Art) {
      */
     private fun deep(y: Float): Float = if (y <= 0f) y else maxOf(y, Tuning.VIEW_H + 400f)
 
+    /**
+     * The repeat nearest the viewer - the one whose ground line is lowest on screen.
+     *
+     * Most of a band is scenery and repeating it up the sky is the whole point. A few things are
+     * not: a road, a sea. Drawn once per repeat you get a road hanging in mid-air every screen
+     * and a fresh horizon every screen, each with a hard line along the top of it. Those belong
+     * to the ground you are actually above, so they are drawn for this repeat only.
+     */
+    private fun nearestIdx(camY: Float, p: Float, height: Float): Int =
+        floor((camY * p) / height).toInt()
+
     /** Ground: a soft ridge at [footY] filled well past the bottom, so objects are rooted. */
     private fun ground(c: Canvas, worldW: Float, footY: Float, depth: Float, amp: Float, color: Int, key: Int) {
         // A ground line above the top of the screen has nothing to show but its own fill, and
@@ -512,7 +523,14 @@ internal class BandArt(private val art: Art) {
         // FAR - the rippling ceiling of the sea, and the shafts under it
         band(camY, 0.1f, h) { idx, baseY ->
             val surf = baseY - h * 0.92f
-            paint.color = ColorX.withAlpha(ColorX.tint(pal.farInk, 0.55f), alpha * 0.5f)
+            // The lit water under the surface. Its underside is the rippled surface line and is
+            // meant to be seen; its TOP was a straight cut at surf - 0.6h, which ruled a line
+            // across the whole screen with darker water above it. It fades out instead.
+            val lit = ColorX.withAlpha(ColorX.tint(pal.farInk, 0.55f), alpha * 0.5f)
+            paint.shader = LinearGradient(
+                0f, surf - h * 0.6f, 0f, surf - h * 0.12f,
+                intArrayOf(ColorX.withAlpha(lit, 0f), lit), null, Shader.TileMode.CLAMP
+            )
             path.reset()
             path.moveTo(-40f, surf)
             var x = -40f
@@ -527,6 +545,7 @@ internal class BandArt(private val art: Art) {
             path.lineTo(-40f, surf - h * 0.6f)
             path.close()
             c.drawPath(path, paint)
+            paint.shader = null
             for (i in 0 until 5) {
                 val key = idx * 37 + i
                 val sx = Hash.f(key, 433) * worldW
@@ -665,8 +684,12 @@ internal class BandArt(private val art: Art) {
             }
         }
 
-        // NEAR - the sea surface, islands and a sail or two
+        // NEAR - the sea surface, islands and a sail or two. There is one sea, so this is drawn
+        // for the nearest repeat only; once per repeat stacked a fresh horizon every screen,
+        // each one a hard line with the islands of the repeat behind it cut off along it.
+        val nearestSea = nearestIdx(camY, 0.24f, h)
         band(camY, 0.24f, h) { idx, baseY ->
+            if (idx != nearestSea) return@band
             val seaY = baseY - h * 0.02f
             // islands sitting ON the waterline
             for (i in 0 until 3) {
@@ -1507,12 +1530,23 @@ internal class BandArt(private val art: Art) {
         }
 
         // MID - the wall itself, with its fire escape and its windows
+        val nearestAlley = nearestIdx(camY, 0.22f, h)
         band(camY, 0.22f, h) { idx, baseY ->
             val wallTop = baseY - h * 0.95f
             val footY = baseY + h * 0.08f
-            paint.color = ColorX.withAlpha(pal.nearInk, alpha * 0.95f)
+            // The wall of the repeat behind this one is the same wall, so where this one starts
+            // there should be nothing to see. At 95% opaque and a straight top edge there was: a
+            // rule across the screen, with the dumpsters and blocks of the repeat behind it
+            // sliced off along it. Fading the top in over a couple of brick courses hides the
+            // join and leaves the wall itself exactly as it was.
+            val brick = ColorX.withAlpha(pal.nearInk, alpha * 0.95f)
+            paint.shader = LinearGradient(
+                0f, wallTop, 0f, wallTop + 190f,
+                intArrayOf(ColorX.withAlpha(brick, 0f), brick), null, Shader.TileMode.CLAMP
+            )
             rect.set(-40f, wallTop, worldW + 40f, footY)
             c.drawRect(rect, paint)
+            paint.shader = null
             // courses of brick
             paint.color = ColorX.withAlpha(ColorX.shade(pal.nearInk, 1.15f), alpha * 0.5f)
             var by = wallTop
@@ -1578,7 +1612,11 @@ internal class BandArt(private val art: Art) {
             }
             art.drawGlow(c, sx, footY - 540f, 260f, pal.rimInk, alpha * 0.35f * flicker)
 
-            // NEAR - the road, the dumpsters and the puddle
+            // NEAR - the road, the dumpsters and the puddle. Only for the repeat you are
+            // actually standing above: every repeat drew its own, so a dark band of roadway
+            // crossed the screen once a screen with the bins of the repeat behind it sliced
+            // off along the top edge.
+            if (idx != nearestAlley) return@band
             paint.color = ColorX.withAlpha(ColorX.shade(pal.nearInk, 0.55f), alpha * 0.95f)
             rect.set(-40f, footY, worldW + 40f, deep(footY + h))
             c.drawRect(rect, paint)

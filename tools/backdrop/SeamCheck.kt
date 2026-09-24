@@ -45,9 +45,10 @@ private class Seam(val scene: String, val band: String, val camY: Float, val y: 
  * that happens to have a low point - the underside of the sea, for instance, is a rippled line
  * and is meant to be seen. Reads the recorded geometry rather than guessing from the bounds.
  */
-private fun flatBottom(op: android.graphics.Rec.Op): Boolean {
+private fun flatEdge(op: android.graphics.Rec.Op, bottom: Boolean): Boolean {
     if (op.kind == "rect" || op.kind == "rrect") return true
     val d = op.svg ?: return false
+    val edge = if (bottom) op.y1 else op.y0
     var lo = Float.MAX_VALUE
     var hi = -Float.MAX_VALUE
     var i = 0
@@ -55,7 +56,8 @@ private fun flatBottom(op: android.graphics.Rec.Op): Boolean {
     for (m in pts) {
         val x = m.groupValues[1].toFloatOrNull() ?: continue
         val y = m.groupValues[2].toFloatOrNull() ?: continue
-        if (y >= op.y1 - 1.5f) { if (x < lo) lo = x; if (x > hi) hi = x; i++ }
+        val on = if (bottom) y >= edge - 1.5f else y <= edge + 1.5f
+        if (on) { if (x < lo) lo = x; if (x > hi) hi = x; i++ }
     }
     return i >= 2 && (minOf(hi, W) - maxOf(lo, 0f)) >= W * WIDE
 }
@@ -86,20 +88,32 @@ fun main() {
                     if (!wide) continue
                     // a shape as tall as the screen as well as as wide is a wash, not an edge
                     if (op.y0 <= 0f && op.y1 >= VIEW) continue
-                    if (op.y1 <= TOP_MARGIN || op.y1 >= VIEW - BOTTOM_MARGIN) continue
-                    // and only if something drawn LATER does not simply cover the edge - an
-                    // alley wall stops where the road starts, and the road is painted over it
+                    // BOTH edges. A fill's top rules a line across the screen exactly as its
+                    // bottom does - a wall painted over the wall of the repeat behind it, a roof
+                    // over a roof - and only looking at bottoms is why these survived a pass
+                    // that reported itself clean.
+                    val edges = ArrayList<Pair<Float, Boolean>>(2)
+                    if (op.y1 > TOP_MARGIN && op.y1 < VIEW - BOTTOM_MARGIN) edges.add(op.y1 to true)
+                    if (op.y0 > TOP_MARGIN && op.y0 < VIEW - BOTTOM_MARGIN) edges.add(op.y0 to false)
+                    if (edges.isEmpty()) continue
+                    for ((edgeY, isBottom) in edges) {
+                    // and only if something drawn LATER does not simply cover the edge
                     var hidden = false
                     for (j in i + 1 until Rec.ops.size) {
                         val o = Rec.ops[j]
                         if (o.stroke || o.kind == "bitmap") continue
                         if (((o.color ushr 24) and 0xFF) / 255f < 0.88f) continue
                         if ((minOf(o.x1, W) - maxOf(o.x0, 0f)) < W * WIDE) continue
-                        if (o.y0 <= op.y1 + 2f && o.y1 >= op.y1 + 60f) { hidden = true; break }
+                        // anything opaque laid across the line hides it, however thin - a roof
+                        // parapet, the lip of a plinth, the kerb of a road
+                        if (o.y0 <= edgeY + 2f && o.y1 >= edgeY - 2f &&
+                            o.y1 - o.y0 > 6f) { hidden = true; break }
                     }
                     if (hidden) continue
-                    if (!flatBottom(op)) continue
-                    seams.add(Seam(scene.name, scene.bands[band].name, camY, op.y1, op.kind, a, op.color))
+                    if (!flatEdge(op, isBottom)) continue
+                    seams.add(Seam(scene.name, scene.bands[band].name, camY, edgeY,
+                        op.kind + (if (isBottom) " bottom" else " TOP"), a, op.color))
+                    }
                 }
             }
         }
