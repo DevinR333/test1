@@ -187,11 +187,26 @@ class MainActivity : Activity(), SensorEventListener, Game.Host {
         runOnUiThread { applyOrientation(landscape) }
     }
 
+    /**
+     * A FIXED orientation, not a sensor one.
+     *
+     * The SENSOR_ variants let Android turn the whole UI over when the phone is turned over -
+     * portrait becomes reverse portrait, landscape becomes reverse landscape. That quietly
+     * cancels out anything that reacts to which way up the phone is: the capsules in the prize
+     * machine fall toward the bottom of the screen, the screen turns with the phone, so the
+     * capsules stay at the bottom of what you are looking at and turning the phone over appears
+     * to do nothing at all. It also means a hard tilt mid-run can flip the display and reverse
+     * the steering under the player's thumb.
+     *
+     * Locked, the drawing stays put and the dome behaves like a real one: turn the phone over
+     * and the capsules fall to the top of the screen, because that is now the bottom of the
+     * world.
+     */
     private fun applyOrientation(landscape: Boolean) {
         requestedOrientation = if (landscape) {
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         } else {
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
     }
 

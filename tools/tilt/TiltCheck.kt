@@ -100,6 +100,36 @@ fun main() {
         }
     }
 
+    // ---- turning the phone over has to actually reach the capsules ------------------------
+    //
+    // Resolving gravity onto the screen is only half of it. If the ACTIVITY is allowed to turn
+    // over with the phone - SCREEN_ORIENTATION_SENSOR_PORTRAIT rather than _PORTRAIT - then
+    // flipping the phone rotates the drawing too, the screen's own "down" follows gravity
+    // round, and the capsules sit at the bottom of the frame the whole time. The maths is
+    // perfect and nothing visibly happens.
+    //
+    // So: with the orientation LOCKED, upright and upside down must give opposite gravity. If
+    // anyone puts a sensor orientation back, this is what says so.
+    println("--- turning the phone over ---")
+    run {
+        val locked = TiltMap.ROTATION_0        // fixed portrait: the display does not follow
+        val upright = TiltMap.down(0f, G, locked) / G
+        val over = TiltMap.down(0f, -G, locked) / G
+        check("upright: capsules fall down the screen", upright, 1f)
+        check("upside down: capsules fall UP the screen", over, -1f)
+        val opposed = upright * over < 0f
+        if (!opposed) failures++
+        println("  ${if (opposed) "PASS" else "FAIL"}  %-46s %+.1f vs %+.1f"
+            .format("the two are opposite, so the flip is visible", upright, over))
+
+        // and the trap, spelled out: had the activity been left on a sensor orientation, the
+        // display would have turned with the phone and BOTH would read +1
+        val ifDisplayFollowed = TiltMap.down(0f, -G, TiltMap.ROTATION_180) / G
+        val wouldHide = ifDisplayFollowed > 0f
+        println("  ${if (wouldHide) "NOTE" else "----"}  %-46s %+.1f"
+            .format("a sensor orientation would hide it", ifDisplayFollowed))
+    }
+
     // The old behaviour, for the record: one axis, the other derived as sqrt(1 - gx^2). Upside
     // down and face down both came out as "falls toward the bottom of the screen".
     println("--- the bug this replaced ---")

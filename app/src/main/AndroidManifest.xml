@@ -29,7 +29,7 @@
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|keyboard|navigation|uiMode|density|fontScale|layoutDirection"
             android:exported="true"
             android:launchMode="singleTask"
-            android:screenOrientation="sensorPortrait"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.BuddyBounce"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
