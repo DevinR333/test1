@@ -44,3 +44,28 @@ A caution learned the hard way: the probe is only as honest as its stubs. `RectF
 no-op for a long time, so every `drawRect`/`drawRoundRect`/`drawOval` and every blitted
 bitmap recorded as a zero-size box at the origin and simply vanished - roughly half the
 backdrop. If a band looks empty in the dump, suspect the stub before the art.
+
+## SeamCheck.kt - the hard horizontal rules
+
+Ground, water, rock and buildings are all silhouettes filled DOWNWARD from their own line, and
+each one used to stop at a fixed depth. Whenever that depth landed inside the frame you got a
+straight edge right across the screen with sky underneath it. Whether one showed depended on
+the camera height, which is why they were easy to miss by eye and turned up everywhere.
+
+This looks for them directly: a filled shape that spans nearly the whole width, is not a
+full-screen wash, is solid enough to see, is TALL (a fence rail, a roof parapet, a cake shelf
+and the plinth under the organ pipes are all legitimately full width and hard edged - they are
+just thin), has a genuinely FLAT bottom rather than a wavy one that happens to have a low point
+(the underside of the sea is rippled and meant to be seen), and is not simply covered by
+something painted after it (an alley wall stops where the road starts).
+
+Every scene, every band, 48 camera heights each - 2400 positions.
+
+    kotlinc -cp <recording-stubs> -d out $(find app/src/main/java -name '*.kt') \
+        tools/backdrop/SeamCheck.kt
+    java -cp out:<recording-stubs> SeamCheckKt
+
+The fix is `deep()` in Backdrop.kt and BandArt.kt: a downward fill ends past the bottom of the
+frame instead of at a fixed depth. Whatever is nearer is painted after and covers it, and below
+a horizon there is supposed to be more of the same rather than sky. A fill entirely ABOVE the
+screen is left alone - stretching that one down would drop a slab over the whole frame.

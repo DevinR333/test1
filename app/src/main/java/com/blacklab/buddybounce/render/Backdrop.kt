@@ -315,6 +315,24 @@ class Backdrop(private val art: Art) {
         }
     }
 
+
+    /**
+     * Where a downward fill should end so its bottom edge never shows.
+     *
+     * Ground, water, rock and buildings are all drawn as a silhouette filled DOWNWARD from its
+     * own line, and every one of them stopped at a fixed depth. Whenever that depth happened to
+     * land inside the frame you got a hard horizontal rule straight across the screen with sky
+     * underneath it - the seams in the reef, the lava ridge, the mountains, the city towers and
+     * the desert buttes were all this one thing.
+     *
+     * Pushing the bottom past the frame costs nothing: whatever is nearer is painted after and
+     * covers it, and below a horizon there is supposed to be more of the same rather than sky.
+     *
+     * A fill that is entirely ABOVE the screen is left alone - it is invisible either way, and
+     * stretching it down would drop a slab of it over the whole frame.
+     */
+    private fun deep(y: Float): Float = if (y <= 0f) y else maxOf(y, Tuning.VIEW_H + 400f)
+
     private fun hillRow(c: Canvas, worldW: Float, baseY: Float, h: Float, color: Int, key: Int, lobes: Int) {
         val footY = baseY
         // A ground line above the top of the screen has nothing to show but its own fill, and
@@ -335,8 +353,8 @@ class Backdrop(private val art: Art) {
             path.quadTo(x + step * 0.5f, peak, x + step, baseY + h * 0.2f)
             x += step
         }
-        path.lineTo(worldW + 40f, baseY + h * 1.6f)
-        path.lineTo(-40f, baseY + h * 1.6f)
+        path.lineTo(worldW + 40f, deep(baseY + h * 1.6f))
+        path.lineTo(-40f, deep(baseY + h * 1.6f))
         path.close()
         paint.color = ColorX.scaleAlpha(color, vis)
         c.drawPath(path, paint)
@@ -374,8 +392,8 @@ class Backdrop(private val art: Art) {
             path.quadTo(x + step * 0.5f, crest, x + step, footY + amp * (0.1f + Hash.f(key * 41 + i, 151) * 0.5f))
             x += step
         }
-        path.lineTo(worldW + 60f, footY + bandH)
-        path.lineTo(-60f, footY + bandH)
+        path.lineTo(worldW + 60f, deep(footY + bandH))
+        path.lineTo(-60f, deep(footY + bandH))
         path.close()
         paint.color = ColorX.scaleAlpha(color, vis)
         c.drawPath(path, paint)
@@ -571,7 +589,7 @@ class Backdrop(private val art: Art) {
                     ColorX.lerp(pal.nearInk, pal.farInk, t), alpha * (0.85f - t * 0.3f)
                 )
                 path.reset()
-                path.moveTo(-40f, y + 240f)
+                path.moveTo(-40f, deep(y + 240f))
                 var x = -40f
                 var k = 0
                 while (x < worldW + 80f) {
@@ -581,7 +599,7 @@ class Backdrop(private val art: Art) {
                     x += span
                     k++
                 }
-                path.lineTo(x, y + 240f)
+                path.lineTo(x, deep(y + 240f))
                 path.close()
                 c.drawPath(path, paint)
                 // the sunlit lip along each crest
@@ -681,15 +699,33 @@ class Backdrop(private val art: Art) {
             paint.strokeCap = Paint.Cap.ROUND
             paint.strokeWidth = 7f
             paint.color = ColorX.withAlpha(ColorX.shade(pal.nearInk, 0.7f), alpha * 0.7f)
+            val vineCol = ColorX.shade(pal.nearInk, 0.7f)
             for (i in 0 until 6) {
                 val key = idx * 47 + i
                 val vx = Hash.f(key, 171) * worldW
                 val len = 200f + Hash.f(key, 173) * 320f
                 val sway = sin(time * 0.7f + i) * 28f
-                path.reset()
-                path.moveTo(vx, baseY - h * 0.1f)
-                path.quadTo(vx + sway, baseY - h * 0.1f + len * 0.5f, vx + sway * 1.6f, baseY - h * 0.1f + len)
-                c.drawPath(path, paint)
+                val y0 = baseY - h * 0.1f
+                // Tapered, in short segments along the same curve. Drawn as one even stroke it
+                // ended dead in the air at full width, which read as the vine having been cut
+                // off rather than trailing away.
+                val segs = 9
+                var px = vx
+                var py = y0
+                for (sgn in 1..segs) {
+                    val t = sgn / segs.toFloat()
+                    val u = 1f - t
+                    val qx = u * u * vx + 2f * u * t * (vx + sway) + t * t * (vx + sway * 1.6f)
+                    val qy = u * u * y0 + 2f * u * t * (y0 + len * 0.5f) + t * t * (y0 + len)
+                    paint.strokeWidth = 7f * (1f - t * 0.82f)
+                    paint.color = ColorX.withAlpha(vineCol, alpha * 0.7f * (1f - t * t))
+                    path.reset()
+                    path.moveTo(px, py)
+                    path.lineTo(qx, qy)
+                    c.drawPath(path, paint)
+                    px = qx
+                    py = qy
+                }
             }
             paint.style = Paint.Style.FILL
         }
@@ -994,8 +1030,8 @@ class Backdrop(private val art: Art) {
                 x += step
                 i++
             }
-            path.lineTo(worldW + 40f, baseY + h)
-            path.lineTo(-40f, baseY + h)
+            path.lineTo(worldW + 40f, deep(baseY + h))
+            path.lineTo(-40f, deep(baseY + h))
             path.close()
             paint.color = ColorX.withAlpha(pal.nearInk, alpha * 0.8f)
             c.drawPath(path, paint)
@@ -1043,7 +1079,7 @@ class Backdrop(private val art: Art) {
                 val key = idx * 97 + i
                 val w = 120f + Hash.f(key, 181) * 170f
                 val hh = h * (0.35f + Hash.f(key, 183) * 0.75f)
-                rect.set(x, baseY - hh, x + w, baseY + h * 0.6f)
+                rect.set(x, baseY - hh, x + w, deep(baseY + h * 0.6f))
                 c.drawRect(rect, paint)
                 x += w + 24f
                 i++
@@ -1058,7 +1094,7 @@ class Backdrop(private val art: Art) {
                 val w = 150f + Hash.f(key, 191) * 210f
                 val hh = h * (0.4f + Hash.f(key, 193) * 0.85f)
                 paint.color = ColorX.withAlpha(pal.nearInk, alpha * 0.95f)
-                rect.set(x, baseY - hh, x + w, baseY + h * 0.6f)
+                rect.set(x, baseY - hh, x + w, deep(baseY + h * 0.6f))
                 c.drawRect(rect, paint)
                 // a neon sign band
                 paint.color = ColorX.withAlpha(if (i % 2 == 0) pal.farInk else pal.midInk, alpha * 0.85f)
@@ -1114,8 +1150,8 @@ class Backdrop(private val art: Art) {
                     x += step
                     i++
                 }
-                path.lineTo(worldW + 60f, baseY + h * 1.4f)
-                path.lineTo(-60f, baseY + h * 1.4f)
+                path.lineTo(worldW + 60f, deep(baseY + h * 1.4f))
+                path.lineTo(-60f, deep(baseY + h * 1.4f))
                 path.close()
                 c.drawPath(path, paint)
                 // The lit cap on each peak.
@@ -1166,8 +1202,8 @@ class Backdrop(private val art: Art) {
                 x += step
                 i++
             }
-            path.lineTo(worldW + 50f, baseY + h * 1.4f)
-            path.lineTo(-50f, baseY + h * 1.4f)
+            path.lineTo(worldW + 50f, deep(baseY + h * 1.4f))
+            path.lineTo(-50f, deep(baseY + h * 1.4f))
             path.close()
             c.drawPath(path, paint)
 
@@ -1369,10 +1405,26 @@ class Backdrop(private val art: Art) {
             path.close()
             c.drawPath(path, paint)
         }
+        // The snowman. He is white, he stands on white, and with no edge on him he was a faint
+        // suggestion of a shape: a shaded side, a soft ground shadow and a face are what make
+        // him read at all.
         val cx = worldW * 0.5f
+        paint.color = 0x22314A5F
+        rect.set(cx - 76f, sy - 12f, cx + 76f, sy + 18f)
+        c.drawOval(rect, paint)
+        // body and head, shaded side first so it shows along the right-hand edge
+        paint.color = 0xFFC3D6E8.toInt()
+        c.drawCircle(cx + 6f, sy - 40f, 56f, paint)
+        c.drawCircle(cx + 5f, sy - 118f, 40f, paint)
         paint.color = 0xFFFFFFFF.toInt()
-        c.drawCircle(cx, sy - 40f, 56f, paint)
-        c.drawCircle(cx, sy - 118f, 40f, paint)
+        c.drawCircle(cx - 3f, sy - 43f, 53f, paint)
+        c.drawCircle(cx - 3f, sy - 120f, 38f, paint)
+        // coal: two eyes and three buttons
+        paint.color = 0xFF2B3440.toInt()
+        c.drawCircle(cx - 16f, sy - 128f, 6f, paint)
+        c.drawCircle(cx + 10f, sy - 128f, 6f, paint)
+        for (b in 0 until 3) c.drawCircle(cx - 4f, sy - 62f + b * 22f, 6f, paint)
+        // the carrot
         paint.color = 0xFFF2A03C.toInt()
         path.reset()
         path.moveTo(cx + 30f, sy - 122f)
@@ -1380,6 +1432,15 @@ class Backdrop(private val art: Art) {
         path.lineTo(cx + 30f, sy - 106f)
         path.close()
         c.drawPath(path, paint)
+        // stick arms, so he is not a pair of balls
+        ink.color = 0xFF8A6A4A.toInt()
+        ink.strokeWidth = 7f
+        path.reset(); path.moveTo(cx - 48f, sy - 62f); path.lineTo(cx - 104f, sy - 104f)
+        path.moveTo(cx - 86f, sy - 92f); path.lineTo(cx - 96f, sy - 120f)
+        c.drawPath(path, ink)
+        path.reset(); path.moveTo(cx + 44f, sy - 62f); path.lineTo(cx + 98f, sy - 100f)
+        path.moveTo(cx + 82f, sy - 90f); path.lineTo(cx + 94f, sy - 118f)
+        c.drawPath(path, ink)
     }
 
     private fun ashGround(c: Canvas, worldW: Float, sy: Float) {

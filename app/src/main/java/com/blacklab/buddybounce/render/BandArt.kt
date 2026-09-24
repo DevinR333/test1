@@ -1,9 +1,11 @@
 package com.blacklab.buddybounce.render
 
 import android.graphics.Canvas
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import android.graphics.Shader
 import com.blacklab.buddybounce.game.Hash
 import com.blacklab.buddybounce.game.Tuning
 import kotlin.math.cos
@@ -64,6 +66,24 @@ internal class BandArt(private val art: Art) {
         }
     }
 
+
+    /**
+     * Where a downward fill should end so its bottom edge never shows.
+     *
+     * Ground, water, rock and buildings are all drawn as a silhouette filled DOWNWARD from its
+     * own line, and every one of them stopped at a fixed depth. Whenever that depth happened to
+     * land inside the frame you got a hard horizontal rule straight across the screen with sky
+     * underneath it - the seams in the reef, the lava ridge, the mountains, the city towers and
+     * the desert buttes were all this one thing.
+     *
+     * Pushing the bottom past the frame costs nothing: whatever is nearer is painted after and
+     * covers it, and below a horizon there is supposed to be more of the same rather than sky.
+     *
+     * A fill that is entirely ABOVE the screen is left alone - it is invisible either way, and
+     * stretching it down would drop a slab of it over the whole frame.
+     */
+    private fun deep(y: Float): Float = if (y <= 0f) y else maxOf(y, Tuning.VIEW_H + 400f)
+
     /** Ground: a soft ridge at [footY] filled well past the bottom, so objects are rooted. */
     private fun ground(c: Canvas, worldW: Float, footY: Float, depth: Float, amp: Float, color: Int, key: Int) {
         // A ground line above the top of the screen has nothing to show but its own fill, and
@@ -85,8 +105,8 @@ internal class BandArt(private val art: Art) {
             path.quadTo(x + step * 0.5f, crest, x + step, footY + amp * (0.1f + Hash.f(key * 41 + i, 151) * 0.5f))
             x += step
         }
-        path.lineTo(worldW + 60f, footY + depth)
-        path.lineTo(-60f, footY + depth)
+        path.lineTo(worldW + 60f, deep(footY + depth))
+        path.lineTo(-60f, deep(footY + depth))
         path.close()
         paint.color = ColorX.scaleAlpha(color, vis)
         c.drawPath(path, paint)
@@ -113,8 +133,8 @@ internal class BandArt(private val art: Art) {
             path.quadTo(x + step * 0.5f, peak, x + step, baseY + h * 0.2f)
             x += step
         }
-        path.lineTo(worldW + 40f, baseY + h * 1.6f)
-        path.lineTo(-40f, baseY + h * 1.6f)
+        path.lineTo(worldW + 40f, deep(baseY + h * 1.6f))
+        path.lineTo(-40f, deep(baseY + h * 1.6f))
         path.close()
         paint.color = ColorX.scaleAlpha(color, vis)
         c.drawPath(path, paint)
@@ -151,7 +171,7 @@ internal class BandArt(private val art: Art) {
                 val key = idx * 71 + i
                 val w = 200f + Hash.f(key, 301) * 260f
                 val hh = 150f + Hash.f(key, 303) * 190f
-                rect.set(x, roofY - hh * 0.45f, x + w, roofY + 340f)
+                rect.set(x, roofY - hh * 0.45f, x + w, deep(roofY + 340f))
                 c.drawRect(rect, paint)
                 path.reset()
                 path.moveTo(x - 18f, roofY - hh * 0.45f)
@@ -298,7 +318,7 @@ internal class BandArt(private val art: Art) {
             while (x < worldW + 40f) {
                 val key = idx * 83 + i
                 val w = 34f + Hash.f(key, 331) * 54f
-                rect.set(x, baseY - h * 1.35f, x + w, baseY + h * 0.4f)
+                rect.set(x, baseY - h * 1.35f, x + w, deep(baseY + h * 0.4f))
                 c.drawRect(rect, paint)
                 // wide gaps: packed shoulder to shoulder this rank was a flat wash, not a forest
                 x += w + 130f + Hash.f(key, 337) * 170f
@@ -316,7 +336,7 @@ internal class BandArt(private val art: Art) {
                 val tx = (i / 3f + 0.02f + Hash.f(key, 341) * 0.16f) * worldW
                 val tw = 66f + Hash.f(key, 343) * 56f
                 paint.color = ColorX.withAlpha(ColorX.shade(pal.midInk, 0.9f), alpha * 0.7f)
-                rect.set(tx, baseY - h * 1.4f, tx + tw, baseY + h * 0.2f)
+                rect.set(tx, baseY - h * 1.4f, tx + tw, deep(baseY + h * 0.2f))
                 c.drawRect(rect, paint)
                 ink.color = ColorX.withAlpha(pal.rimInk, alpha * 0.45f)
                 ink.strokeWidth = 9f
@@ -688,7 +708,7 @@ internal class BandArt(private val art: Art) {
             }
             // the water itself, filling everything below the line
             paint.color = ColorX.withAlpha(pal.nearInk, alpha * 0.9f)
-            rect.set(-40f, seaY, worldW + 40f, seaY + h)
+            rect.set(-40f, seaY, worldW + 40f, deep(seaY + h))
             c.drawRect(rect, paint)
             ink.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), alpha * 0.22f)
             ink.strokeWidth = 7f
@@ -723,10 +743,10 @@ internal class BandArt(private val art: Art) {
                 val w = 260f + Hash.f(key, 601) * 300f
                 val top = baseY - h * (0.72f + Hash.f(key, 607) * 0.34f)
                 path.reset()
-                path.moveTo(x, baseY + h)
+                path.moveTo(x, deep(baseY + h))
                 path.lineTo(x + w * 0.16f, top)
                 path.lineTo(x + w * 0.84f, top)
-                path.lineTo(x + w, baseY + h)
+                path.lineTo(x + w, deep(baseY + h))
                 path.close()
                 c.drawPath(path, paint)
                 x += w * 0.8f
@@ -832,8 +852,15 @@ internal class BandArt(private val art: Art) {
             for (row in 0 until 3) {
                 val key = idx * 83 + row
                 val yy = baseY - h * (0.45f + row * 0.3f)
-                paint.color = ColorX.withAlpha(
+                // A sheet of blowing dust has a crest but no underside. Filled flat it stopped
+                // dead at yy + 200 and ruled a hard line across the whole screen; fading it out
+                // over the same distance keeps the sheet exactly as it was and loses the edge.
+                val col = ColorX.withAlpha(
                     ColorX.tint(pal.farInk, 0.2f + row * 0.18f), alpha * (0.4f - row * 0.08f)
+                )
+                paint.shader = LinearGradient(
+                    0f, yy - 30f, 0f, yy + 200f,
+                    intArrayOf(col, ColorX.withAlpha(col, 0f)), null, Shader.TileMode.CLAMP
                 )
                 path.reset()
                 path.moveTo(-60f, yy + 200f)
@@ -849,6 +876,7 @@ internal class BandArt(private val art: Art) {
                 path.lineTo(x, yy + 200f)
                 path.close()
                 c.drawPath(path, paint)
+                paint.shader = null
             }
         }
 
@@ -1047,7 +1075,7 @@ internal class BandArt(private val art: Art) {
         band(camY, 0.08f, h) { idx, baseY ->
             paint.color = ColorX.withAlpha(ColorX.tint(pal.farInk, 0.55f), alpha * 0.4f)
             path.reset()
-            path.moveTo(-60f, baseY + h)
+            path.moveTo(-60f, deep(baseY + h))
             var x = -60f
             val step = worldW / 3f
             var i = 0
@@ -1057,7 +1085,7 @@ internal class BandArt(private val art: Art) {
                 x += step
                 i++
             }
-            path.lineTo(worldW + 60f, baseY + h)
+            path.lineTo(worldW + 60f, deep(baseY + h))
             path.close()
             c.drawPath(path, paint)
         }
@@ -1471,7 +1499,7 @@ internal class BandArt(private val art: Art) {
                 val key = idx * 89 + i
                 val w = 200f + Hash.f(key, 1087) * 220f
                 val hh = h * (0.55f + Hash.f(key, 1091) * 0.6f)
-                rect.set(x, baseY - hh, x + w, baseY + h)
+                rect.set(x, baseY - hh, x + w, deep(baseY + h))
                 c.drawRect(rect, paint)
                 x += w + 20f
                 i++
@@ -1552,7 +1580,7 @@ internal class BandArt(private val art: Art) {
 
             // NEAR - the road, the dumpsters and the puddle
             paint.color = ColorX.withAlpha(ColorX.shade(pal.nearInk, 0.55f), alpha * 0.95f)
-            rect.set(-40f, footY, worldW + 40f, footY + h)
+            rect.set(-40f, footY, worldW + 40f, deep(footY + h))
             c.drawRect(rect, paint)
             for (i in 0 until 2) {
                 val key = idx * 101 + i
@@ -1597,7 +1625,7 @@ internal class BandArt(private val art: Art) {
                 val w = 150f + Hash.f(key, 1153) * 190f
                 val hh = h * (0.45f + Hash.f(key, 1163) * 0.75f)
                 paint.color = ColorX.withAlpha(ColorX.shade(pal.nearInk, 1.3f), alpha * 0.6f)
-                rect.set(x, baseY - hh, x + w, baseY + h)
+                rect.set(x, baseY - hh, x + w, deep(baseY + h))
                 c.drawRect(rect, paint)
                 paint.color = ColorX.withAlpha(pal.accentInk, alpha * 0.28f)
                 val cols = ((w - 30f) / 40f).toInt().coerceAtLeast(1)
@@ -1620,7 +1648,7 @@ internal class BandArt(private val art: Art) {
         band(camY, 0.27f, h) { idx, baseY ->
             val roofY = baseY + h * 0.02f
             paint.color = ColorX.withAlpha(ColorX.shade(pal.nearInk, 0.7f), alpha * 0.95f)
-            rect.set(-40f, roofY, worldW + 40f, roofY + h)
+            rect.set(-40f, roofY, worldW + 40f, deep(roofY + h))
             c.drawRect(rect, paint)
             // the parapet
             paint.color = ColorX.withAlpha(ColorX.shade(pal.nearInk, 1.1f), alpha * 0.95f)
@@ -1841,7 +1869,7 @@ internal class BandArt(private val art: Art) {
                 val key = idx * 139 + i
                 val w = 150f + Hash.f(key, 1289) * 170f
                 val top = baseY - h * (0.5f + Hash.f(key, 1291) * 0.4f)
-                rect.set(x, top, x + w, baseY + h)
+                rect.set(x, top, x + w, deep(baseY + h))
                 c.drawRect(rect, paint)
                 path.reset()
                 path.moveTo(x - 10f, top)
@@ -2056,7 +2084,7 @@ internal class BandArt(private val art: Art) {
         band(camY, 0.21f, h) { idx, baseY ->
             val footY = baseY + h * 0.1f
             paint.color = ColorX.withAlpha(ColorX.tint(pal.midInk, 0.25f), alpha * 0.9f)
-            rect.set(-40f, footY, worldW + 40f, footY + h)
+            rect.set(-40f, footY, worldW + 40f, deep(footY + h))
             c.drawRect(rect, paint)
             paint.color = ColorX.withAlpha(ColorX.tint(pal.platTop, 0.4f), alpha * 0.9f)
             rect.set(-40f, footY - 40f, worldW + 40f, footY + 26f)
