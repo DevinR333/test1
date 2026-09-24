@@ -35,8 +35,15 @@ class Backdrop(private val art: Art) {
     /** How far above the top of the screen a ground line fades out over. */
     private val GROUND_FADE = 260f
 
-    /** True while painting the lowest band of a scene - the one with the floor in it. */
-    private var firstBand = false
+    /** How much of a layer's parallax its one sweep down the frame uses; see band(). */
+    private val SWEEP = 0.35f
+
+    /**
+     * Camera height at which the band now being painted starts. Scenery layers are laid out
+     * once from here - see band() - so each area has a single horizon instead of one per
+     * parallax repeat.
+     */
+    private var bandOrigin = 0f
     /** Which repeat of the current band is being painted; see band(). */
     private var curIdx = 0
 
@@ -48,7 +55,14 @@ class Backdrop(private val art: Art) {
     private var vignette: Shader? = null
     private var vignetteW = -1f
 
-    fun draw(c: Canvas, worldW: Float, camY: Float, time: Float, biome: Int, blend: Float) {
+    /**
+     * [bandBase] is the camera height at which the current [biome] band begins; the scene is
+     * laid out once from there. Pass 0 for a backdrop that is not tied to a run.
+     */
+    fun draw(
+        c: Canvas, worldW: Float, camY: Float, time: Float, biome: Int, blend: Float,
+        bandBase: Float = 0f
+    ) {
         val pal = Palettes.get(biome)
         val next = Palettes.get(biome + 1)
         val h = Tuning.VIEW_H
@@ -57,8 +71,9 @@ class Backdrop(private val art: Art) {
         drawStars(c, worldW, camY, time, lerpF(pal.starAlpha, next.starAlpha, blend))
         drawCelestial(c, worldW, camY, biome, blend, pal, next)
 
-        drawFlourish(c, worldW, camY, time, pal, 1f - blend, biome)
-        if (blend > 0.004f) drawFlourish(c, worldW, camY, time, next, blend, biome + 1)
+        val span = Tuning.BIOME_SPAN * Tuning.VIEW_H
+        drawFlourish(c, worldW, camY, time, pal, 1f - blend, bandBase)
+        if (blend > 0.004f) drawFlourish(c, worldW, camY, time, next, blend, bandBase + span)
 
         drawClouds(c, worldW, camY, time, lerpF(pal.cloudAlpha, next.cloudAlpha, blend), pal, next, blend)
         drawLightShafts(c, worldW, camY, pal, next, blend)
@@ -253,26 +268,26 @@ class Backdrop(private val art: Art) {
 
     private fun drawFlourish(
         c: Canvas, worldW: Float, camY: Float, time: Float,
-        pal: BiomePalette, alpha: Float, band: Int
+        pal: BiomePalette, alpha: Float, origin: Float
     ) {
         if (alpha <= 0.01f) return
-        firstBand = band == 0
-        bandArt.firstBand = firstBand
+        bandOrigin = origin
+        bandArt.bandOrigin = origin
         when (pal.style) {
-            BandStyle.HILLS -> hills(c, worldW, camY, pal, alpha)
-            BandStyle.TREES -> trees(c, worldW, camY, pal, alpha)
+            BandStyle.HILLS -> hills(c, worldW, camY, pal, alpha, time)
+            BandStyle.TREES -> trees(c, worldW, camY, pal, alpha, time)
             BandStyle.CLOUDS -> cloudBanks(c, worldW, camY, pal, alpha)
             BandStyle.AURORA -> aurora(c, worldW, camY, pal, alpha, time)
             BandStyle.NEBULA -> nebula(c, worldW, camY, pal, alpha)
             BandStyle.KELP -> kelp(c, worldW, camY, pal, alpha, time)
             BandStyle.REEF -> reef(c, worldW, camY, pal, alpha, time)
             BandStyle.CITY -> city(c, worldW, camY, pal, alpha, time)
-            BandStyle.PEAKS -> peaks(c, worldW, camY, pal, alpha)
+            BandStyle.PEAKS -> peaks(c, worldW, camY, pal, alpha, time)
             BandStyle.PINES -> pines(c, worldW, camY, pal, alpha, time)
             BandStyle.DUNES -> dunes(c, worldW, camY, pal, alpha)
             BandStyle.CANOPY -> canopy(c, worldW, camY, pal, alpha, time)
-            BandStyle.SWEETS -> sweets(c, worldW, camY, pal, alpha)
-            BandStyle.TOMBS -> tombs(c, worldW, camY, pal, alpha)
+            BandStyle.SWEETS -> sweets(c, worldW, camY, pal, alpha, time)
+            BandStyle.TOMBS -> tombs(c, worldW, camY, pal, alpha, time)
             BandStyle.LAVA -> lava(c, worldW, camY, pal, alpha, time)
             BandStyle.YARDLOW -> bandArt.yardLow(c, worldW, camY, pal, alpha, time)
             BandStyle.ROOTS -> bandArt.roots(c, worldW, camY, pal, alpha, time)
@@ -292,7 +307,7 @@ class Backdrop(private val art: Art) {
             BandStyle.BELFRY -> bandArt.belfry(c, worldW, camY, pal, alpha, time)
             BandStyle.EMBERSKY -> bandArt.emberSky(c, worldW, camY, pal, alpha, time)
             BandStyle.CHOIR -> bandArt.choir(c, worldW, camY, pal, alpha, time)
-            else -> hills(c, worldW, camY, pal, alpha)
+            else -> hills(c, worldW, camY, pal, alpha, time)
         }
     }
 
@@ -306,26 +321,65 @@ class Backdrop(private val art: Art) {
      * most distant repeat drawn last, so that repeat's ground sheeted over the nearer repeats
      * and over the sky itself. Handing them out in descending idx paints the far ones first and
      * lets the near ones cover them, which is the order a horizon actually stacks in.
-     */
-    /**
-     * [once] restricts the band to the repeat at the bottom of the world. A layer that carries
-     * the GROUND - the floor and everything standing on it - is not scenery to be tiled up the
-     * sky: repeated, you climb off the ground, through sky, and back onto ground again before
-     * the world has even changed. The lowest band of a scene passes this, so its floor is laid
-     * once and then scrolls away for good. Higher bands do not: a treeline or a drift recurring
-     * up a mountainside is scenery, not a floor.
+     *
+     * [once] marks a layer as SCENERY: it is laid out a single time at the foot of the band's
+     * own stretch of the world and then sinks past the camera, instead of tiling up the sky.
+     * Tiled, you climb off the ground, through sky, and back onto ground again before the
+     * world has even changed. Every horizon-bearing layer of every band passes this, not just
+     * the floor of the first one.
      *
      * Gating the ground FILL alone is not enough and looks worse - the graves and fences that
-     * stand on it carry on repeating and end up hanging in the air.
+     * stand on it carry on repeating and end up hanging in the air. What keeps tiling is the
+     * AIR: snow, ash, bubbles, gulls, petals, smog. Without those a band would go bare once
+     * its scenery has sunk away, so every scene has at least one of them.
      */
+
+    /**
+     * The AIR of a band: soft specks that keep tiling up the sky after the scenery below has
+     * been laid out once and sunk away. Snow, ash, spores, sugar, sea dust, far city lights -
+     * one shape, a different colour and speed each time. Every scene has at least one of these,
+     * because without it the top of an area would be bare gradient.
+     */
+    private fun motes(
+        c: Canvas, worldW: Float, camY: Float, time: Float, p: Float,
+        color: Int, alpha: Float, count: Int, radius: Float, rise: Float, sway: Float, seed: Int
+    ) {
+        if (alpha <= 0.01f) return
+        val h = Tuning.VIEW_H
+        paint.color = ColorX.withAlpha(color, alpha)
+        band(camY, p, h) { idx, baseY ->
+            for (i in 0 until count) {
+                val key = idx * 149 + i * 11 + seed
+                val mx = Hash.f(key, 1601) * worldW + sin(time * 0.55f + i * 0.7f) * sway
+                val my = baseY - ((((Hash.f(key, 1607) * h + time * rise) % h) + h) % h)
+                c.drawCircle(mx, my, radius * (0.45f + Hash.f(key, 1613) * 0.75f), paint)
+            }
+        }
+    }
+
     private inline fun band(
         camY: Float, p: Float, height: Float, once: Boolean = false,
         body: (idx: Int, baseY: Float) -> Unit
     ) {
+        if (once) {
+            // Scenery. An area has ONE horizon, not one every few screens.
+            //
+            // The layer is composed on the horizon where the area begins - the nearer the layer,
+            // the lower its base line sits, the way a landscape actually stacks - and then makes
+            // a single slow sweep down and out of the bottom as you climb through the area.
+            // SWEEP sets the pace so that even the nearest layer is still on screen at the far
+            // end of the band: tiling used to keep the frame full by bringing the same scenery
+            // round again, and taking that away without slowing the sweep left the top half of
+            // every area as bare sky.
+            val baseY = Tuning.VIEW_H * 0.55f + p * 2000f + (camY - bandOrigin) * p * SWEEP
+            if (baseY < -140f || baseY > Tuning.VIEW_H + height) return
+            curIdx = 0
+            body(0, baseY)
+            return
+        }
         val i0 = floor((camY * p) / height).toInt()
         for (k in 2 downTo 0) {
             val idx = i0 + k
-            if (once && idx > 0) continue
             val baseY = Tuning.VIEW_H - (idx * height - camY * p)
             if (baseY < -height * 1.6f || baseY > Tuning.VIEW_H + height) continue
             curIdx = idx
@@ -333,12 +387,16 @@ class Backdrop(private val art: Art) {
         }
     }
 
-    private fun hills(c: Canvas, worldW: Float, camY: Float, pal: BiomePalette, alpha: Float) {
+    private fun hills(c: Canvas, worldW: Float, camY: Float, pal: BiomePalette, alpha: Float, time: Float) {
         paint.reset(); paint.isAntiAlias = true
-        band(camY, 0.14f, Tuning.VIEW_H * 1.1f) { idx, baseY ->
+        band(camY, 0.14f, Tuning.VIEW_H * 1.1f, once = true) { idx, baseY ->
             hillRow(c, worldW, baseY, 330f, ColorX.withAlpha(ColorX.tint(pal.farInk, 0.35f), alpha * 0.55f), idx, 3)
             hillRow(c, worldW, baseY + 190f, 470f, ColorX.withAlpha(pal.midInk, alpha * 0.75f), idx + 500, 2)
         }
+
+        // Haze motes: the hills are laid out once for the band, so something has to hold the
+        // sky above them. See motes().
+        motes(c, worldW, camY, time, 0.13f, pal.haze, alpha * 0.35f, 12, 9f, 18f, 30f, 211)
     }
 
 
@@ -357,6 +415,120 @@ class Backdrop(private val art: Art) {
      * the edge down by a fixed amount is continuous - the shape only ever slides.
      */
     private fun deep(y: Float): Float = y + Tuning.VIEW_H * 1.35f
+
+    // crest motifs for farRange()
+    private val FAR_DOME = 0
+    private val FAR_CONE = 1
+    private val FAR_SLAB = 2
+    private val FAR_FROND = 3
+
+    /**
+     * The distant rank of a band: a low ridge with the scene's own motif standing on it, laid
+     * out once like all scenery but at a small parallax, so it stays out on the horizon for the
+     * whole area.
+     *
+     * Near scenery sweeps down through the frame and is gone within a few screens, which is
+     * right - you climb above a treeline. Tiling it up the sky used to hide the rest of the
+     * area behind copies of itself; laid once, the rest of the area needs a horizon of its own,
+     * and this is it.
+     */
+    private fun farRange(
+        c: Canvas, worldW: Float, camY: Float, color: Int, crest: Float, motif: Int,
+        count: Int, seed: Int
+    ) {
+        if (((color ushr 24) and 0xFF) <= 2) return
+        // Low in the frame for the whole area, drifting down only a little: however far you
+        // climb, a range on the horizon barely moves. Laid out once, like all scenery - this is
+        // not run through band() because it is not sweeping past, it is the horizon staying put.
+        val local = camY - bandOrigin + Tuning.BIOME_SPAN * Tuning.VIEW_H * Tuning.BIOME_FADE
+        val baseY = Tuning.VIEW_H * 0.58f + local * 0.028f
+        if (baseY > Tuning.VIEW_H + crest) return
+        run {
+            paint.color = color
+            for (i in 0 until count) {
+                val key = seed * 37 + i
+                val cx = Hash.f(key, 1741) * (worldW + 360f) - 180f
+                val s = crest * (0.55f + Hash.f(key, 1747) * 0.9f)
+                // capped: a crest wider than the frame closes with a straight edge right
+                // across it, which is the horizontal rule this whole pass exists to remove
+                val w = minOf(s * (0.42f + Hash.f(key, 1753) * 0.34f), worldW * 0.26f)
+                // the flat bottom is sunk into the ridge that is painted over it
+                val foot = baseY + crest * 0.9f
+                path.reset()
+                when (motif) {
+                    FAR_CONE -> {
+                        path.moveTo(cx - w, foot)
+                        path.lineTo(cx - w * 0.55f, baseY)
+                        path.lineTo(cx, baseY - s)
+                        path.lineTo(cx + w * 0.55f, baseY)
+                        path.lineTo(cx + w, foot)
+                    }
+                    FAR_SLAB -> {
+                        path.moveTo(cx - w * 0.6f, foot)
+                        path.lineTo(cx - w * 0.6f, baseY - s * 0.68f)
+                        path.quadTo(cx, baseY - s, cx + w * 0.6f, baseY - s * 0.68f)
+                        path.lineTo(cx + w * 0.6f, foot)
+                    }
+                    FAR_FROND -> {
+                        path.moveTo(cx - w * 0.24f, foot)
+                        path.quadTo(cx - w * 0.95f, baseY - s * 0.6f, cx - w * 0.18f, baseY - s)
+                        path.quadTo(cx + w * 0.55f, baseY - s * 0.55f, cx + w * 0.24f, foot)
+                    }
+                    else -> {
+                        path.moveTo(cx - w, foot)
+                        path.quadTo(cx - w * 0.55f, baseY - s * 1.35f, cx, baseY - s)
+                        path.quadTo(cx + w * 0.55f, baseY - s * 1.35f, cx + w, foot)
+                    }
+                }
+                path.close()
+                c.drawPath(path, paint)
+            }
+            // the ridge they stand on, filled past the bottom so there is no edge to see
+            hillRow(c, worldW, baseY + crest * 0.1f, crest * 0.5f, color, seed, 3)
+
+            // a second rank a little nearer and a little stronger, so the horizon has depth
+            val near = ColorX.scaleAlpha(color, 1.45f)
+            paint.color = near
+            for (i in 0 until count - 2) {
+                val key = seed * 41 + i
+                val cx = Hash.f(key, 1759) * (worldW + 300f) - 150f
+                val s = crest * 0.72f * (0.6f + Hash.f(key, 1777) * 0.8f)
+                val w = minOf(s * (0.46f + Hash.f(key, 1783) * 0.3f), worldW * 0.24f)
+                val by = baseY + crest * 0.42f
+                val foot = by + crest * 0.75f
+                path.reset()
+                when (motif) {
+                    FAR_CONE -> {
+                        path.moveTo(cx - w, foot)
+                        path.lineTo(cx - w * 0.55f, by)
+                        path.lineTo(cx, by - s)
+                        path.lineTo(cx + w * 0.55f, by)
+                        path.lineTo(cx + w, foot)
+                    }
+                    FAR_SLAB -> {
+                        path.moveTo(cx - w * 0.6f, foot)
+                        path.lineTo(cx - w * 0.6f, by - s * 0.68f)
+                        path.quadTo(cx, by - s, cx + w * 0.6f, by - s * 0.68f)
+                        path.lineTo(cx + w * 0.6f, foot)
+                    }
+                    FAR_FROND -> {
+                        path.moveTo(cx - w * 0.24f, foot)
+                        path.quadTo(cx - w * 0.95f, by - s * 0.6f, cx - w * 0.18f, by - s)
+                        path.quadTo(cx + w * 0.55f, by - s * 0.55f, cx + w * 0.24f, foot)
+                    }
+                    else -> {
+                        path.moveTo(cx - w, foot)
+                        path.quadTo(cx - w * 0.55f, by - s * 1.35f, cx, by - s)
+                        path.quadTo(cx + w * 0.55f, by - s * 1.35f, cx + w, foot)
+                    }
+                }
+                path.close()
+                c.drawPath(path, paint)
+            }
+            hillRow(c, worldW, baseY + crest * 0.56f, crest * 0.42f, near, seed + 7, 4)
+        }
+    }
+
 
     private fun hillRow(c: Canvas, worldW: Float, baseY: Float, h: Float, color: Int, key: Int, lobes: Int) {
         val footY = baseY
@@ -424,10 +596,16 @@ class Backdrop(private val art: Art) {
         c.drawPath(path, paint)
     }
 
-    private fun trees(c: Canvas, worldW: Float, camY: Float, pal: BiomePalette, alpha: Float) {
+    private fun trees(c: Canvas, worldW: Float, camY: Float, pal: BiomePalette, alpha: Float, time: Float) {
+        // the horizon this area keeps for the whole of it; see farRange()
+        farRange(
+            c, worldW, camY,
+            ColorX.withAlpha(pal.farInk, alpha * 0.62f),
+            513f, FAR_DOME, 9, 311
+        )
         paint.reset(); paint.isAntiAlias = true
         val h = Tuning.VIEW_H * 0.8f
-        band(camY, 0.26f, h, once = firstBand) { idx, baseY ->
+        band(camY, 0.26f, h, once = true) { idx, baseY ->
             val fromLeft = Hash.f(idx, 83) > 0.5f
             val trunkX = if (fromLeft) -30f else worldW + 30f
             val dir = if (fromLeft) 1f else -1f
@@ -496,6 +674,9 @@ class Backdrop(private val art: Art) {
                 c.drawCircle(bx + br * 0.8f, footY - br * 0.15f, br * 0.58f, paint)
             }
         }
+
+        // Leaves coming off the canopy, still falling long after the treeline has sunk away.
+        motes(c, worldW, camY, time, 0.22f, pal.midInk, alpha * 0.45f, 14, 8f, 26f, 44f, 223)
     }
 
     /**
@@ -507,9 +688,15 @@ class Backdrop(private val art: Art) {
      * what says "winter" at a glance rather than "green trees, but blue".
      */
     private fun pines(c: Canvas, worldW: Float, camY: Float, pal: BiomePalette, alpha: Float, time: Float) {
+        // the horizon this area keeps for the whole of it; see farRange()
+        farRange(
+            c, worldW, camY,
+            ColorX.withAlpha(pal.farInk, alpha * 0.62f),
+            580f, FAR_CONE, 11, 313
+        )
         paint.reset(); paint.isAntiAlias = true
         val h = Tuning.VIEW_H * 0.8f
-        band(camY, 0.26f, h, once = firstBand) { idx, baseY ->
+        band(camY, 0.26f, h, once = true) { idx, baseY ->
             // two ranks: a pale far rank, then a darker near rank in front of it
             for (rank in 0 until 2) {
                 val far = rank == 0
@@ -592,21 +779,23 @@ class Backdrop(private val art: Art) {
                 )
             }
 
-            // drifting snow in front of the whole band
-            paint.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), alpha * 0.5f)
-            for (i in 0 until 16) {
-                val key = idx * 41 + i
-                val driftX = (Hash.f(key, 141) * worldW + sin(time * 0.6f + i) * 40f) % worldW
-                val driftY = baseY - ((Hash.f(key, 143) * h + time * 34f) % h)
-                c.drawCircle(driftX, driftY, 3f + Hash.f(key, 147) * 3f, paint)
-            }
         }
+
+        // Drifting snow. The trees are laid out once for the band; the weather in front of them
+        // is not, so it carries on filling the sky after they have sunk away below.
+        motes(c, worldW, camY, time, 0.26f, 0xFFFFFFFF.toInt(), alpha * 0.5f, 16, 6f, 34f, 40f, 41)
     }
 
     /** Smooth wind-carved sand: long shallow crests with a lit windward face. */
     private fun dunes(c: Canvas, worldW: Float, camY: Float, pal: BiomePalette, alpha: Float) {
+        // the horizon this area keeps for the whole of it; see farRange()
+        farRange(
+            c, worldW, camY,
+            ColorX.withAlpha(pal.farInk, alpha * 0.62f),
+            405f, FAR_DOME, 6, 347
+        )
         paint.reset(); paint.isAntiAlias = true
-        band(camY, 0.16f, Tuning.VIEW_H * 1.05f, once = firstBand) { idx, baseY ->
+        band(camY, 0.16f, Tuning.VIEW_H * 1.05f, once = true) { idx, baseY ->
             for (row in 0 until 3) {
                 val t = row / 2f
                 val y = baseY - row * 210f
@@ -761,10 +950,16 @@ class Backdrop(private val art: Art) {
     }
 
     /** Stacked confectionery: gumdrop domes, candy canes and a dripping icing line. */
-    private fun sweets(c: Canvas, worldW: Float, camY: Float, pal: BiomePalette, alpha: Float) {
+    private fun sweets(c: Canvas, worldW: Float, camY: Float, pal: BiomePalette, alpha: Float, time: Float) {
+        // the horizon this area keeps for the whole of it; see farRange()
+        farRange(
+            c, worldW, camY,
+            ColorX.withAlpha(pal.farInk, alpha * 0.62f),
+            540f, FAR_DOME, 9, 317
+        )
         paint.reset(); paint.isAntiAlias = true
         val h = Tuning.VIEW_H * 0.9f
-        band(camY, 0.19f, h, once = firstBand) { idx, baseY ->
+        band(camY, 0.19f, h, once = true) { idx, baseY ->
             // gumdrop hills
             for (i in 0 until 6) {
                 val key = idx * 53 + i
@@ -854,13 +1049,22 @@ class Backdrop(private val art: Art) {
                 }
             }
         }
+
+        // Sugar in the air over the gumdrop hills.
+        motes(c, worldW, camY, time, 0.2f, 0xFFFFFFFF.toInt(), alpha * 0.4f, 16, 6f, 30f, 34f, 227)
     }
 
     /** Leaning headstones, railings and bare branches. */
-    private fun tombs(c: Canvas, worldW: Float, camY: Float, pal: BiomePalette, alpha: Float) {
+    private fun tombs(c: Canvas, worldW: Float, camY: Float, pal: BiomePalette, alpha: Float, time: Float) {
+        // the horizon this area keeps for the whole of it; see farRange()
+        farRange(
+            c, worldW, camY,
+            ColorX.withAlpha(pal.farInk, alpha * 0.62f),
+            445f, FAR_SLAB, 10, 331
+        )
         paint.reset(); paint.isAntiAlias = true
         val h = Tuning.VIEW_H * 0.8f
-        band(camY, 0.24f, h, once = firstBand) { idx, baseY ->
+        band(camY, 0.24f, h, once = true) { idx, baseY ->
             // bare trees behind
             paint.style = Paint.Style.STROKE
             paint.strokeCap = Paint.Cap.ROUND
@@ -918,6 +1122,9 @@ class Backdrop(private val art: Art) {
                 idx * 11 + 5
             )
         }
+
+        // Wisps rising off the graves, carrying on up after the graveyard itself has gone.
+        motes(c, worldW, camY, time, 0.18f, pal.rimInk, alpha * 0.3f, 12, 13f, 22f, 52f, 229)
     }
 
     /**
@@ -1008,10 +1215,16 @@ class Backdrop(private val art: Art) {
     }
 
     private fun kelp(c: Canvas, worldW: Float, camY: Float, pal: BiomePalette, alpha: Float, time: Float) {
+        // the horizon this area keeps for the whole of it; see farRange()
+        farRange(
+            c, worldW, camY,
+            ColorX.withAlpha(pal.farInk, alpha * 0.62f),
+            702f, FAR_FROND, 11, 337
+        )
         paint.reset(); paint.isAntiAlias = true
         ink.style = Paint.Style.STROKE
         val h = Tuning.VIEW_H * 0.95f
-        band(camY, 0.2f, h) { idx, baseY ->
+        band(camY, 0.2f, h, once = true) { idx, baseY ->
             for (i in 0 until 5) {
                 val key = idx * 29 + i
                 val x = Hash.f(key, 151) * worldW
@@ -1035,12 +1248,21 @@ class Backdrop(private val art: Art) {
             }
         }
         ink.style = Paint.Style.STROKE
+
+        // Bubbles and silt: the kelp is rooted once at the foot of the band, the water is not.
+        motes(c, worldW, camY, time, 0.24f, 0xFFFFFFFF.toInt(), alpha * 0.28f, 18, 8f, 44f, 26f, 233)
     }
 
     private fun reef(c: Canvas, worldW: Float, camY: Float, pal: BiomePalette, alpha: Float, time: Float) {
+        // the horizon this area keeps for the whole of it; see farRange()
+        farRange(
+            c, worldW, camY,
+            ColorX.withAlpha(pal.farInk, alpha * 0.62f),
+            486f, FAR_DOME, 9, 349
+        )
         paint.reset(); paint.isAntiAlias = true
         val h = Tuning.VIEW_H * 0.9f
-        band(camY, 0.16f, h, once = firstBand) { idx, baseY ->
+        band(camY, 0.16f, h, once = true) { idx, baseY ->
             // rocky shelf
             path.reset()
             path.moveTo(-40f, baseY + h * 0.5f)
@@ -1105,7 +1327,7 @@ class Backdrop(private val art: Art) {
         paint.reset(); paint.isAntiAlias = true
         val h = Tuning.VIEW_H * 1.05f
         // far towers
-        band(camY, 0.12f, h) { idx, baseY ->
+        band(camY, 0.12f, h, once = true) { idx, baseY ->
             paint.color = ColorX.withAlpha(ColorX.shade(pal.nearInk, 1.25f), alpha * 0.7f)
             var x = -60f
             var i = 0
@@ -1120,7 +1342,7 @@ class Backdrop(private val art: Art) {
             }
         }
         // near towers with windows
-        band(camY, 0.3f, h) { idx, baseY ->
+        band(camY, 0.3f, h, once = true) { idx, baseY ->
             var x = -80f
             var i = 0
             while (x < worldW + 80f) {
@@ -1154,12 +1376,15 @@ class Backdrop(private val art: Art) {
                 i++
             }
         }
+
+        // Aircraft and drone lights crossing the sky above the skyline.
+        motes(c, worldW, camY, time, 0.16f, pal.accentInk, alpha * 0.5f, 10, 7f, 20f, 70f, 239)
     }
 
-    private fun peaks(c: Canvas, worldW: Float, camY: Float, pal: BiomePalette, alpha: Float) {
+    private fun peaks(c: Canvas, worldW: Float, camY: Float, pal: BiomePalette, alpha: Float, time: Float) {
         paint.reset(); paint.isAntiAlias = true
         val h = Tuning.VIEW_H * 1.15f
-        band(camY, 0.11f, h) { idx, baseY ->
+        band(camY, 0.11f, h, once = true) { idx, baseY ->
             for (layer in 0 until 2) {
                 val depth = if (layer == 0) 0.62f else 0.96f
                 // A mountain is a silhouette: it has to sit clearly off the sky or the whole
@@ -1214,12 +1439,21 @@ class Backdrop(private val art: Art) {
                 }
             }
         }
+
+        // Spindrift torn off the summits, still blowing past well above them.
+        motes(c, worldW, camY, time, 0.2f, 0xFFFFFFFF.toInt(), alpha * 0.35f, 14, 7f, 36f, 46f, 241)
     }
 
     private fun lava(c: Canvas, worldW: Float, camY: Float, pal: BiomePalette, alpha: Float, time: Float) {
+        // the horizon this area keeps for the whole of it; see farRange()
+        farRange(
+            c, worldW, camY,
+            ColorX.withAlpha(pal.farInk, alpha * 0.62f),
+            621f, FAR_CONE, 6, 353
+        )
         paint.reset(); paint.isAntiAlias = true
         val h = Tuning.VIEW_H * 1.0f
-        band(camY, 0.15f, h, once = firstBand) { idx, baseY ->
+        band(camY, 0.15f, h, once = true) { idx, baseY ->
             // dark basalt ridge
             paint.color = ColorX.withAlpha(pal.nearInk, alpha * 0.95f)
             path.reset()

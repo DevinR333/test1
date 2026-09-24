@@ -92,3 +92,29 @@ comparison, so render the same strips from a known-good commit and diff:
 then build and run FilmStrip against each tree and compare scene by scene. Two sweeps are
 worth taking - the first area from 0 screens, and across the cross-fade from 6.6 screens.
 A change ships when no scene is worse than the approved build in either sweep.
+
+## empty.py - has an area gone bare?
+
+Scenery is laid out ONCE per area now (see `band()`), so it sweeps down through the frame and
+leaves instead of coming round again. That is the whole point - "ground, sky, ground again"
+inside one area is what it removes - but it means the old way of keeping a frame full is gone,
+and an area can end up as nothing but sky.
+
+This reads a filmstrip back as pixels and, for each frame, measures how much the rows vary
+horizontally. A bare sky gradient is flat along every row and scores near zero; a ridge, a
+tower, a tree or a cloud breaks it. The number that matters is the lowest-scoring frame of a
+band - the emptiest moment you can reach in that area.
+
+    python3 tools/backdrop/empty.py <strip-dir> 10
+
+Judge it against the same measurement from a known-good commit rather than against an absolute.
+The bands whose style is CLOUDS, AURORA or NEBULA are meant to be sparse and always score low.
+
+## pop.py - does it jump?
+
+The same strips, differenced frame to frame: the worst single step is a pop, the average step is
+how smoothly it scrolls. Render a fine sweep (20 frames, 0.12 screens apart) from the start of an
+area and again across the cross-fade at 6.6 screens, from this tree and from the approved commit,
+and compare.
+
+    python3 tools/backdrop/pop.py <strip-dir> 20
