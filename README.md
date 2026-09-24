@@ -32,8 +32,9 @@ ladder, camera rules, scoring, the difficulty curve, and the exact numbers used 
 
 ## Building
 
-Requirements: **JDK 17 or 21**, Android SDK with **API 35** installed. Nothing else — the app
-has **no third-party dependencies at all**, just the Android framework and the Kotlin stdlib.
+Requirements: **JDK 17 or 21**, Android SDK with **API 36** installed (Android Studio →
+SDK Manager → SDK Platforms → "Android 16.0"). Nothing else — the app has **no third-party
+dependencies at all**, just the Android framework and the Kotlin stdlib.
 
 Toolchain: Gradle 8.14.3 (wrapper), Android Gradle Plugin 8.7.3, Kotlin 2.0.21, compiled to
 Java 17 bytecode.
@@ -45,7 +46,14 @@ Java 17 bytecode.
 
 Or open the folder in Android Studio and hit Run.
 
-`minSdk` is 26 (Android 8.0), `targetSdk`/`compileSdk` 35.
+`minSdk` is 26 (Android 8.0), `targetSdk`/`compileSdk` 36 — Google Play will not accept a
+release that targets less than 36.
+
+The bundled Android Gradle plugin (8.7.3) is older than API 36, so it warns that it has not
+been tested against it. That is a warning, not a failure, and `gradle.properties` silences it
+with `android.suppressUnsupportedCompileSdk=36`. If Android Studio offers an upgrade under
+**Tools → AGP Upgrade Assistant**, taking it is the tidier fix — let the assistant pick the
+version, since it knows which ones your Studio supports — and that line can then be removed.
 
 ### Troubleshooting: "incompatible Gradle JVM version"
 
@@ -76,6 +84,28 @@ From the command line the same rule applies: `JAVA_HOME` must point at a JDK 17�
 java -version          # check what you're on
 ./gradlew --version    # shows the "Launcher JVM" Gradle is actually using
 ```
+
+### Publishing to Google Play
+
+- **Target API.** Play rejects anything below API 36; that is what `targetSdk = 36` above is
+  for. The SDK Platform 36 package has to be installed locally or the build cannot compile
+  against it.
+- **A signed release.** Play takes an app bundle: **Build → Generate Signed App Bundle / APK →
+  Android App Bundle**. Keep the keystore and its passwords somewhere safe — every future
+  update to the same listing has to be signed with the same key.
+- **`versionCode` goes up every upload.** It is 1 in `app/build.gradle.kts` now. Play refuses a
+  second upload that reuses a version code, so bump it for each one; `versionName` is the
+  string players see and is yours to choose.
+- **"This release will not be available to any users"** is the other message on that screen and
+  is not about the build at all: an internal testing track needs a tester list. In the Console,
+  **Testing → Internal testing → Testers**, make an email list, add your own address, save, and
+  the warning clears. Then share the opt-in link it gives you.
+
+One behaviour change worth knowing about: from API 36, Android stops honouring a fixed
+orientation on large screens (roughly tablets and unfolded foldables), so the portrait /
+landscape setting will not pin those devices the way it pins a phone. Nothing breaks — the game
+lays out for any aspect ratio in either orientation and handles rotation without restarting —
+but it is worth a look on a tablet before a wide release.
 
 ## Playing
 

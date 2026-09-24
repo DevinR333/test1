@@ -5,12 +5,14 @@ plugins {
 
 android {
     namespace = "com.blacklab.buddybounce"
-    compileSdk = 35
+    // Google Play requires apps to target API 36 (Android 16). compileSdk has to be at least
+    // targetSdk, so both move together.
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.blacklab.buddybounce"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
     }
