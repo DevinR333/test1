@@ -162,12 +162,27 @@ class GachaScreen(private val g: Game) {
         }
         val step = dt.coerceAtMost(0.033f)
 
-        // Gravity follows the phone. tiltRaw is acceleration along the screen's horizontal axis
-        // and is positive to the right - the same sign the steering uses - so the capsules fall
-        // the way the player leans. The vertical part is whatever is left of one g, which is
-        // what makes a lopsided phone send them sideways AND down rather than just sideways.
-        val gx = (g.controls.tiltRaw / 9.81f).coerceIn(-1f, 1f)
-        val gy = kotlin.math.sqrt((1f - gx * gx).coerceAtLeast(0f))
+        // Gravity follows the phone, in whatever direction the phone says down is.
+        //
+        // Both screen axes come straight off the accelerometer, already remapped for the display
+        // rotation. The vertical part used to be derived as "whatever is left of one g", which is
+        // always positive - so the dome only ever knew left and right, and turning the phone over
+        // or tipping it away from you still rolled the capsules toward the bottom of the screen.
+        // Reading the real axis means upside down is upside down, and every angle between works.
+        var gx = g.controls.tiltRaw / 9.81f
+        var gy = g.controls.tiltRawDown / 9.81f
+        if (!g.controls.tiltAvailable) {
+            // no accelerometer: the dome still has to behave like a dome
+            gx = 0f
+            gy = 1f
+        } else {
+            // Never more than one g of pull, however hard the phone is being waved about, but
+            // keep it SHORTER than one g when the phone is flat on a table: in-plane gravity
+            // really is near zero there, and the capsules drifting in the glass is what that
+            // looks like.
+            val mag = kotlin.math.sqrt(gx * gx + gy * gy)
+            if (mag > 1f) { gx /= mag; gy /= mag }
+        }
         val shake = if (state == State.CRANK) 5.5f else 0f
 
         for (i in 0 until CAPSULES) {

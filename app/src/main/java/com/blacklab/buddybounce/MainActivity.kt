@@ -30,6 +30,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.blacklab.buddybounce.input.TiltMap
 import com.blacklab.buddybounce.audio.Audio
 import com.blacklab.buddybounce.audio.Music
 import com.blacklab.buddybounce.data.Save
@@ -156,15 +157,15 @@ class MainActivity : Activity(), SensorEventListener, Game.Host {
         if (event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
         val x = event.values[0]
         val y = event.values[1]
-        // Remap the device axes onto "screen right", then flip: tilting the right edge down
-        // pushes the accelerometer negative along that axis, but should steer right.
-        val steerAxis = when (currentRotation()) {
-            Surface.ROTATION_90 -> y
-            Surface.ROTATION_180 -> x
-            Surface.ROTATION_270 -> -y
-            else -> -x
+        // The device's own axes mean nothing until they are resolved onto the screen as it is
+        // being held; TiltMap does that, and is checked headlessly against real poses.
+        val rot = when (currentRotation()) {
+            Surface.ROTATION_90 -> TiltMap.ROTATION_90
+            Surface.ROTATION_180 -> TiltMap.ROTATION_180
+            Surface.ROTATION_270 -> TiltMap.ROTATION_270
+            else -> TiltMap.ROTATION_0
         }
-        game.controls.onTiltSample(steerAxis)
+        game.controls.onTiltSample(TiltMap.steer(x, y, rot), TiltMap.down(x, y, rot))
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}

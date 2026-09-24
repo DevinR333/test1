@@ -26,6 +26,16 @@ class Controls(private val save: Save) {
     /** Acceleration along the screen's horizontal axis, m/s^2, already remapped for rotation. */
     var tiltRaw = 0f
         private set
+
+    /**
+     * Acceleration along the screen's VERTICAL axis, m/s^2, positive when gravity is pulling
+     * toward the bottom of the screen. Steering has no use for it - Buddy only moves sideways -
+     * but anything that wants a real gravity direction rather than just "which way is the player
+     * leaning" needs both axes. Held upright this is about +9.81; turn the phone over and it is
+     * about -9.81; lay it flat on a table and it is near zero, along with [tiltRaw].
+     */
+    var tiltRawDown = 0f
+        private set
     var tiltAvailable = false
 
     // ---- positional drag ----
@@ -48,8 +58,9 @@ class Controls(private val save: Save) {
 
     private var smoothedTilt = 0f
 
-    fun onTiltSample(screenAxisAccel: Float) {
+    fun onTiltSample(screenAxisAccel: Float, screenDownAccel: Float = 0f) {
         tiltRaw = screenAxisAccel
+        tiltRawDown = screenDownAccel
         // Enough smoothing to kill hand tremor, little enough that the lag is not felt.
         smoothedTilt += (screenAxisAccel - smoothedTilt) * 0.55f
     }
