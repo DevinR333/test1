@@ -343,6 +343,48 @@ class Save(ctx: Context) {
         }
     }
 
+    /**
+     * Free pulls earned by watching a rewarded ad, banked so one can be watched now and spent
+     * later. Separate from [freeSpins], which is the testing back door.
+     */
+    var adSpins: Int
+        get() = prefs.getInt(KEY_AD_SPINS, 0)
+        set(value) = editSync { it.putInt(KEY_AD_SPINS, value.coerceAtLeast(0)) }
+
+    /** Which day the ad counter belongs to, as whole days since the epoch. */
+    private val today: Long get() = System.currentTimeMillis() / 86_400_000L
+
+    /**
+     * How many more rewarded ads may be watched today.
+     *
+     * There is a cap on purpose. Nothing in the ad SDK stops a player watching all day, but the
+     * ad network runs out of inventory long before they run out of patience, and an unlimited
+     * free supply of pulls is also an unlimited reason never to spend anything.
+     */
+    fun adsLeftToday(): Int {
+        if (prefs.getLong(KEY_AD_DAY, -1L) != today) return Tuning.AD_SPINS_PER_DAY
+        return (Tuning.AD_SPINS_PER_DAY - prefs.getInt(KEY_AD_COUNT, 0)).coerceAtLeast(0)
+    }
+
+    /** Bank a pull and count the ad against today's allowance. */
+    fun grantAdSpin() {
+        val day = today
+        val watched = if (prefs.getLong(KEY_AD_DAY, -1L) == day) prefs.getInt(KEY_AD_COUNT, 0) else 0
+        editSync {
+            it.putLong(KEY_AD_DAY, day)
+            it.putInt(KEY_AD_COUNT, watched + 1)
+            it.putInt(KEY_AD_SPINS, adSpins + 1)
+        }
+    }
+
+    /** Spend one banked ad pull. */
+    fun spendAdSpin(): Boolean {
+        val have = adSpins
+        if (have <= 0) return false
+        adSpins = have - 1
+        return true
+    }
+
     /** Testing back door: prize-machine pulls cost nothing. */
     var freeSpins: Boolean
         get() = prefs.getBoolean(KEY_FREE_SPINS, false)
@@ -510,6 +552,9 @@ class Save(ctx: Context) {
         private const val KEY_INFINITE_POWERUPS = "infinitePowerups"
         private const val KEY_GHOST_ON = "ghostOn"
         private const val KEY_FREE_SPINS = "freeSpins"
+        private const val KEY_AD_SPINS = "adSpins"
+        private const val KEY_AD_DAY = "adDay"
+        private const val KEY_AD_COUNT = "adCount"
         private const val KEY_POWERUP_PREFIX = "pu_"
         private const val KEY_LANDSCAPE = "landscape"
         private const val KEY_CONTROL = "control"

@@ -207,6 +207,12 @@ object Tuning {
     /** The Glory Beam trail, at half the outfit's price so it lands first. */
     const val HALOS_FOR_GLORY = 500
     const val GACHA_COST = 100
+
+    /** Rewarded ads a player may watch for a free pull in one day. See Save.adsLeftToday. */
+    const val AD_SPINS_PER_DAY = 5
+
+    /** Coins the paid pack grants. One pull's worth, priced like a real gachapon. */
+    const val COIN_PACK = 100
     /** Paid out when a pick-up duplicates a power-up that is already running. */
     const val REDUNDANT_PICKUP_COINS = 1
     const val DUPLICATE_REFUND = 35

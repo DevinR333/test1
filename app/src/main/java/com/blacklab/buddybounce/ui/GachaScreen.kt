@@ -47,6 +47,8 @@ class GachaScreen(private val g: Game) {
         const val AGAIN = 4003
         const val DONE = 4004
         const val EQUIP = 4005
+        const val AD = 4006
+        const val BUY = 4007
     }
 
 
@@ -316,7 +318,9 @@ class GachaScreen(private val g: Game) {
         if (state == State.REVEAL) {
             drawReveal(c)
         } else {
-            val canPull = (g.save.freeSpins || coins >= Tuning.GACHA_COST) && state == State.IDLE
+            val canPull =
+                (g.save.freeSpins || g.save.adSpins > 0 || coins >= Tuning.GACHA_COST) &&
+                    state == State.IDLE
 
             // The crank itself is the press target. A ghost button laid over wherever
             // drawMachine just put it, so it lines up whatever size the machine came out.
@@ -342,14 +346,55 @@ class GachaScreen(private val g: Game) {
                 }
             }
 
+            // --- the store row -------------------------------------------------------------
+            // Only drawn when something is actually plugged in behind it. With no ad SDK and no
+            // billing library in the build, g.store is NoStore, both of these read false, and
+            // the machine looks exactly as it does today. See data/Store.kt.
+            val adsOn = g.store.adsReady
+            val buyOn = g.store.purchasesReady
+            var hintY = Theme.SCREEN_H - ui.safeBottom - 92f
+            if (adsOn || buyOn) {
+                val span = g.worldW - ui.safeLeft - ui.safeRight - 80f
+                val cols = (if (adsOn) 1 else 0) + (if (buyOn) 1 else 0)
+                val bw = ((span - 20f * (cols - 1)) / cols).coerceAtMost(430f)
+                var bx = (g.worldW - (bw * cols + 20f * (cols - 1))) * 0.5f
+                val by = Theme.SCREEN_H - ui.safeBottom - 112f
+                if (adsOn) {
+                    val left = g.save.adsLeftToday()
+                    if (ui.button(
+                            c, Id.AD, bx, by, bw, 78f, "FREE SPIN",
+                            Ui.ButtonStyle.SECONDARY, left > 0 && state == State.IDLE,
+                            sublabel = if (left > 0) "watch an ad · $left left today"
+                            else "back tomorrow"
+                        )
+                    ) {
+                        g.tap()
+                        g.store.showRewardedAd({ g.save.grantAdSpin() }, {})
+                    }
+                    bx += bw + 20f
+                }
+                if (buyOn) {
+                    if (ui.button(
+                            c, Id.BUY, bx, by, bw, 78f, "${Tuning.COIN_PACK} COINS",
+                            Ui.ButtonStyle.PRIMARY, state == State.IDLE,
+                            sublabel = g.store.coinPackPrice
+                        )
+                    ) {
+                        g.tap()
+                        g.store.buyCoinPack({ g.save.grantCoins(it) }, {})
+                    }
+                }
+                hintY -= 122f
+            }
+
             val hint = when {
                 state != State.IDLE -> "..."
                 g.save.freeSpins -> "turn the crank (free spins)"
+                g.save.adSpins > 0 -> "turn the crank (${g.save.adSpins} free)"
                 canPull -> "turn the crank"
                 else -> "collect ${Tuning.GACHA_COST - coins} more coins"
             }
             val room = g.worldW - ui.safeLeft - ui.safeRight - 60f
-            val hintY = Theme.SCREEN_H - ui.safeBottom - 92f
             ui.text(
                 c, hint, g.worldW * 0.5f, hintY, 38f,
                 if (canPull) Theme.ACCENT else Theme.TEXT_DIM, ui.title, true, room
@@ -375,7 +420,10 @@ class GachaScreen(private val g: Game) {
     // -------------------------------------------------------------------------------------
 
     private fun pull() {
-        if (!g.save.freeSpins && !g.save.spendCoins(Tuning.GACHA_COST)) return
+        // an ad-earned pull is spent before coins are, so watching one is never wasted
+        if (!g.save.freeSpins && !g.save.spendAdSpin() &&
+            !g.save.spendCoins(Tuning.GACHA_COST)
+        ) return
         coinDropT = COIN_DROP_TIME
         g.audio.play(Audio.COIN, 0.7f, 0.8f)
         g.audio.play(Audio.GACHA_SPIN, 0.8f)
@@ -668,7 +716,7 @@ class GachaScreen(private val g: Game) {
         )
 
         val by = y + h - 96f
-        val canAgain = g.save.freeSpins || g.save.coins >= Tuning.GACHA_COST
+        val canAgain = g.save.freeSpins || g.save.adSpins > 0 || g.save.coins >= Tuning.GACHA_COST
         // Three buttons when there is something to put on, two when there is not. Winning a
         // trail you like and then having to go and find it in the wardrobe to wear it was silly.
         val canEquip = !duplicate && (prizeKind == PrizeRoll.Kind.OUTFIT || prizeKind == PrizeRoll.Kind.TRAIL ||

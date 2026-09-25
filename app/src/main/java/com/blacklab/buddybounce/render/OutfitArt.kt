@@ -74,6 +74,7 @@ object OutfitArt {
         val cc = collarColor(id)
         if (cc != 0) { collarBack(c, cc); prep() }
         when (id) {
+            "bandana", "cowboy" -> bandanaBack(c)
             "cape" -> cape(c, pose, 0xFFD23A4A.toInt(), 0xFF8E1F2E.toInt())
             "cosmic" -> cape(c, pose, 0xFF3B2A7A.toInt(), 0xFF1A1140.toInt())
             "santa" -> sack(c)
@@ -391,6 +392,22 @@ object OutfitArt {
         c.drawRoundRect(r, 1f, 1f, p)
     }
 
+    /** The neck-side half of the bandana's wrap. See [collarBack] for why this is separate. */
+    private fun bandanaBack(c: Canvas) {
+        c.save()
+        c.translate(30f, -92f)
+        c.rotate(24f)
+        r.set(-42f, -14f, 42f, 14f)
+        p.reset(); p.isAntiAlias = true
+        p.style = Paint.Style.STROKE
+        p.strokeCap = Paint.Cap.BUTT
+        p.strokeWidth = 11f
+        p.color = ColorX.shade(0xFFCC3B3B.toInt(), 0.45f)
+        c.drawArc(r, 182f, 176f, false, p)
+        p.style = Paint.Style.FILL
+        c.restore()
+    }
+
     /**
      * A bandana: a square folded corner-to-corner, wrapped round the neck and knotted, with the
      * point hanging down the chest.
@@ -449,9 +466,9 @@ object OutfitArt {
         r.set(-rx, -ry, rx, ry)
         p.style = Paint.Style.STROKE
         p.strokeCap = Paint.Cap.BUTT
-        p.strokeWidth = 10f
-        p.color = ColorX.shade(cloth, 0.45f)          // behind the neck
-        c.drawArc(r, 182f, 176f, false, p)
+        // the far half of the wrap is in [bandanaBack], drawn behind Buddy. Painted here it
+        // went straight over the neck it is meant to pass behind, so the band read as a hoop
+        // lying on top of him rather than cloth tied round him.
         p.strokeWidth = 17f
         p.color = BuddyGeom.INK
         c.drawArc(r, 2f, 176f, false, p)

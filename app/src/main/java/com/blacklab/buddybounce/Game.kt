@@ -5,7 +5,9 @@ import com.blacklab.buddybounce.audio.Audio
 import com.blacklab.buddybounce.audio.Music
 import com.blacklab.buddybounce.data.Outfits
 import com.blacklab.buddybounce.data.Powerups
+import com.blacklab.buddybounce.data.NoStore
 import com.blacklab.buddybounce.data.Save
+import com.blacklab.buddybounce.data.Store
 import com.blacklab.buddybounce.data.Trails
 import com.blacklab.buddybounce.game.Buddy
 import com.blacklab.buddybounce.game.DeathCause
@@ -53,6 +55,12 @@ import kotlin.math.sin
  * a lot of sky, while the menus stay exactly the size they were.
  */
 class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) : World.Events {
+
+    /**
+     * Rewarded ads and in-app purchases. [NoStore] until an SDK is wired in, and while it is
+     * NoStore the prize machine simply does not show the two buttons. See data/Store.kt.
+     */
+    var store: Store = NoStore
 
     interface Host {
         fun setLandscape(landscape: Boolean)
