@@ -534,7 +534,10 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         flash = MathX.approach(flash, 0f, 5f, dt)
         if (biomeToast > 0f) biomeToast -= dt
         if (coinFlashT > 0f) coinFlashT -= dt
-        unlockPopup.update(dt)
+        // Only outside a run. Promoting a card starts its fanfare, its flash and its buzz, and
+        // the card itself is not drawn during PLAY - so running this mid-climb spent the reveal
+        // on nobody. Held in the queue instead, it comes up on the death screen.
+        if (screen != Screen.PLAY) unlockPopup.update(dt)
         ui.beginFrame(dt)
 
         when (screen) {
@@ -603,6 +606,12 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
 
     /** Reveal cards for the unlocks that do not come out of the prize machine. */
     val unlockPopup = UnlockPopup(this)
+
+    init {
+        // Settled once on the way up, so a save that has already been round the cycle is paid
+        // whether or not it was paid at the time. The card lands on the main menu.
+        settleLapSkins()
+    }
 
     /** True while a menu stick is pushed, so one push is one move rather than a stampede. */
     private var stickLatched = false
@@ -681,6 +690,10 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         lastBiome = world.biome
         lastNewBest = lastScore > save.bestScore
         save.highestBiome = world.biome
+        // Belt and braces: the lap is settled again here, so a band crossed on the frame he died
+        // still pays out even if the event that announced it was the last thing to happen.
+        save.highestLap = Palettes.lapOf(world.biome)
+        settleLapSkins()
         // A run that has already been part-banked (because a Second Life reopened it) replaces
         // its own earlier entry instead of adding a second one, and only the new coins are added.
         lastRank = save.bankRun(lastScore, lastCoins - bankedCoinsThisRun, continuedStamp)
@@ -1184,14 +1197,39 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
 
         // Climbing past the last band starts the cycle again with a numeral after its name -
         // Backyard II, then III. Getting there is its own achievement and nothing marked it, so
-        // each lap hands over a Buddy with one more head than the last. They queue like any
-        // other unlock, which means the card is waiting on the game-over screen rather than
-        // thrown over the top of a run in progress.
-        // AT OR PAST, not exactly. A rocket can carry him across two band boundaries inside one
-        // update, and a player who only ever reaches lap 3 would otherwise be handed the third
-        // head and never the second. Every world counts: the lap is that world's own band list
-        // come round again, so it is the same climb whichever one is selected.
-        val lap = Palettes.lapOf(biome)
+        // each lap hands over a Buddy with one more head than the last.
+        //
+        // The lap is WRITTEN DOWN here and paid out of the writing, rather than paid out of this
+        // call. Every other unlock in the game is queued from a menu or from the end of a run;
+        // this is the only one that happens mid-climb, and a single frame is a fragile place to
+        // hang a reward: the app can be killed on the death screen, the biome can step twice
+        // inside one update, and a card queued while the run is live cannot be shown yet. A
+        // number on disk survives all of that, and [settleLapSkins] pays it out from three
+        // places - here, the end of the run, and the next launch.
+        save.highestLap = Palettes.lapOf(biome)
+        settleLapSkins()
+    }
+
+    /**
+     * Hands over the two secret Buddies for every lap the player has ever reached.
+     *
+     * Safe to call as often as you like: it gives nothing that is already owned, and nothing it
+     * has not been paid for. The lap comes from [Save.highestLap] and, for saves written before
+     * that number existed, from the highest band index they ever reached - so a player who got
+     * to round two in an earlier build is handed the second head the next time the game starts
+     * rather than having to climb it again.
+     *
+     * AT OR PAST, not exactly: a rocket can carry him across two band boundaries inside one
+     * update, and a player who only ever reaches lap 3 would otherwise be handed the third head
+     * and never the second. Every world counts, because a lap is that world's own band list come
+     * round again - the same climb whichever one is selected.
+     */
+    private fun settleLapSkins() {
+        // A band list is the same length in every world, but read the longest one anyway: a
+        // shorter list would put the lap EARLIER, and this must never hand over more than the
+        // player climbed for.
+        val bands = Scenes.ALL.maxOf { it.bands.size }.coerceAtLeast(1)
+        val lap = maxOf(save.highestLap, save.highestBiome / bands)
         if (lap >= 1 && !save.owns(Outfits.TWO_HEAD_ID)) {
             save.unlock(Outfits.TWO_HEAD_ID)
             unlockPopup.queue(UnlockPopup.Kind.OUTFIT, Outfits.TWO_HEAD_ID, "ROUND TWO")

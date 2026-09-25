@@ -403,12 +403,28 @@ class World(worldWidth: Float, private val events: Events) {
 
     /** Safety Net: catch the fall on a fresh ledge just inside the bottom of the view. */
     private fun rescue() {
+        val p = standOnFreshLedge(2f, camY + Tuning.VIEW_H * 0.14f)
+        events.onRescue(p.x, p.y)
+    }
+
+    /**
+     * Puts a solid ledge under him, just inside the bottom of the view, and stands him on it
+     * with a bounce.
+     *
+     * Both ways of coming back from a fall go through here, and the LEDGE is the point: putting
+     * him back in mid-air only works if something happens to be underneath, and after a fall the
+     * bottom of the view is exactly where nothing is - the platforms down there are the ones he
+     * just missed. Measured over 400 falls with no steering at all, the mid-air placement lost
+     * 23.8% of revived runs inside four seconds; standing him on something loses 10%, and that
+     * remainder is a dog nobody is steering. See tools/revive/ReviveCheck.kt.
+     */
+    private fun standOnFreshLedge(invuln: Float, atY: Float): Platform {
         val b = buddy
         val p = platforms.obtain()
         p.kind = PlatKind.SOLID
         p.w = 300f * metrics.platScale
         p.x = clamp(b.x, Tuning.PLAT_EDGE_MARGIN + p.w * 0.5f, worldW - Tuning.PLAT_EDGE_MARGIN - p.w * 0.5f)
-        p.y = camY + Tuning.VIEW_H * 0.14f
+        p.y = atY
         p.baseY = p.y
         p.prevY = p.y
         p.seed = rng.nextInt(1024)
@@ -416,9 +432,9 @@ class World(worldWidth: Float, private val events: Events) {
         b.x = p.x
         b.y = p.y
         b.vy = Tuning.JUMP_V * 1.35f
-        b.invulnT = 2f
+        b.invulnT = invuln
         b.onBounce(1.35f)
-        events.onRescue(p.x, p.y)
+        return p
     }
 
     private fun collidePlatforms(prevFoot: Float) {
@@ -760,11 +776,14 @@ class World(worldWidth: Float, private val events: Events) {
         b.alive = true
         b.deathT = 0f
         b.vx = 0f
-        b.vy = Tuning.JUMP_V * 1.15f
-        // If he fell below the view, lift him back into it - continuing off-screen is no use.
-        val floor = camY + Tuning.VIEW_H * 0.16f
-        if (b.y < floor) b.y = floor
-        b.invulnT = 2.5f
+        // Back on a ledge of his own, not hanging in the air where he died - see
+        // [standOnFreshLedge]. A Second Life that drops him into the same gap he just fell
+        // through is not a second life. Where he was, if he was still in the view; lifted back
+        // into it if he had already fallen out of the bottom.
+        standOnFreshLedge(
+            2.5f,
+            b.y.coerceIn(camY + Tuning.VIEW_H * 0.14f, camY + Tuning.VIEW_H * 0.82f)
+        )
         finished = false
         deathSettled = false
     }

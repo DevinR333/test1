@@ -82,6 +82,18 @@ class Save(ctx: Context) {
         set(value) = editAsync { it.putInt(KEY_BIOME, maxOf(value, prefs.getInt(KEY_BIOME, 0))) }
 
     /**
+     * How many times round the band cycle the player has ever got - 0 the first climb, 1 once
+     * the names come back with a II after them, and so on.
+     *
+     * Kept separately from [highestBiome] and committed rather than applied, because it is what
+     * the two secret Buddies are paid out of: a lap reached is a fact that has to survive the
+     * app being killed on the death screen, not a moment in one frame.
+     */
+    var highestLap: Int
+        get() = prefs.getInt(KEY_LAP, 0)
+        set(value) = editSync { it.putInt(KEY_LAP, maxOf(value, prefs.getInt(KEY_LAP, 0))) }
+
+    /**
      * Banks a finished run: coins, score, leaderboard and run count, in one committed edit.
      *
      * Coins are banked the instant a run ends, so closing the app impulsively can never lose
@@ -539,6 +551,7 @@ class Save(ctx: Context) {
         private const val KEY_RUNS = "runs"
         private const val KEY_COINS_EARNED = "coinsEarned"
         private const val KEY_BIOME = "topBiome"
+        private const val KEY_LAP = "topLap"
         private const val KEY_SCORES = "scores"
         private const val KEY_OWNED = "owned"
         private const val KEY_EQUIPPED = "equipped"
