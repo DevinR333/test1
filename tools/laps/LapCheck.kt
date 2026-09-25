@@ -1,5 +1,7 @@
 import com.blacklab.buddybounce.data.Outfits
+import com.blacklab.buddybounce.game.Flight
 import com.blacklab.buddybounce.game.Tuning
+import com.blacklab.buddybounce.game.World
 import com.blacklab.buddybounce.render.Palettes
 import com.blacklab.buddybounce.render.Scenes
 
@@ -69,6 +71,71 @@ fun main() {
     Palettes.current = Scenes.ALL[0]
     val jumped = unlocksAt(Palettes.lapOf(Scenes.ALL[0].bands.size * 2))
     check("skipping straight to the third round still grants both", jumped.size == 2)
+
+    // --- and the whole climb flown, not jumped -------------------------------------------
+    //
+    // Riding a rocket from the ground is the case that would break this quietly: the biome is
+    // worked out at the end of update() and nothing there is gated on being airborne, but a
+    // hundred metres a second is exactly the speed at which a band boundary gets stepped over
+    // between two frames. So it is flown for real, through the real World.
+    println("\n--- flown the whole way, on each thing that carries him up ---")
+    val lifts = listOf(
+        "propeller" to Flight.PROPELLER,
+        "jetpack" to Flight.JETPACK,
+        "rocket" to Flight.ROCKET
+    )
+    for ((liftName, kind) in lifts) {
+        for (scene in Scenes.ALL) {
+            Palettes.current = scene
+            val seen = ArrayList<Int>()
+            val w = World(900f, object : World.Events {
+                override fun onBiomeChange(biome: Int) { seen.add(biome) }
+            })
+            w.reset()
+            var frames = 0
+            while (frames < 60 * 600 && w.screens < scene.bands.size * Tuning.BIOME_SPAN * 2.2f) {
+                // held the whole way up: the flight never runs out
+                w.buddy.flight = kind
+                w.buddy.flightTime = 5f
+                w.update(1f / 60f, 0f, false, 0f, false)
+                frames++
+            }
+            val owned = HashSet<String>()
+            for (b in seen) owned.addAll(unlocksAt(Palettes.lapOf(b)))
+            val biggestSkip = seen.zipWithNext().maxOfOrNull { (a, b) -> b - a } ?: 0
+            check(
+                "  $liftName / ${scene.name}: both skins, ${seen.size} band changes, " +
+                    "biggest jump $biggestSkip",
+                owned.size == 2
+            )
+        }
+    }
+
+    // And a lift bigger than anything in the game can give: straight past the second round in
+    // one frame. Nothing hands out a boost like this, but if one ever did, the skin it skipped
+    // over should still be waiting at the top rather than lost.
+    println("\n--- carried past a whole round in a single frame ---")
+    for (scene in Scenes.ALL) {
+        Palettes.current = scene
+        val seen = ArrayList<Int>()
+        val w = World(900f, object : World.Events {
+            override fun onBiomeChange(biome: Int) { seen.add(biome) }
+        })
+        w.reset()
+        w.update(1f / 60f, 0f, false, 0f, false)
+        // straight from the ground to the third round, in one step
+        w.buddy.y += scene.bands.size * 2 * Tuning.BIOME_SPAN * Tuning.VIEW_H + Tuning.VIEW_H
+        w.buddy.flight = Flight.ROCKET
+        w.buddy.flightTime = 5f
+        w.update(1f / 60f, 0f, false, 0f, false)
+        val owned = HashSet<String>()
+        for (b in seen) owned.addAll(unlocksAt(Palettes.lapOf(b)))
+        val biggestSkip = seen.zipWithNext().maxOfOrNull { (a, b) -> b - a } ?: 0
+        check(
+            "  ${scene.name}: both skins after a $biggestSkip-band jump",
+            owned.size == 2
+        )
+    }
 
     println()
     if (failures == 0) println("ALL CHECKS PASSED - every world can hand over both skins")
