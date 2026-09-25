@@ -42,7 +42,6 @@ import com.blacklab.buddybounce.ui.UnlockPopup
 import com.blacklab.buddybounce.ui.Ui
 import com.blacklab.buddybounce.ui.WardrobeScreen
 import kotlin.math.abs
-import kotlin.math.cos
 import kotlin.math.sin
 
 /**
@@ -164,7 +163,6 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
     private val pose = Pose()
     private val menuBuddy = Buddy()
     private var menuCamY = 0f
-    private var menuDrift = 0f
     private var started = false
 
     val equippedOutfit: String get() = save.equippedOutfit
@@ -576,10 +574,7 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
     }
 
     private fun updateMenuBuddy(dt: Float) {
-        // A slow breath rather than an endless climb: the menu backdrop lays its scenery out
-        // once, so drifting forever would eventually leave nothing but sky behind the cards.
-        menuDrift += dt * 0.08f
-        menuCamY = (1f - cos(menuDrift)) * 1400f
+        menuCamY += dt * 70f
         menuBuddy.vy -= Tuning.GRAVITY * 0.4f * dt
         menuBuddy.y += menuBuddy.vy * dt
         if (menuBuddy.y <= 0f && menuBuddy.vy < 0f) {
@@ -785,10 +780,7 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         c.save()
         c.scale(zoom, zoom)
 
-        // Where this biome's stretch of the world starts, so the backdrop lays its scenery out
-        // once from there instead of repeating it every few screens.
-        val bandBase = world.startY + (biome * Tuning.BIOME_SPAN - 0.5f) * Tuning.VIEW_H
-        backdrop.draw(c, playW, camY, time, biome, blend, bandBase)
+        backdrop.draw(c, playW, camY, time, biome, blend)
         backdrop.drawGround(c, playW, viewTop, Tuning.GROUND_Y, Palettes.current)
 
         for (p in world.platforms.items) {

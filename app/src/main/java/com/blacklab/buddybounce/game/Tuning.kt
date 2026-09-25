@@ -235,9 +235,6 @@ object Tuning {
     // ---- biomes ------------------------------------------------------------------------------
     /** Screens of climb per biome band. */
     const val BIOME_SPAN = 9f
-
-    /** The last fraction of a band over which the next one cross-fades in. */
-    const val BIOME_FADE = 0.22f
     const val BIOME_COUNT = 5
 
     // ---- difficulty curve --------------------------------------------------------------------
@@ -284,8 +281,7 @@ object Tuning {
     fun biomeBlend(screens: Float): Float {
         val raw = screens / BIOME_SPAN
         val frac = raw - raw.toInt()
-        // eased, so the cross-fade does not start and stop with a kick
-        return smoothstep(0f, 1f, clamp01((frac - (1f - BIOME_FADE)) / BIOME_FADE))
+        return clamp01((frac - 0.78f) / 0.22f)
     }
 
     /**

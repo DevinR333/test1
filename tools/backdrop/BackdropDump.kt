@@ -48,10 +48,7 @@ internal fun panel(
     backdrop: Backdrop, biome: Int, camY: Float, ox: Float, blend: Float = 0f
 ): String {
     Rec.clear()
-    // the same band base the game passes: where this biome's stretch of the world starts, with
-    // startY at 0. Without it the scenery would not be anchored and the dump would not match.
-    val bandBase = (biome * Tuning.BIOME_SPAN - 0.5f) * Tuning.VIEW_H
-    backdrop.draw(android.graphics.Canvas(), W, camY, 12.5f, biome, blend, bandBase)
+    backdrop.draw(android.graphics.Canvas(), W, camY, 12.5f, biome, blend)
     val defs = StringBuilder()
     val sb = StringBuilder()
     sb.append("<g transform=\"translate(%.0f,0)\">".format(ox))

@@ -60,9 +60,8 @@ fun main() {
             for (step in 0 until 24) {
                 val screens = band * Tuning.BIOME_SPAN + step * Tuning.BIOME_SPAN / 24f
                 val camY = (screens - 0.5f) * VIEW
-                val bandBase = (band * Tuning.BIOME_SPAN - 0.5f) * VIEW
                 Rec.clear()
-                backdrop.draw(android.graphics.Canvas(), W, camY, 12.5f, band, 0f, bandBase)
+                backdrop.draw(android.graphics.Canvas(), W, camY, 12.5f, band, 0f)
                 samples++
                 for ((i, op) in Rec.ops.withIndex()) {
                     if (op.kind == "color" || op.stroke || op.kind == "bitmap") continue

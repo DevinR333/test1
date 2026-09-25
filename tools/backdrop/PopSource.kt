@@ -49,7 +49,7 @@ fun main() {
             for (step in 0 until STEPS) {
                 val camY = bandBase + step * STEP
                 Rec.clear()
-                backdrop.draw(android.graphics.Canvas(), W, camY, 12.5f, band, 0f, bandBase)
+                backdrop.draw(android.graphics.Canvas(), W, camY, 12.5f, band, 0f)
                 val now = HashMap<String, Float>()
                 for (op in Rec.ops) {
                     if (op.stroke) continue
