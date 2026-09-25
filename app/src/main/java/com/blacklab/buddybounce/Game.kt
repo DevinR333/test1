@@ -1187,15 +1187,18 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         // each lap hands over a Buddy with one more head than the last. They queue like any
         // other unlock, which means the card is waiting on the game-over screen rather than
         // thrown over the top of a run in progress.
-        when (Palettes.lapOf(biome)) {
-            1 -> if (!save.owns(Outfits.TWO_HEAD_ID)) {
-                save.unlock(Outfits.TWO_HEAD_ID)
-                unlockPopup.queue(UnlockPopup.Kind.OUTFIT, Outfits.TWO_HEAD_ID, "ROUND TWO")
-            }
-            2 -> if (!save.owns(Outfits.CERBERUS_ID)) {
-                save.unlock(Outfits.CERBERUS_ID)
-                unlockPopup.queue(UnlockPopup.Kind.OUTFIT, Outfits.CERBERUS_ID, "ROUND THREE")
-            }
+        // AT OR PAST, not exactly. A rocket can carry him across two band boundaries inside one
+        // update, and a player who only ever reaches lap 3 would otherwise be handed the third
+        // head and never the second. Every world counts: the lap is that world's own band list
+        // come round again, so it is the same climb whichever one is selected.
+        val lap = Palettes.lapOf(biome)
+        if (lap >= 1 && !save.owns(Outfits.TWO_HEAD_ID)) {
+            save.unlock(Outfits.TWO_HEAD_ID)
+            unlockPopup.queue(UnlockPopup.Kind.OUTFIT, Outfits.TWO_HEAD_ID, "ROUND TWO")
+        }
+        if (lap >= 2 && !save.owns(Outfits.CERBERUS_ID)) {
+            save.unlock(Outfits.CERBERUS_ID)
+            unlockPopup.queue(UnlockPopup.Kind.OUTFIT, Outfits.CERBERUS_ID, "ROUND THREE")
         }
     }
 
