@@ -118,3 +118,27 @@ area and again across the cross-fade at 6.6 screens, from this tree and from the
 and compare.
 
     python3 tools/backdrop/pop.py <strip-dir> 20
+
+## The rule the backdrop is built on
+
+An area has ONE horizon, it never leaves, and it recedes.
+
+Three tries got here. Tiling a band's scenery up the sky gave "land, sky, land again" inside a
+single area. Laying it out once and letting it sweep out of the bottom gave exactly the same
+thing for a different reason - the land sank away, the middle of the area went bare, then the
+next area's land arrived out of nowhere. What works is a landscape: the base line is composed on
+the horizon where the area starts, the nearer the layer the lower it sits, it drifts down into
+the room it has above the bottom edge and never runs out of that room, and RANKS of it recede up
+the frame, each set back from the one in front, each squashed towards its own base line, each
+with its own layout because the rank number seeds the art, with a sheet of air painted between
+them. Areas change by cross-fading one horizon into another where it stands.
+
+Two things this breaks if you forget them:
+
+- A rank in the distance is drawn under a vertical scale of as little as a third, and that
+  shortens every downward fill's margin by the same factor. `deep()` has to clear the bottom of
+  the frame even after being squashed, or a fill shows its own underside as a line across the
+  screen. SeamCheck catches it.
+- Anything that closes on a straight line - a crest wider than the frame, a rect for a road or
+  for the sea - was previously hidden because it sat off-screen. Ranks bring it into the frame.
+  Every one of those is now a path with a wave in it.

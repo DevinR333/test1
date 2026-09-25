@@ -25,7 +25,7 @@ SOURCES = [
     "app/src/main/java/com/blacklab/buddybounce/render/BandArt.kt",
 ]
 
-CALL = re.compile(r"\bband\(camY,\s*([0-9.]+)f,\s*([A-Za-z0-9_.* ]+?)\s*(?:,\s*once\s*=[^)]*)?\)\s*\{")
+CALL = re.compile(r"\bband\(c, camY,\s*([0-9.]+)f,\s*([A-Za-z0-9_.* ]+?)\s*(?:,\s*once\s*=[^)]*)?\)\s*\{")
 LOCAL_H = re.compile(r"\bval h = Tuning\.VIEW_H(?:\s*\*\s*([0-9.]+)f)?")
 FUNC = re.compile(r"\bfun ([a-zA-Z]+)\(")
 
