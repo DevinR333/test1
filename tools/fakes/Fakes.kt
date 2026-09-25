@@ -1,5 +1,6 @@
 import android.content.Context
 import android.content.SharedPreferences
+import java.io.File
 
 // Shared by every headless probe that needs a real Save. Lives on its own so the probes do not
 // each carry their own copy.
@@ -31,5 +32,19 @@ class FakePrefs : SharedPreferences {
 
 class FakeCtx(private val prefs: FakePrefs) : Context() {
     override fun getSharedPreferences(name: String, mode: Int): SharedPreferences = prefs
+
+    /**
+     * A scratch cache, and not an optional nicety: Audio and Music bake their sounds into
+     * cacheDir the moment they are constructed, and the Android stub's getCacheDir returns null,
+     * which File resolves against the working directory - so any probe that builds a real Game
+     * dropped a megabyte of generated wavs into the repository root. Somewhere temporary instead.
+     */
+    private val cache: File by lazy {
+        val d = File(System.getProperty("java.io.tmpdir"), "buddyprobe-cache")
+        d.mkdirs()
+        d
+    }
+
+    override fun getCacheDir(): File = cache
 }
 
