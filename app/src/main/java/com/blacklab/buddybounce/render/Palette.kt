@@ -703,6 +703,9 @@ object Palettes {
         return bands[i]
     }
 
+    /** Which time round the cycle this band is: 0 the first, 1 the second, and so on. */
+    fun lapOf(biome: Int): Int = if (biome < 0) 0 else biome / current.bands.size
+
     /** Band name including the lap number, e.g. "Orbit II". */
     fun label(biome: Int): String {
         val lap = biome / current.bands.size

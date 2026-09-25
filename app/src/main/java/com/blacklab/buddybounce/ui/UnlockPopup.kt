@@ -106,7 +106,8 @@ class UnlockPopup(private val g: Game) {
      */
     private fun hapticLevel(e: Entry): Int = when {
         e.kind == Kind.SCENE -> 3
-        e.id == Outfits.HEAVEN_ONLY_ID || e.id == Trails.HEAVEN_ONLY_ID || e.id == Outfits.DEV_ID -> 3
+        e.id == Outfits.HEAVEN_ONLY_ID || e.id == Trails.HEAVEN_ONLY_ID ||
+            e.id in Outfits.SECRET_IDS -> 3
         e.kind == Kind.OUTFIT -> 2
         else -> 1
     }

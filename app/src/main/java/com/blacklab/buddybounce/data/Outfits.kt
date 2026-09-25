@@ -90,7 +90,9 @@ object Outfits {
         Outfit("anti", "Anti-Buddy", Rarity.LEGENDARY, "Same dog. Opposite dog."),
         Outfit(HEAVEN_ONLY_ID, "Good Boy Eternal", Rarity.LEGENDARY, "Wings, a halo, and absolutely nothing left to prove."),
         // Last of all, and absent from the list entirely until the back door hands it over.
-        Outfit(DEV_ID, "Developer Approved", Rarity.DEVELOPER, "Shipped it. Mostly.")
+        Outfit(DEV_ID, "Developer Approved", Rarity.DEVELOPER, "Shipped it. Mostly."),
+        Outfit(TWO_HEAD_ID, "Two-Headed Buddy", Rarity.DEVELOPER, "Round two. Twice the good boy."),
+        Outfit(CERBERUS_ID, "Cerberus Buddy", Rarity.DEVELOPER, "Round three. Guards the stairs.")
     )
 
     private val index: Map<String, Outfit> = ALL.associateBy { it.id }
@@ -108,6 +110,22 @@ object Outfits {
      */
     const val DEV_ID = "devapproved"
 
+    /** Earned by climbing into the second lap of the world cycle. Hidden like [DEV_ID]. */
+    const val TWO_HEAD_ID = "twohead"
+
+    /** Earned by climbing into the third lap. Hidden like [DEV_ID]. */
+    const val CERBERUS_ID = "cerberus"
+
+    /**
+     * Outfits that do not exist until they are earned.
+     *
+     * They are not in the prize pool, not counted toward completion, not part of what Heaven
+     * waits on, and not shown in the wardrobe at all - not even as a locked card. A "???" in the
+     * grid, or a total that counts one more outfit than the grid shows, advertises that there is
+     * something to go looking for, which is the one thing a secret cannot afford.
+     */
+    val SECRET_IDS = setOf(DEV_ID, TWO_HEAD_ID, CERBERUS_ID)
+
     fun byId(id: String): Outfit? = index[id]
 
     fun of(id: String): Outfit = index[id] ?: ALL[0]
@@ -117,7 +135,8 @@ object Outfits {
      * Heaven-only outfit, which is earned by reaching Heaven rather than won.
      */
     fun inRarity(r: Rarity): List<Outfit> =
-        ALL.filter { it.rarity == r && it.id != DEFAULT_ID && it.id != HEAVEN_ONLY_ID && it.id != DEV_ID }
+        ALL.filter { it.rarity == r && it.id != DEFAULT_ID && it.id != HEAVEN_ONLY_ID &&
+            it.id !in SECRET_IDS }
 
     /** How many outfits a completionist needs (the default collar doesn't count). */
     /**
@@ -127,11 +146,11 @@ object Outfits {
      * total that counts one more outfit than the grid shows, would advertise that there is
      * something hidden to go looking for - which defeats the point of a back door.
      */
-    fun visible(devOwned: Boolean): List<Outfit> =
-        if (devOwned) ALL else ALL.filter { it.id != DEV_ID }
+    fun visible(owned: (String) -> Boolean): List<Outfit> =
+        ALL.filter { it.id !in SECRET_IDS || owned(it.id) }
 
     /** Every outfit the wardrobe admits exists, Buddy's own collar included. */
-    fun collectableCount(devOwned: Boolean): Int = visible(devOwned).size
+    fun collectableCount(owned: (String) -> Boolean): Int = visible(owned).size
 
     /**
      * Is Buddy wearing the blessed look - translucent, with wings and a halo?

@@ -633,6 +633,10 @@ class World(worldWidth: Float, private val events: Events) {
                 if (e.dieT > 0.55f) e.alive = false
                 continue
             }
+            // Where it was before it moved this frame. A bee bobs and a crow flies, so testing
+            // "did his feet start above its crown" against the crown it has AFTER moving let a
+            // rising enemy climb into him and turn his own clean drop into a side-on hit.
+            val eWasY = e.y
             when (e.kind) {
                 EnemyKind.BEE -> {
                     e.x = e.baseX + sin(e.t * 1.7f + e.phase) * e.amp
@@ -654,31 +658,54 @@ class World(worldWidth: Float, private val events: Events) {
 
             if (b.dying) continue
 
+            // Kept up to date before anything here can end the frame, and whatever he is doing
+            // sideways - he may well drift over an enemy only after dropping past its head.
+            val wasAbove = e.aboveT > 0f
+            e.aboveT = if (b.y >= minOf(e.y, eWasY) + e.halfH - 2f) Tuning.STOMP_GRACE
+            else (e.aboveT - dt).coerceAtLeast(0f)
+
             val dx = wrapDelta(b.x, e.x, wrapW)
-            val dy = (b.y + Tuning.BUDDY_H * 0.5f) - e.y
-            val overlapX = abs(dx) < e.halfW + Tuning.BUDDY_HURT_HALF_W
-            val overlapY = abs(dy) < e.halfH + Tuning.BUDDY_HURT_HALF_H
-            if (!overlapX || !overlapY) continue
+            if (abs(dx) >= e.halfW + Tuning.BUDDY_HURT_HALF_W) continue
 
-            if (b.flying) {
-                killEnemy(e, if (EnemyKind.stompable(e.kind)) scoreFor(e.kind) else 0)
-                continue
-            }
+            // The crown it had BEFORE it moved this frame as well as after, whichever is lower.
+            // A bee bobs and a crow flies; testing only the crown it ends the frame with let one
+            // rise into him and turn his own clean drop into a side-on hit.
+            val crown = minOf(e.y, eWasY) + e.halfH
 
-            // A stomp is decided by where he CAME FROM, not by where one frame happened to
-            // leave him. Falling fast he can clear an enemy's whole body in a single step, so
-            // testing the current position alone turned a clean drop onto a head into a
-            // side-on hit and killed him - the "sometimes I stomp and still die" case. If his
-            // feet started the frame above the enemy's crown, the only way he can be
-            // overlapping it now is from above, whatever his velocity reads as afterwards.
-            val cameFromAbove = buddyPrevFoot >= e.y + e.halfH - 2f
-            val stomping = EnemyKind.stompable(e.kind) &&
-                (cameFromAbove || (b.vy < 0f && b.y > e.y + e.halfH * 0.15f))
-            if (stomping) {
+            // A STOMP IS HIS FEET SWEEPING DOWN THROUGH THAT CROWN. Not two boxes meeting.
+            //
+            // This is what made stomping a coin flip. His hurt box is 104 tall and starts 28
+            // above his feet, so against an enemy 88 tall the boxes do not overlap until his
+            // CENTRE is within 96 of the enemy's - by which point his feet are already below
+            // its middle and well past the crown. Every test that then asked "did he come from
+            // above?" was being asked a frame or two too late and answered no, so a clean drop
+            // was scored as a side-on hit and killed him. Falling fast he clears the whole body
+            // between one frame and the next and the boxes may never overlap at all.
+            //
+            // Asking about the feet, and asking on the frame they cross, is the same question
+            // at the moment it can still be answered.
+            // Falling onto one is a stomp, and the bar for "onto" is deliberately low: his feet
+            // anywhere above the bottom quarter of it. A bee swings 300 units across while it
+            // bobs, so it can come up under a slow drop that started perfectly clean, and being
+            // killed by an enemy that flew into you is the same unfairness from the other side.
+            // Rising into one, or drifting into one level with you, still kills you - which is
+            // where an enemy's threat belongs.
+            if (b.vy < 0f &&
+                (wasAbove || buddyPrevFoot >= crown - 2f || b.y > e.y - e.halfH * 0.3f)
+            ) {
                 killEnemy(e, scoreFor(e.kind))
                 b.vy = Tuning.ENEMY_STOMP_V
                 b.onBounce(0.8f)
                 events.onStomp(e)
+                continue
+            }
+
+            // Anything else is a hit, and only where the bodies really do overlap.
+            val dy = (b.y + Tuning.BUDDY_H * 0.5f) - e.y
+            if (abs(dy) >= e.halfH + Tuning.BUDDY_HURT_HALF_H) continue
+
+            if (b.flying) {
+                killEnemy(e, scoreFor(e.kind))
                 continue
             }
 
@@ -700,7 +727,8 @@ class World(worldWidth: Float, private val events: Events) {
     private fun scoreFor(kind: Int): Int = when (kind) {
         EnemyKind.BEE -> Tuning.SCORE_BEE
         EnemyKind.CROW -> Tuning.SCORE_CROW
-        else -> 0
+        // the two that only turn up high are worth more, and they are harder to land on
+        else -> Tuning.SCORE_CROW * 2
     }
 
     private fun killEnemy(e: Enemy, points: Int) {

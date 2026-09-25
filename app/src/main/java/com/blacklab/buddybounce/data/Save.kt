@@ -405,7 +405,7 @@ class Save(ctx: Context) {
         for (o in Outfits.ALL) {
             // Heaven's own outfit sits behind Heaven, and the developer skin is not a
             // collectable at all - neither can be required to open the world.
-            if (o.id == Outfits.HEAVEN_ONLY_ID || o.id == Outfits.DEV_ID) continue
+            if (o.id == Outfits.HEAVEN_ONLY_ID || o.id in Outfits.SECRET_IDS) continue
             if (!owns(o.id)) return false
         }
         for (t in Trails.collectable) if (!ownsTrail(t.id)) return false

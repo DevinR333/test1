@@ -235,6 +235,14 @@ object Tuning {
 
     // ---- scoring -----------------------------------------------------------------------------
     const val SCORE_PER_WU = 0.0625f      // 1 screen climbed = 160 points
+    /**
+     * How long after his feet were last above an enemy he still counts as coming down on it.
+     *
+     * Long enough to cover a bee bobbing up into him for a frame or two, short enough that
+     * drifting into one side-on a moment later is still a hit. See Enemy.aboveT.
+     */
+    const val STOMP_GRACE = 0.16f
+
     const val SCORE_BEE = 120
     const val SCORE_CROW = 150
 

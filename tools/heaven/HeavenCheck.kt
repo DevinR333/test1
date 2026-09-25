@@ -111,38 +111,52 @@ fun main() {
     check("1000 halos: outfit", s2c.owns(Outfits.HEAVEN_ONLY_ID), true)
     check("and the toggle comes with it", s2c.ghostUnlocked, true)
 
-    println("--- 7. the dev skin is hidden until the back door opens it ---")
+    println("--- 7. the secret skins are hidden until they are earned ---")
     val s3 = Save(FakeCtx(FakePrefs()))
-    check("absent from the wardrobe list", Outfits.visible(false).any { it.id == Outfits.DEV_ID }, false)
-    check("absent from the total", Outfits.collectableCount(false) == Outfits.collectableCount(true) - 1, true)
+    val none = { _: String -> false }
+    val all = { _: String -> true }
+    for (id in Outfits.SECRET_IDS) {
+        check("$id absent from the wardrobe list", Outfits.visible(none).any { it.id == id }, false)
+        check("$id there once earned", Outfits.visible { it == id }.any { it.id == id }, true)
+    }
+    check(
+        "absent from the total",
+        Outfits.collectableCount(none) ==
+            Outfits.collectableCount(all) - Outfits.SECRET_IDS.size,
+        true
+    )
     check("does not block Heaven", run {
-        for (o in Outfits.ALL) if (o.id != Outfits.HEAVEN_ONLY_ID && o.id != Outfits.DEV_ID) s3.unlock(o.id)
+        for (o in Outfits.ALL) if (o.id != Outfits.HEAVEN_ONLY_ID && o.id !in Outfits.SECRET_IDS) s3.unlock(o.id)
         for (t in Trails.collectable) s3.unlockTrail(t.id)
         for (sc in Scenes.unlockable) s3.unlockScene(sc.id)
         s3.hasUnlockedEverything()
     }, true)
     s3.unlock(Outfits.DEV_ID)
-    check("present once unlocked", Outfits.visible(true).any { it.id == Outfits.DEV_ID }, true)
-    check("and it is last in the list", Outfits.visible(true).last().id == Outfits.DEV_ID, true)
+    check("present once unlocked", Outfits.visible(all).any { it.id == Outfits.DEV_ID }, true)
+    check("and the secret skins are last in the list",
+        Outfits.visible(all).takeLast(Outfits.SECRET_IDS.size).all { it.id in Outfits.SECRET_IDS },
+        true)
     check("Anti-Buddy sits just before Eternal",
-        Outfits.visible(false).let { it[it.size - 2].id } == "anti", true)
+        Outfits.visible(none).let { it[it.size - 2].id } == "anti", true)
 
     println("--- 7b. counting, ordering and the Developer rarity ---")
     val fresh2 = Save(FakeCtx(FakePrefs()))
     check("a fresh save owns exactly one outfit (Buddy)",
-        Outfits.visible(false).count { fresh2.owns(it.id) } == 1, true)
+        Outfits.visible(none).count { fresh2.owns(it.id) } == 1, true)
     check("the total counts Buddy too",
-        Outfits.collectableCount(false) == Outfits.visible(false).size, true)
+        Outfits.collectableCount(none) == Outfits.visible(none).size, true)
     check("grid size and total agree",
-        Outfits.visible(false).size == Outfits.collectableCount(false), true)
-    check("the dev skin is one more, once owned",
-        Outfits.collectableCount(true) == Outfits.collectableCount(false) + 1, true)
+        Outfits.visible(none).size == Outfits.collectableCount(none), true)
+    check("the secret skins are that many more, once owned",
+        Outfits.collectableCount(all) ==
+            Outfits.collectableCount(none) + Outfits.SECRET_IDS.size, true)
     check("the dev skin has its own rarity",
         Outfits.of(Outfits.DEV_ID).rarity == Outfits.Rarity.DEVELOPER, true)
     check("which is white", Outfits.Rarity.DEVELOPER.tint == 0xFFFFFFFF.toInt(), true)
     check("and can never be rolled", Outfits.Rarity.DEVELOPER.weight == 0, true)
-    check("nothing else uses it",
-        Outfits.ALL.count { it.rarity == Outfits.Rarity.DEVELOPER } == 1, true)
+    check("only the secret skins use it",
+        Outfits.ALL.filter { it.rarity == Outfits.Rarity.DEVELOPER }
+            .map { it.id }.toSet() == Outfits.SECRET_IDS, true)
 
     println("--- 7c. the trails page is ordered by rarity, Heaven last ---")
     check("display holds every trail", Trails.display.size == Trails.ALL.size, true)

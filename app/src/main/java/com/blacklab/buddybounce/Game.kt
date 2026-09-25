@@ -476,7 +476,7 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
             // The Heaven outfit lives behind Heaven, so granting it here would be cheating in
             // the wrong direction - and it is excluded from the completion check anyway. The
             // developer skin has exactly one door, and this is not it.
-            if (o.id == Outfits.HEAVEN_ONLY_ID || o.id == Outfits.DEV_ID) continue
+            if (o.id == Outfits.HEAVEN_ONLY_ID || o.id in Outfits.SECRET_IDS) continue
             save.unlock(o.id)
         }
         for (sc in Scenes.unlockable) save.unlockScene(sc.id)
@@ -1181,6 +1181,22 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         if (biome <= 0) return
         biomeToastName = Palettes.label(biome)
         biomeToast = 2.6f
+
+        // Climbing past the last band starts the cycle again with a numeral after its name -
+        // Backyard II, then III. Getting there is its own achievement and nothing marked it, so
+        // each lap hands over a Buddy with one more head than the last. They queue like any
+        // other unlock, which means the card is waiting on the game-over screen rather than
+        // thrown over the top of a run in progress.
+        when (Palettes.lapOf(biome)) {
+            1 -> if (!save.owns(Outfits.TWO_HEAD_ID)) {
+                save.unlock(Outfits.TWO_HEAD_ID)
+                unlockPopup.queue(UnlockPopup.Kind.OUTFIT, Outfits.TWO_HEAD_ID, "ROUND TWO")
+            }
+            2 -> if (!save.owns(Outfits.CERBERUS_ID)) {
+                save.unlock(Outfits.CERBERUS_ID)
+                unlockPopup.queue(UnlockPopup.Kind.OUTFIT, Outfits.CERBERUS_ID, "ROUND THREE")
+            }
+        }
     }
 
     private fun haptic(ms: Long, amplitude: Int = -1) {
@@ -1276,7 +1292,7 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
      */
     fun ownedCount(): Int {
         val owned = save.ownedOutfits()
-        return Outfits.visible(save.owns(Outfits.DEV_ID)).count { owned.contains(it.id) }
+        return Outfits.visible(save::owns).count { owned.contains(it.id) }
     }
 
     fun ownedSceneCount() = save.ownedScenes().size

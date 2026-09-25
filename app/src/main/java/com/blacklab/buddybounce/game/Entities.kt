@@ -166,8 +166,16 @@ object EnemyKind {
     const val STORM = 2
     const val RIFT = 3
 
-    /** Can the player kill it by landing on its head? */
-    fun stompable(kind: Int): Boolean = kind == BEE || kind == CROW
+    /**
+     * Can the player kill it by landing on its head? All of them.
+     *
+     * The storm and the rift used to be exempt, and they appear past 20 and 30 screens, so the
+     * rule the player actually met was "landing on something sometimes kills it and sometimes
+     * kills me". Nothing on screen says which is which in the half second you have while
+     * falling onto it, and a rule you can only learn by dying to it is not difficulty. They are
+     * still lethal from the side and from below, which is where their threat belongs.
+     */
+    fun stompable(kind: Int): Boolean = true
 }
 
 class Enemy : Poolable {
@@ -187,6 +195,19 @@ class Enemy : Poolable {
     var dieT = 0f
     var seed = 0
 
+    /**
+     * How long Buddy still counts as having come at this enemy from above, in seconds.
+     *
+     * Falling, he clears a whole enemy between one frame and the next, and his hurt box only
+     * begins to overlap one well after his feet have gone past it - so by the time there is a
+     * collision to judge, "is he above it?" is already false. This is set while he IS above and
+     * runs down after, so the question can still be answered when it finally gets asked.
+     *
+     * A window rather than a flag because a bee bobs: one that rises into him for two frames
+     * could otherwise take the kill off a drop that was clean when it started.
+     */
+    var aboveT = 0f
+
     val halfW: Float
         get() = when (kind) {
             EnemyKind.BEE -> 52f
@@ -204,6 +225,7 @@ class Enemy : Poolable {
         }
 
     override fun reset() {
+        aboveT = 0f
         x = 0f; y = 0f; kind = EnemyKind.BEE; t = 0f; vx = 0f
         baseX = 0f; baseY = 0f; amp = 0f; phase = 0f; facing = 1f
         dying = false; dieT = 0f; seed = 0

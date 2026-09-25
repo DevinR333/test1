@@ -246,6 +246,28 @@ class BuddyArt(private val art: Art) {
             drawBody(c, pose, rim)
             drawLegs(c, pose, stretch, tuck, back = false)
             OutfitArt.drawBody(c, outfit, pose, rim)
+
+            // The extra heads, furthest back first so the one he steers with stays in front.
+            // They are the same head on the same neck, set back along the shoulders and a
+            // little smaller, which is all it takes to read as one dog with several of them
+            // rather than as several dogs.
+            val heads = when (outfit) {
+                Outfits.TWO_HEAD_ID -> 2
+                Outfits.CERBERUS_ID -> 3
+                else -> 1
+            }
+            for (h in heads - 1 downTo 1) {
+                c.save()
+                // each one further back, dipped a touch, and turned very slightly out
+                c.translate(-30f * h, 6f * h)
+                val sc = 1f - 0.08f * h
+                c.scale(sc, sc, BuddyGeom.HEAD_CX, BuddyGeom.HEAD_CY)
+                drawHead(c, pose, rim)
+                drawEar(c, pose)
+                OutfitArt.drawHead(c, outfit, pose, rim)
+                c.restore()
+            }
+
             drawHead(c, pose, rim)
             drawEar(c, pose)
             OutfitArt.drawHead(c, outfit, pose, rim)

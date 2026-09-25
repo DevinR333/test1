@@ -49,7 +49,7 @@ class WardrobeScreen(private val g: Game) {
      * never [Outfits.ALL] - the developer skin is absent from the list until it is earned, so the
      * two run out of step the moment it is unlocked.
      */
-    private fun outfits(): List<Outfits.Outfit> = Outfits.visible(g.outfitOwned(Outfits.DEV_ID))
+    private fun outfits(): List<Outfits.Outfit> = Outfits.visible(g::outfitOwned)
 
     fun draw(c: Canvas) {
         val ui = g.ui
@@ -75,7 +75,7 @@ class WardrobeScreen(private val g: Game) {
         }
         ui.text(c, "WARDROBE", g.worldW * 0.5f, ui.safeTop + 96f, 62f, Theme.TEXT, ui.title, true, ui.headerWidth(g.worldW))
         val counts = if (tab == Tab.OUTFITS) {
-            "${g.ownedCount()} of ${Outfits.collectableCount(g.outfitOwned(Outfits.DEV_ID))} outfits"
+            "${g.ownedCount()} of ${Outfits.collectableCount(g::outfitOwned)} outfits"
         } else {
             "${g.save.trailCount()} of ${Trails.count} trails"
         }
