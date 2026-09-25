@@ -284,7 +284,8 @@ object Tuning {
     fun biomeBlend(screens: Float): Float {
         val raw = screens / BIOME_SPAN
         val frac = raw - raw.toInt()
-        return clamp01((frac - (1f - BIOME_FADE)) / BIOME_FADE)
+        // eased, so the cross-fade does not start and stop with a kick
+        return smoothstep(0f, 1f, clamp01((frac - (1f - BIOME_FADE)) / BIOME_FADE))
     }
 
     /**

@@ -27,7 +27,7 @@ SOURCES = [
 
 CALL = re.compile(r"\bband\(c, camY,\s*([0-9.]+)f,\s*([A-Za-z0-9_.* ]+?)\s*(?:,\s*once\s*=[^)]*)?\)\s*\{")
 LOCAL_H = re.compile(r"\bval h = Tuning\.VIEW_H(?:\s*\*\s*([0-9.]+)f)?")
-FUNC = re.compile(r"\bfun ([a-zA-Z]+)\(")
+FUNC = re.compile(r"\n    (?:private )?fun ([a-zA-Z]+)\(")
 
 
 def scan():

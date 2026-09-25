@@ -42,8 +42,15 @@ class Backdrop(private val art: Art) {
     /** How much of the room below a scenery layer its whole drift uses up; see band(). */
     private val DRIFT = 0.82f
 
-    /** How many ranks of a scenery layer recede up the frame; see band(). */
-    private val RANKS = 3
+    /**
+     * How many ranks of a scenery layer recede up the frame; see band().
+     *
+     * Two. Three read as a REPEAT rather than as distance: a drift, a fence and a wire at the
+     * same width three times up the screen is exactly the thing this is meant to stop, however
+     * much air is painted between them. Near and far is a landscape; near, middle and far is a
+     * pattern.
+     */
+    private val RANKS = 2
 
     /** The air between those ranks, set per band by drawFlourish. */
     private var bandHaze = 0
@@ -101,20 +108,30 @@ class Backdrop(private val art: Art) {
         val daylight = 1f - lerpF(pal.starAlpha, next.starAlpha, blend)
         if (daylight <= 0.25f) return
         val col = ColorX.lerp(pal.sunColor, next.sunColor, blend)
-        val drift = (camY * 0.04f) % (worldW + 900f)
+        // The shafts drift sideways with the climb and wrap round. A wrap is a JUMP: the wedge
+        // walks off the right-hand side and the modulo drops it back at the left, so on every
+        // stage the whole sky appeared to shift sideways in one step. Each shaft is drawn twice,
+        // a full period apart, so the copy coming in from the left is already on screen by the
+        // time the first one leaves.
+        val period = worldW + 900f
+        val drift = (camY * 0.04f) % period
         paint.reset(); paint.isAntiAlias = true
         for (i in 0 until 4) {
-            val baseX = (Hash.f(i, 331) * (worldW + 900f) + drift) % (worldW + 900f) - 450f
+            val baseX = (Hash.f(i, 331) * period + drift) % period - 450f
             val wdt = 150f + Hash.f(i, 337) * 260f
             val lean = 320f + Hash.f(i, 341) * 240f
             paint.color = ColorX.withAlpha(col, 0.055f * daylight * (0.6f + Hash.f(i, 347) * 0.8f))
-            path.reset()
-            path.moveTo(baseX, -60f)
-            path.lineTo(baseX + wdt, -60f)
-            path.lineTo(baseX + wdt + lean, Tuning.VIEW_H + 60f)
-            path.lineTo(baseX + lean, Tuning.VIEW_H + 60f)
-            path.close()
-            c.drawPath(path, paint)
+            for (copy in 0 until 2) {
+                val bx = baseX - copy * period
+                if (bx + wdt + lean < -80f || bx > worldW + 80f) continue
+                path.reset()
+                path.moveTo(bx, -60f)
+                path.lineTo(bx + wdt, -60f)
+                path.lineTo(bx + wdt + lean, Tuning.VIEW_H + 60f)
+                path.lineTo(bx + lean, Tuning.VIEW_H + 60f)
+                path.close()
+                c.drawPath(path, paint)
+            }
         }
     }
 
@@ -159,7 +176,11 @@ class Backdrop(private val art: Art) {
         c: Canvas, worldW: Float, h: Float, biome: Int, blend: Float,
         pal: BiomePalette, next: BiomePalette
     ) {
-        val quantised = (blend * 24f).toInt() / 24f
+        // 256 steps, not 24. The sky is the largest thing on the screen and a biome change
+        // swaps its whole palette, so a twenty-fourth of that difference arriving in one frame
+        // is a visible jump - the dark-blue-to-bright-blue pop in Deep Blue. The gradient is
+        // still only rebuilt when the step changes, which is at most 256 times per transition.
+        val quantised = (blend * 256f).toInt() / 256f
         if (skyShader == null || skyKeyBiome != biome || skyKeyBlend != quantised || skyKeyHeight != h) {
             skyShader = LinearGradient(
                 0f, 0f, 0f, h,
@@ -283,7 +304,7 @@ class Backdrop(private val art: Art) {
         if (alpha <= 0.01f) return
         bandOrigin = origin
         bandArt.bandOrigin = origin
-        bandHaze = ColorX.withAlpha(pal.haze, 0.20f * alpha)
+        bandHaze = ColorX.withAlpha(pal.haze, 0.30f * alpha)
         bandArt.bandHaze = bandHaze
         when (pal.style) {
             BandStyle.HILLS -> hills(c, worldW, camY, pal, alpha, time)
@@ -416,7 +437,7 @@ class Backdrop(private val art: Art) {
             // rank number seeds the art. That is what fills the middle of an area: not the same
             // ground coming round again above a gap of sky, but more of the same country seen
             // further off, which is what climbing actually shows you.
-            val gap = 210f + p * 760f
+            val gap = 330f + p * 900f
             for (r in RANKS - 1 downTo 0) {
                 val y = baseY - r * gap
                 if (y > Tuning.VIEW_H + height) continue
@@ -441,7 +462,9 @@ class Backdrop(private val art: Art) {
         for (k in 2 downTo 0) {
             val idx = i0 + k
             val baseY = Tuning.VIEW_H - (idx * height - camY * p)
-            if (baseY < -height * 1.6f || baseY > Tuning.VIEW_H + height) continue
+            // generous: a repeat whose base line is past the frame can still have something
+            // tall or wide on screen, and culling it makes that thing vanish in one step
+            if (baseY < -height * 2.4f || baseY > Tuning.VIEW_H + height * 1.8f) continue
             curIdx = idx
             body(idx, baseY)
         }
@@ -776,18 +799,28 @@ class Backdrop(private val art: Art) {
                 )
                 // the line the whole rank stands on, so the drift and the trunks agree
                 val footY = baseY + (if (far) h * 0.10f else h * 0.24f)
+                // EVERY trunk first, then every tree. Drawn one tree at a time - trunk, then
+                // foliage - each new trunk was painted over the foliage of the tree beside it,
+                // so stumps stood in FRONT of the branches. And each trunk stopped a little
+                // under its own foot line, which the drift only sometimes reached, so they hung
+                // clear of the snow: they run past the bottom of the frame now and the drift is
+                // painted over them.
+                paint.color = ColorX.withAlpha(
+                    ColorX.shade(pal.nearInk, 0.55f), alpha * (if (far) 0.4f else 0.8f)
+                )
                 for (i in 0 until count) {
                     val key = idx * 29 + rank * 13 + i
                     val cx = (Hash.f(key, 131) * (worldW + 400f)) - 200f
                     val treeH = h * (if (far) 0.42f else 0.62f) * (0.72f + Hash.f(key, 133) * 0.56f)
                     val halfW = treeH * 0.30f
-
-                    // trunk
-                    paint.color = ColorX.withAlpha(
-                        ColorX.shade(pal.nearInk, 0.55f), alpha * (if (far) 0.4f else 0.8f)
-                    )
-                    rect.set(cx - halfW * 0.12f, footY - treeH * 0.16f, cx + halfW * 0.12f, footY + h * 0.05f)
+                    rect.set(cx - halfW * 0.12f, footY - treeH * 0.16f, cx + halfW * 0.12f, deep(footY))
                     c.drawRect(rect, paint)
+                }
+                for (i in 0 until count) {
+                    val key = idx * 29 + rank * 13 + i
+                    val cx = (Hash.f(key, 131) * (worldW + 400f)) - 200f
+                    val treeH = h * (if (far) 0.42f else 0.62f) * (0.72f + Hash.f(key, 133) * 0.56f)
+                    val halfW = treeH * 0.30f
 
                     // four tiers, each narrower and higher than the last
                     for (tier in 0 until 4) {

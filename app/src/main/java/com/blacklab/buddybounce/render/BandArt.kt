@@ -61,8 +61,8 @@ internal class BandArt(private val art: Art) {
         /** How much of the room below a scenery layer its whole drift uses up; see band(). */
         const val DRIFT = 0.82f
 
-        /** How many ranks of a scenery layer recede up the frame; see band(). */
-        const val RANKS = 3
+        /** How many ranks recede up the frame; two, not three - see Backdrop.RANKS. */
+        const val RANKS = 2
     }
 
     // -----------------------------------------------------------------------------------
@@ -157,7 +157,7 @@ internal class BandArt(private val art: Art) {
             // rank number seeds the art. That is what fills the middle of an area: not the same
             // ground coming round again above a gap of sky, but more of the same country seen
             // further off, which is what climbing actually shows you.
-            val gap = 210f + p * 760f
+            val gap = 330f + p * 900f
             for (r in RANKS - 1 downTo 0) {
                 val y = baseY - r * gap
                 if (y > Tuning.VIEW_H + height) continue
@@ -182,7 +182,9 @@ internal class BandArt(private val art: Art) {
         for (k in 2 downTo 0) {
             val idx = i0 + k
             val baseY = Tuning.VIEW_H - (idx * height - camY * p)
-            if (baseY < -height * 1.6f || baseY > Tuning.VIEW_H + height) continue
+            // generous: a repeat whose base line is past the frame can still have something
+            // tall or wide on screen, and culling it makes that thing vanish in one step
+            if (baseY < -height * 2.4f || baseY > Tuning.VIEW_H + height * 1.8f) continue
             curIdx = idx
             body(idx, baseY)
         }
@@ -585,18 +587,36 @@ internal class BandArt(private val art: Art) {
         paint.reset(); paint.isAntiAlias = true
         val h = Tuning.VIEW_H * 0.95f
 
+        // Trunks were flat green bars, all the same value, packed edge to edge: a striped wall
+        // rather than a forest. Each one is a cylinder now - a shaded side, the body, a lit
+        // side - and the three ranks are separated by value as well as by size.
+        fun trunk(
+            x: Float, w: Float, top: Float, bot: Float, body: Int, lit: Float, dark: Float, a: Float
+        ) {
+            paint.color = ColorX.withAlpha(ColorX.shade(body, dark), alpha * a)
+            rect.set(x, top, x + w, bot)
+            c.drawRect(rect, paint)
+            paint.color = ColorX.withAlpha(body, alpha * a)
+            rect.set(x + w * 0.22f, top, x + w, bot)
+            c.drawRect(rect, paint)
+            paint.color = ColorX.withAlpha(ColorX.tint(body, lit), alpha * a * 0.85f)
+            rect.set(x + w * 0.70f, top, x + w * 0.92f, bot)
+            c.drawRect(rect, paint)
+        }
+
         // FAR - a wall of haze-blue trunks receding into the forest
         band(c, camY, 0.1f, h, once = true) { idx, baseY ->
-            paint.color = ColorX.withAlpha(ColorX.tint(pal.farInk, 0.5f), alpha * 0.4f)
             var x = -40f
             var i = 0
             while (x < worldW + 40f) {
                 val key = idx * 83 + i
                 val w = 34f + Hash.f(key, 331) * 54f
-                rect.set(x, baseY - h * 1.35f, x + w, deep(baseY + h * 0.4f))
-                c.drawRect(rect, paint)
+                trunk(
+                    x, w, baseY - h * 1.35f, deep(baseY + h * 0.4f),
+                    ColorX.tint(pal.farInk, 0.5f), 0.3f, 0.82f, 0.4f
+                )
                 // wide gaps: packed shoulder to shoulder this rank was a flat wash, not a forest
-                x += w + 130f + Hash.f(key, 337) * 170f
+                x += w + 210f + Hash.f(key, 337) * 230f
                 i++
             }
         }
@@ -610,10 +630,11 @@ internal class BandArt(private val art: Art) {
                 // band into a solid slab with no sky left between the trees
                 val tx = (i / 3f + 0.02f + Hash.f(key, 341) * 0.16f) * worldW
                 val tw = 66f + Hash.f(key, 343) * 56f
-                paint.color = ColorX.withAlpha(ColorX.shade(pal.midInk, 0.9f), alpha * 0.7f)
-                rect.set(tx, baseY - h * 1.4f, tx + tw, deep(baseY + h * 0.2f))
-                c.drawRect(rect, paint)
-                ink.color = ColorX.withAlpha(pal.rimInk, alpha * 0.45f)
+                trunk(
+                    tx, tw, baseY - h * 1.4f, deep(baseY + h * 0.2f),
+                    ColorX.shade(pal.midInk, 0.9f), 0.26f, 0.76f, 0.72f
+                )
+                ink.color = ColorX.withAlpha(pal.rimInk, alpha * 0.5f)
                 ink.strokeWidth = 9f
                 path.reset()
                 path.moveTo(tx - 14f, baseY - h * 0.1f)
@@ -625,6 +646,17 @@ internal class BandArt(private val art: Art) {
                     y -= 160f
                 }
                 c.drawPath(path, ink)
+                // leaves hanging off the vine, so the gaps between trunks are not dead space
+                paint.color = ColorX.withAlpha(ColorX.tint(pal.midInk, 0.22f), alpha * 0.75f)
+                var ly = baseY - h * 0.25f
+                var lside = 1f
+                while (ly > baseY - h * 1.2f) {
+                    val lx = tx + tw * 0.5f + lside * (tw * 0.85f)
+                    rect.set(lx - 34f, ly - 20f, lx + 34f, ly + 20f)
+                    c.drawOval(rect, paint)
+                    lside = -lside
+                    ly -= 240f
+                }
             }
         }
 
@@ -635,6 +667,18 @@ internal class BandArt(private val art: Art) {
                 c, worldW, footY, h, h * 0.03f,
                 ColorX.withAlpha(ColorX.shade(pal.nearInk, 0.8f), alpha * 0.95f), idx * 5
             )
+            // a pool of canopy light on the litter, so the floor is not one flat value
+            paint.shader = LinearGradient(
+                0f, footY - 260f, 0f, footY + 200f,
+                intArrayOf(
+                    ColorX.withAlpha(pal.rimInk, 0f),
+                    ColorX.withAlpha(pal.rimInk, alpha * 0.14f),
+                    ColorX.withAlpha(pal.rimInk, 0f)
+                ),
+                floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP
+            )
+            c.drawRect(-40f, footY - 260f, worldW + 40f, footY + 200f, paint)
+            paint.shader = null
             for (i in 0 until 2) {
                 val key = idx * 97 + i
                 // two trees, spaced into their own halves of the screen. Three placed at random
@@ -642,11 +686,9 @@ internal class BandArt(private val art: Art) {
                 // band read as one dark slab instead of trunks you can see between.
                 val tx = (i * 0.5f + 0.06f + Hash.f(key, 347) * 0.24f) * worldW
                 val tw = 92f + Hash.f(key, 349) * 62f
-                // the trunk
-                paint.color = ColorX.withAlpha(pal.nearInk, alpha * 0.95f)
-                rect.set(tx, footY - h * 1.5f, tx + tw, footY - 40f)
-                c.drawRect(rect, paint)
+                trunk(tx, tw, footY - h * 1.5f, footY - 40f, pal.nearInk, 0.34f, 0.7f, 0.95f)
                 // three buttress fins flaring out to the floor
+                paint.color = ColorX.withAlpha(pal.nearInk, alpha * 0.95f)
                 for (fin in -1..1) {
                     if (fin == 0) continue
                     path.reset()
@@ -659,11 +701,26 @@ internal class BandArt(private val art: Art) {
                     path.close()
                     c.drawPath(path, paint)
                 }
-                // the lit edge down one side of the trunk
-                paint.color = ColorX.withAlpha(ColorX.tint(pal.nearInk, 0.3f), alpha * 0.5f)
-                rect.set(tx + tw * 0.74f, footY - h * 1.5f, tx + tw, footY - 40f)
-                c.drawRect(rect, paint)
+                // the lit rim down the sunlit side of the fins
+                paint.color = ColorX.withAlpha(ColorX.tint(pal.nearInk, 0.34f), alpha * 0.55f)
+                path.reset()
+                path.moveTo(tx + tw * 0.5f, footY - 500f)
+                path.quadTo(
+                    tx + tw * 1.18f, footY - 250f, tx + tw * 1.45f, footY + 20f
+                )
+                path.lineTo(tx + tw * 1.2f, footY + 20f)
+                path.quadTo(tx + tw * 0.98f, footY - 250f, tx + tw * 0.5f, footY - 460f)
+                path.close()
+                c.drawPath(path, paint)
             }
+            // a fallen log across the litter, lit along the top
+            val lx = Hash.f(idx * 103, 361) * (worldW - 420f) + 40f
+            paint.color = ColorX.withAlpha(ColorX.shade(pal.nearInk, 0.72f), alpha * 0.95f)
+            rect.set(lx, footY - 96f, lx + 420f, footY + 4f)
+            c.drawRoundRect(rect, 48f, 48f, paint)
+            paint.color = ColorX.withAlpha(ColorX.tint(pal.nearInk, 0.3f), alpha * 0.6f)
+            rect.set(lx + 20f, footY - 88f, lx + 400f, footY - 54f)
+            c.drawRoundRect(rect, 17f, 17f, paint)
             // ferns along the floor
             for (i in 0 until 7) {
                 val key = idx * 101 + i
@@ -952,7 +1009,8 @@ internal class BandArt(private val art: Art) {
             ink.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), alpha * 0.65f)
             for (i in 0 until 6) {
                 val key = idx * 47 + i
-                val gx = (Hash.f(key, 523) * worldW + time * (14f + Hash.f(key, 541) * 18f)) % (worldW + 120f) - 60f
+                val gp = worldW + 120f
+                val gx = (Hash.f(key, 523) * worldW + time * (14f + Hash.f(key, 541) * 18f)) % gp - 60f
                 val gy = baseY - h * (0.2f + Hash.f(key, 547) * 0.55f)
                 val s = 22f + Hash.f(key, 557) * 20f
                 val flap = sin(time * 2.2f + i) * 0.35f
@@ -998,7 +1056,8 @@ internal class BandArt(private val art: Art) {
             // sails
             for (i in 0 until 2) {
                 val key = idx * 59 + i
-                val sx = (Hash.f(key, 577) * worldW + time * 9f) % (worldW + 200f) - 100f
+                val sp = worldW + 200f
+                val sx = (Hash.f(key, 577) * worldW + time * 9f) % sp - 100f
                 val s = 60f + Hash.f(key, 587) * 50f
                 paint.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), alpha * 0.75f)
                 path.reset()
@@ -1086,13 +1145,18 @@ internal class BandArt(private val art: Art) {
                 val w = 240f + Hash.f(key, 613) * 260f
                 val tall = h * (0.26f + Hash.f(key, 617) * 0.28f)
                 val top = footY - tall
-                // body
-                paint.color = ColorX.withAlpha(pal.midInk, alpha * 0.9f)
+                // Body, run past the bottom of the frame rather than stopped on its own foot
+                // line. Stopped there, every butte ended in a straight cut with the canyon
+                // floor a different colour underneath it, and the whole rank read as slabs
+                // hanging in the air. The floor is painted over them further down.
+                paint.color = ColorX.withAlpha(pal.midInk, alpha)
                 path.reset()
                 path.moveTo(x, footY)
                 path.lineTo(x + w * 0.11f, top)
                 path.lineTo(x + w * 0.89f, top)
                 path.lineTo(x + w, footY)
+                path.lineTo(x + w, deep(footY))
+                path.lineTo(x, deep(footY))
                 path.close()
                 c.drawPath(path, paint)
                 // strata - alternating lighter courses across the butte
@@ -1116,13 +1180,14 @@ internal class BandArt(private val art: Art) {
                     path.close()
                     c.drawPath(path, paint)
                 }
-                // the shaded face
+                // the shaded face, also run past the bottom
                 paint.color = ColorX.withAlpha(ColorX.shade(pal.midInk, 0.7f), alpha * 0.5f)
                 path.reset()
                 path.moveTo(x + w * 0.72f, top)
                 path.lineTo(x + w * 0.89f, top)
                 path.lineTo(x + w, footY)
-                path.lineTo(x + w * 0.8f, footY)
+                path.lineTo(x + w, deep(footY))
+                path.lineTo(x + w * 0.8f, deep(footY))
                 path.close()
                 c.drawPath(path, paint)
                 // spaced apart, not overlapping: shoulder to shoulder they tiled into one
@@ -1147,7 +1212,10 @@ internal class BandArt(private val art: Art) {
                 val cx = Hash.f(key, 653) * worldW
                 val ch = 200f + Hash.f(key, 659) * 160f
                 paint.color = ColorX.withAlpha(ColorX.shade(pal.farInk, 0.85f), alpha * 0.9f)
-                rect.set(cx - 26f, footY - ch, cx + 26f, footY + 10f)
+                // buried to the floor's lowest point, not run to the bottom of the frame: the
+                // floor is painted BEFORE the cacti, so a cactus taken all the way down draws a
+                // pole over it
+                rect.set(cx - 26f, footY - ch, cx + 26f, footY + h * 0.03f)
                 c.drawRoundRect(rect, 26f, 26f, paint)
                 rect.set(cx - 96f, footY - ch * 0.66f, cx - 44f, footY - ch * 0.2f)
                 c.drawRoundRect(rect, 26f, 26f, paint)
@@ -1311,7 +1379,8 @@ internal class BandArt(private val art: Art) {
             paint.color = ColorX.withAlpha(ColorX.shade(pal.midInk, 0.65f), alpha * 0.55f)
             for (i in 0 until 4) {
                 val key = idx * 103 + i
-                val cx = (Hash.f(key, 757) * worldW + time * 6f) % (worldW + 160f) - 80f
+                val cp = worldW + 160f
+                val cx = (Hash.f(key, 757) * worldW + time * 6f) % cp - 80f
                 val s = 34f + Hash.f(key, 761) * 16f
                 // a camel: body, two humps, neck, legs
                 rect.set(cx - s * 1.4f, hz - s * 0.9f, cx + s * 1.1f, hz - s * 0.2f)
@@ -1446,21 +1515,26 @@ internal class BandArt(private val art: Art) {
             // BASE line it hung in clear air wherever the drift happened to be low, and three
             // fat strokes from one point read as a stray V sticker stuck on the sky. It is
             // rooted on the drift's actual surface now, and a tuft has more than three blades.
-            ink.color = ColorX.withAlpha(ColorX.shade(pal.nearInk, 0.75f), alpha * 0.5f)
+            ink.color = ColorX.withAlpha(ColorX.shade(pal.nearInk, 0.55f), alpha * 0.75f)
             for (i in 0 until 8) {
                 val key = idx * 29 + i
                 val sx = Hash.f(key, 809) * worldW
-                val sy = moundSurfaceY(worldW, baseY - h * 0.1f, 280f, idx, 4, sx) + 8f
-                val sh = 34f + Hash.f(key, 811) * 40f
-                ink.strokeWidth = 3.5f
-                for (b in 0 until 6) {
-                    val lean = (b - 2.5f) * 0.42f
-                    val len = sh * (0.6f + Hash.f(key * 5 + b, 817) * 0.7f)
+                // rooted a little UNDER the drift surface, so the blades come out of the snow
+                val sy = moundSurfaceY(worldW, baseY - h * 0.1f, 280f, idx, 4, sx) + 14f
+                val sh = 66f + Hash.f(key, 811) * 54f
+                ink.strokeWidth = 5f
+                for (b in 0 until 5) {
+                    // Splayed half a right angle each way, six of them from one point, these
+                    // read as a star stuck on the snow - the "sticker" - rather than as
+                    // anything growing. Grass stands up: a narrow fan, each blade a different
+                    // length, curving over only at the tip.
+                    val lean = (b - 2f) * 0.19f + (Hash.f(key * 7 + b, 823) - 0.5f) * 0.1f
+                    val len = sh * (0.55f + Hash.f(key * 5 + b, 817) * 0.8f)
                     path.reset()
-                    path.moveTo(sx, sy)
+                    path.moveTo(sx + lean * 12f, sy)
                     path.quadTo(
-                        sx + lean * len * 0.5f, sy - len * 0.65f,
-                        sx + lean * len * 1.15f, sy - len
+                        sx + lean * len * 0.3f, sy - len * 0.62f,
+                        sx + lean * len * 0.95f, sy - len
                     )
                     c.drawPath(path, ink)
                 }
@@ -1700,17 +1774,30 @@ internal class BandArt(private val art: Art) {
                 val w = 82f + Hash.f(key, 967) * 78f
                 val tall = h * (0.34f + Hash.f(key, 971) * 0.36f)
                 val twist = 0.7f + Hash.f(key, 977) * 1.1f
+                // A core behind the corkscrew. However far the slabs are offset, the top one
+                // always overhung on one side with nothing but sky under it, which is what a
+                // spire hanging in mid-air looks like.
+                paint.color = ColorX.withAlpha(ColorX.shade(pal.nearInk, 0.55f), alpha * 0.92f)
+                rect.set(x + w * 0.06f, footY - tall, x + w * 0.94f, deep(footY))
+                c.drawRoundRect(rect, w * 0.2f, w * 0.2f, paint)
+
                 // the tower is a stack of slabs, each offset by a sine so it corkscrews
                 val slabs = 11
                 for (s in slabs - 1 downTo 0) {
                     val t = s / (slabs - 1f)
                     val sy = footY - tall * t
-                    val off = sin(t * 6.2832f * twist + idx) * w * 0.34f
+                    // a third of the width of overhang left each slab standing over fresh air
+                    // on one side; the corkscrew still reads at a fifth, and every slab now
+                    // sits on the one below it
+                    // the twist eases to nothing at the foot and at the cap, so the tower
+                    // stands square on the floor and its top slab sits over its own core
+                    // instead of overhanging into clear air
+                    val off = sin(t * 6.2832f * twist + idx) * w * 0.24f * sin(t * 3.1416f)
                     paint.color = ColorX.withAlpha(
                         if (s % 2 == 0) ColorX.shade(pal.nearInk, 0.65f) else ColorX.tint(pal.midInk, 0.25f),
                         alpha * 0.92f
                     )
-                    rect.set(x + off, sy - tall / slabs * 1.25f, x + off + w, sy + 6f)
+                    rect.set(x + off, sy - tall / slabs * 1.25f, x + off + w, sy + tall / slabs * 0.5f)
                     c.drawRoundRect(rect, w * 0.25f, w * 0.25f, paint)
                 }
                 x += w + 190f + Hash.f(key, 983) * 220f
@@ -1771,8 +1858,10 @@ internal class BandArt(private val art: Art) {
         paint.reset(); paint.isAntiAlias = true
         val h = Tuning.VIEW_H * 0.9f
 
-        // FAR - big soft floss masses
-        band(c, camY, 0.1f, h) { idx, baseY ->
+        // FAR - big soft floss masses. Laid out once: tiled, a mass the width of a third of
+        // the screen blinked out whole the moment its repeat was culled, which is the largest
+        // single pop anywhere in the backdrop.
+        band(c, camY, 0.1f, h, once = true) { idx, baseY ->
             for (i in 0 until 4) {
                 val key = idx * 71 + i
                 val cx = Hash.f(key, 1013) * (worldW + 300f) - 150f
