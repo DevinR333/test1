@@ -59,6 +59,28 @@ A caution learned the hard way, three times over: the probe is only as honest as
 If a band looks empty in the dump, or a change makes no difference to it, suspect the stub
 before the art.
 
+## AtScore.kt - the frame a player actually photographed
+
+Every other probe here picks its own camera height, which is off from the real one by the start
+height and the camera anchor - about four screens by the time you are a few bands up. So a frame
+someone sends you cannot be reproduced from its score, and a fault they can see plainly sits
+somewhere the probe never looks. This climbs a REAL `World` to a score and draws with the camY,
+biome and blend `Game.drawWorld` would hand over.
+
+    java -cp out:<recording-stubs> AtScoreKt out.svg <sceneId> <score> [more scores...]
+
+It is the first thing to reach for when a bug arrives with a screenshot.
+
+## A blind spot worth knowing about
+
+`HoverCheck` looks for a silhouette with a flat foot and sky underneath. It cannot see a fault
+that is not a gap at all: a SEE-THROUGH rank stacks, because `band()` paints three repeats and
+each fill runs past the start of the next, so a frame is one repeat deep in places, two in
+others and three lower down. Every roofline then becomes a hard step in tone straight across the
+screen, which reads exactly like a tower cut off in mid-air - and nothing is actually floating,
+so every probe passes. The cure is to mix the haze into the colour and paint the rank solid; the
+Belfry's far rank is the worked example.
+
 ## SeamCheck.kt - the hard horizontal rules
 
 Ground, water, rock and buildings are all silhouettes filled DOWNWARD from their own line, and

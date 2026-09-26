@@ -1954,8 +1954,19 @@ internal class BandArt(private val art: Art) {
         // of every twelve - a skyline you meet once and then climb away from for the rest of the
         // band is the same emptiness by another route.
         val fh = h * 0.5f
+        // OPAQUE, with the haze mixed into the colour instead of taken out of the alpha.
+        //
+        // A see-through rank stacks: band() paints three repeats, each fill running well past
+        // the bottom of the next, so a frame is one repeat deep in places, two in others, three
+        // lower down - and every roofline is a hard step in tone straight across the screen.
+        // Those steps are what read as a tower cut off in mid-air and a roof with nothing under
+        // it: there is no gap in the picture, the shade simply changes where a repeat begins.
+        // Mixed into the sky once and painted solid, the overlaps are invisible.
+        val farColor = ColorX.withAlpha(
+            ColorX.lerp(pal.skyMid, ColorX.tint(pal.farInk, 0.3f), 0.4f), alpha
+        )
         band(camY, 0.09f, fh) { idx, baseY ->
-            paint.color = ColorX.withAlpha(ColorX.tint(pal.farInk, 0.3f), alpha * 0.4f)
+            paint.color = farColor
             val street = baseY + fh * 0.25f
             var x = -60f
             var i = 0
@@ -1983,8 +1994,14 @@ internal class BandArt(private val art: Art) {
         // its own tower now, complete with its spire, so nothing ever shows a shaft without a
         // top on it. Only the lowest one keeps its GROUND: a ground line per repeat is a fresh
         // horizon every screen, which is the ground-sky-ground the other bands were cured of.
+        // ONE tower, the nearest. Its shaft is more than two repeats tall, so drawing every
+        // repeat put two and sometimes three of them on screen at overlapping x - a single wide
+        // slab with two spires on it, and a bell and a clock sitting off to one side of it
+        // because they belong to a tower whose middle is somewhere else. The repeat that is
+        // dropped is always the one already below the frame, so nothing pops.
         val nearestTower = nearestIdx(camY, 0.2f, h)
         band(camY, 0.2f, h) { idx, baseY ->
+            if (idx != nearestTower) return@band
             val footY = baseY + h * 0.25f
             val tx = Hash.f(idx, 1301) * (worldW - 420f) + 210f
             val tw = 230f
@@ -2047,13 +2064,11 @@ internal class BandArt(private val art: Art) {
                 path.close()
                 c.drawPath(path, paint)
             }
-            // the ground the tower stands on - the lowest one only, see above
-            if (idx == nearestTower) {
-                ground(
-                    c, worldW, footY, h, h * 0.03f,
-                    ColorX.withAlpha(ColorX.shade(pal.nearInk, 0.8f), alpha * 0.95f), idx * 3
-                )
-            }
+            // the ground the tower stands on
+            ground(
+                c, worldW, footY, h, h * 0.03f,
+                ColorX.withAlpha(ColorX.shade(pal.nearInk, 0.8f), alpha * 0.95f), idx * 3
+            )
             // bats wheeling round it
             ink.color = ColorX.withAlpha(0xFF0C0C14.toInt(), alpha * 0.85f)
             for (i in 0 until 9) {
