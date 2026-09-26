@@ -58,21 +58,36 @@ fun main() {
                     if (e.y < w.camY) continue
                     enemiesSeen++
                     val deny = envelope(e.kind, e.halfW, e.amp)
-                    val window = 420f
-                    var dependable = 0
+                    val window = Tuning.JUMP_REACH
                     var clear = 0
                     for (p in w.platforms.items) {
                         if (!p.alive || p.isGround || p.state != 0) continue
+                        // Only what survives being landed on, and only what is ABOVE the enemy.
+                        // A breakable is a step, not a route, and a platform below the enemy is
+                        // where you already are. Both of those used to count, which is how the
+                        // two screenshots that started this passed every check.
                         if (p.kind == PlatKind.CRUMBLE || p.kind == PlatKind.FRAGILE) continue
-                        if (abs(p.y - e.y) > window) continue
-                        dependable++
+                        val up = p.y - e.y
+                        if (up <= 0f || up > window) continue
+                        // A platform that travels does not stay under anything - it comes out
+                        // the other side and you take it when it does.
+                        if (p.vx != 0f) { clear++; continue }
                         if (abs(p.x - e.baseX) > deny + p.w * 0.5f) clear++
                     }
-                    if (dependable > 0 && clear == 0) {
+                    if (clear == 0) {
                         blocked++
-                        if (blocked <= 8) {
-                            report.append("  %-14s seed %d  kind %d at (%.0f, %.0f) denies all %d\n"
-                                .format(scene.name, seed, e.kind, e.baseX, e.y, dependable))
+                        if (blocked <= 12) {
+                            val sb = StringBuilder()
+                            var slid = 0
+                            for (p in w.platforms.items) {
+                                if (!p.alive || p.isGround || p.state != 0) continue
+                                val up = p.y - e.y
+                                if (up <= 0f || up > window) continue
+                                if (p.vx != 0f) slid++
+                                sb.append(" k").append(p.kind).append("@").append(p.x.toInt())
+                            }
+                            report.append("  %-14s kind %d at (%.0f,%.0f) deny %.0f  moving %d  above:%s\n"
+                                .format(scene.name, e.kind, e.baseX, e.y, deny, slid, sb.toString()))
                         }
                     }
                 }

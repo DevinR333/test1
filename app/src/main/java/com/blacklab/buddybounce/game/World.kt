@@ -1114,20 +1114,32 @@ class World(worldWidth: Float, private val events: Events) {
      * all, the enemy is not what is blocking the way and moving it would not help.
      */
     private fun leavesAWayUp(x: Float, halfW: Float, y: Float, gap: Float): Boolean {
-        val window = maxOf(gap * 1.1f, ROUTE_WINDOW)
-        var dependable = 0
+        val window = ROUTE_WINDOW
         var clear = 0
         for (p in platforms.items) {
             if (!p.alive || p.isGround || p.state != 0) continue
+            // ONLY WHAT IS STILL THERE AFTER YOU TOUCH IT. A crumble or a fragile is a step,
+            // not a route: use it once and it is gone, and if what it led to was the enemy then
+            // the only way on was always through the enemy. This is the case that was getting
+            // through - the rule used to wave an enemy past whenever the platforms around it
+            // were all breakable, on the grounds that it was not the enemy doing the blocking.
+            // It is. Break the step and there is nothing else.
             if (p.kind == PlatKind.CRUMBLE || p.kind == PlatKind.FRAGILE) continue
-            if (abs(p.y - y) > window) continue
-            dependable++
+            // ...and ONLY WHAT IS ABOVE IT. The way up goes through the row above the enemy, so
+            // that is the row that has to have something clear in it. A platform below the
+            // enemy is where you are standing, not somewhere you can get to.
+            val up = p.y - y
+            if (up <= 0f || up > window) continue
+            // A platform that travels is a route whatever it is under at this instant: it
+            // carries on out from under the enemy and you take it when it comes. Judging one by
+            // where it happens to be is judging a moving thing by a photograph.
+            if (p.vx != 0f) { clear++; continue }
             // Landing room is the platform's own width less what the enemy reaches over, plus
             // half a dog either side - a strip you can only just squeeze onto is not a route.
             val reach = halfW + p.w * 0.5f + Tuning.BUDDY_HURT_HALF_W * 0.5f
             if (abs(wrapDelta(x, p.x, wrapW)) > reach) clear++
         }
-        return dependable == 0 || clear > 0
+        return clear > 0
     }
 
     /**
@@ -1218,12 +1230,14 @@ class World(worldWidth: Float, private val events: Events) {
 
     /** Picks a platform centre, nudged away from [avoid] when asked. */
     /**
-     * How far up and down an enemy is considered to be standing in the way.
+     * How far above an enemy still counts as the route it is standing in.
      *
-     * A little over one jump: platforms further off than this are a different decision, and
-     * being denied one of them is not being denied the route.
+     * Exactly one plain jump - [Tuning.JUMP_REACH] - because that is what he can reach from
+     * where he is. It used to be 420, a number picked by eye, while the checks that used it
+     * quietly scaled it by the row gap; the game and the probe watching it were then testing
+     * two different things, and the gap between them is where the impossible screens lived.
      */
-    private val ROUTE_WINDOW = 420f
+    private val ROUTE_WINDOW = Tuning.JUMP_REACH
 
     /** Counts down to the next sweep of the enemies above the view. See [unblockEnemies]. */
     private var routeSweep = 0f

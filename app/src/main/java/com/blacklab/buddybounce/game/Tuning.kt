@@ -26,6 +26,15 @@ object Tuning {
     // ---- vertical physics ------------------------------------------------------------------
     const val GRAVITY = 6250f
     const val JUMP_V = 3250f              // apex = v^2/2g = 845 wu = 33% of the view
+
+    /**
+     * How far above himself a plain jump gets him - the apex of [JUMP_V] under [GRAVITY].
+     *
+     * This is the reach that decides whether a platform is somewhere he can actually get to,
+     * and so whether an enemy standing over it is standing over the route. Derived rather than
+     * typed, so it cannot drift away from the jump it describes.
+     */
+    const val JUMP_REACH = JUMP_V * JUMP_V / (2f * GRAVITY)
     const val TERMINAL_V = 5400f
     const val PHYSICS_STEP = 1f / 240f
     const val MAX_SUBSTEPS = 8
