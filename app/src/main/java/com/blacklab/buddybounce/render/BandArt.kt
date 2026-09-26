@@ -1942,20 +1942,32 @@ internal class BandArt(private val art: Art) {
         paint.reset(); paint.isAntiAlias = true
         val h = Tuning.VIEW_H * 1.1f
 
-        // FAR - a saw of distant rooftops and small spires
-        band(camY, 0.09f, h) { idx, baseY ->
+        // FAR - a distant town: steep roofs and small spires, all standing on one street
+        //
+        // These used to be given a top between half and nine tenths of a BAND above their base
+        // line and filled downward from there, which made each one three screens tall. Climbing
+        // past, you spent most of the band inside the middle of one - a pale vertical bar with
+        // no roof above it and no footing below it, which is a tower connected to nothing. The
+        // height of a building has to be the height of a BUILDING, and they all have to stand
+        // on the same line, or there is no skyline to read.
+        // Half the band's height, so the town comes round every five and a half screens instead
+        // of every twelve - a skyline you meet once and then climb away from for the rest of the
+        // band is the same emptiness by another route.
+        val fh = h * 0.5f
+        band(camY, 0.09f, fh) { idx, baseY ->
             paint.color = ColorX.withAlpha(ColorX.tint(pal.farInk, 0.3f), alpha * 0.4f)
+            val street = baseY + fh * 0.25f
             var x = -60f
             var i = 0
             while (x < worldW + 60f) {
                 val key = idx * 139 + i
                 val w = 150f + Hash.f(key, 1289) * 170f
-                val top = baseY - h * (0.5f + Hash.f(key, 1291) * 0.4f)
-                rect.set(x, top, x + w, deep(baseY + h))
+                val top = street - (300f + Hash.f(key, 1291) * 330f)
+                rect.set(x, top, x + w, deep(street))
                 c.drawRect(rect, paint)
                 path.reset()
                 path.moveTo(x - 10f, top)
-                path.lineTo(x + w * 0.5f, top - 130f - Hash.f(key, 1297) * 150f)
+                path.lineTo(x + w * 0.5f, top - 100f - Hash.f(key, 1297) * 110f)
                 path.lineTo(x + w + 10f, top)
                 path.close()
                 c.drawPath(path, paint)
@@ -1964,15 +1976,25 @@ internal class BandArt(private val art: Art) {
             }
         }
 
-        // MID+NEAR - the tower itself
-        band(camY, 0.2f, h, once = firstBand) { idx, baseY ->
+        // MID+NEAR - the tower itself, one per repeat
+        //
+        // It used to be drawn once, in the lowest repeat only, so for most of the band the only
+        // thing in the sky was the far rank - and the band is called Belfry. Every repeat gets
+        // its own tower now, complete with its spire, so nothing ever shows a shaft without a
+        // top on it. Only the lowest one keeps its GROUND: a ground line per repeat is a fresh
+        // horizon every screen, which is the ground-sky-ground the other bands were cured of.
+        val nearestTower = nearestIdx(camY, 0.2f, h)
+        band(camY, 0.2f, h) { idx, baseY ->
             val footY = baseY + h * 0.25f
             val tx = Hash.f(idx, 1301) * (worldW - 420f) + 210f
             val tw = 230f
             val top = footY - h * 0.95f
 
+            // The shaft runs PAST its own foot, so its bottom edge never shows. Only the lowest
+            // repeat has ground under it; the ones above would otherwise end on a hard flat line
+            // in open sky, which is the floating tower this band was reported for.
             paint.color = ColorX.withAlpha(pal.midInk, alpha * 0.95f)
-            rect.set(tx - tw, top, tx + tw, footY)
+            rect.set(tx - tw, top, tx + tw, deep(footY))
             c.drawRect(rect, paint)
             // the spire
             path.reset()
@@ -1983,7 +2005,7 @@ internal class BandArt(private val art: Art) {
             c.drawPath(path, paint)
             // the lit face
             paint.color = ColorX.withAlpha(ColorX.tint(pal.midInk, 0.2f), alpha * 0.5f)
-            rect.set(tx - tw, top, tx - tw * 0.45f, footY)
+            rect.set(tx - tw, top, tx - tw * 0.45f, deep(footY))
             c.drawRect(rect, paint)
             // the arched belfry opening, with the bell hanging in it
             // an arch: round at the head, straight down the sides. A fully rounded rect the
@@ -2025,11 +2047,13 @@ internal class BandArt(private val art: Art) {
                 path.close()
                 c.drawPath(path, paint)
             }
-            // the ground the tower stands on
-            ground(
-                c, worldW, footY, h, h * 0.03f,
-                ColorX.withAlpha(ColorX.shade(pal.nearInk, 0.8f), alpha * 0.95f), idx * 3
-            )
+            // the ground the tower stands on - the lowest one only, see above
+            if (idx == nearestTower) {
+                ground(
+                    c, worldW, footY, h, h * 0.03f,
+                    ColorX.withAlpha(ColorX.shade(pal.nearInk, 0.8f), alpha * 0.95f), idx * 3
+                )
+            }
             // bats wheeling round it
             ink.color = ColorX.withAlpha(0xFF0C0C14.toInt(), alpha * 0.85f)
             for (i in 0 until 9) {
