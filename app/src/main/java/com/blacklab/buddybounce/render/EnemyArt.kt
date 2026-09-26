@@ -1113,6 +1113,12 @@ class EnemyArt(private val art: Art) {
 
     private fun hiveSwarm(c: Canvas, t: Float, a: Float) {
         art.drawGlow(c, 0f, 0f, 220f, 0xFF3A2A12.toInt(), 0.36f * a)
+
+        // The far half of the circuit goes BEHIND the hive. The whole swarm used to be painted
+        // after it, so every bee was in front and the figure of eight read as a flat scribble
+        // over the front of the hive rather than as something going round it.
+        swarm(c, t, a, front = false)
+
         fill(0xFFCFA24A.toInt(), a * 0.9f)                   // the hive itself
         for (i in 0 until 4) {
             val k = 1f - i * 0.2f
@@ -1122,16 +1128,32 @@ class EnemyArt(private val art: Art) {
         fill(0xFF2A1A08.toInt(), a)
         r.set(-16f, 28f, 16f, 52f)
         c.drawOval(r, p)
-        // the swarm around it - that is the part that hurts
+
+        swarm(c, t, a, front = true)
+    }
+
+    /**
+     * Half the swarm - the near half or the far half, so the hive can be painted between them.
+     *
+     * The circuit is a circle in x and depth with the height wobbling on its own period, which
+     * is what makes the figure of eight. Depth is therefore just sin of the same phase: positive
+     * is the side nearest the viewer, negative is round the back. The far ones are drawn a shade
+     * smaller and dimmer, so the half that survives the hive reads as distance rather than as
+     * bees that have simply gone missing.
+     */
+    private fun swarm(c: Canvas, t: Float, a: Float, front: Boolean) {
         for (i in 0 until 14) {
             val ph = t * 2.6f + i * 0.45f
+            if ((sin(ph) >= 0f) != front) continue
             val d = 70f + sin(ph * 1.7f) * 34f
             val x = cos(ph) * d
             val y = sin(ph * 1.3f) * d * 0.66f
-            fill(0xFF2A2B32.toInt(), a * 0.95f)
-            c.drawCircle(x, y, 6f, p)
-            fill(0xFFF2C14E.toInt(), a * 0.95f)
-            c.drawCircle(x + 1.5f, y, 3.6f, p)
+            val k = if (front) 1f else 0.82f
+            val fa = a * if (front) 0.95f else 0.72f
+            fill(0xFF2A2B32.toInt(), fa)
+            c.drawCircle(x, y, 6f * k, p)
+            fill(0xFFF2C14E.toInt(), fa)
+            c.drawCircle(x + 1.5f * k, y, 3.6f * k, p)
         }
     }
 

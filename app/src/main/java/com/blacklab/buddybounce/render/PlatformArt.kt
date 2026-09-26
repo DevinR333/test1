@@ -6,6 +6,7 @@ import android.graphics.Path
 import android.graphics.RectF
 import com.blacklab.buddybounce.game.Hash
 import com.blacklab.buddybounce.game.Platform
+import com.blacklab.buddybounce.game.Tuning
 import kotlin.math.sin
 
 /**
@@ -63,6 +64,18 @@ object PlatformArt {
     // -----------------------------------------------------------------------------------
     // shared helpers
     // -----------------------------------------------------------------------------------
+
+    /**
+     * How many slats, segments, spikes or bumps fit along this platform.
+     *
+     * Off the platform's OWN size, never off the squashed size it is being drawn at. A plank
+     * gets 28% shorter and 5% wider the instant it is landed on, so the w/h it is drawn with
+     * jumps by nearly half - and a count taken from that jumps with it. That is the extra line
+     * appearing on a platform the moment you touch it and vanishing again a beat later: the
+     * chocolate bar went from eight segments to thirteen and back on every single bounce.
+     */
+    private fun countOf(plat: Platform, per: Float, lo: Int, hi: Int): Int =
+        (plat.w / (Tuning.PLAT_H * per)).toInt().coerceIn(lo, hi)
 
     /** Fills the footprint and outlines it, so every design starts from the same solid base. */
     private fun slab(c: Canvas, l: Float, t: Float, rt: Float, b: Float, rad: Float, col: Int, a: Float) {
@@ -122,7 +135,7 @@ object PlatformArt {
     ) {
         slab(c, left, top + h * 0.2f, right, top + h, h * 0.3f, ColorX.shade(body, 0.62f), a)
         // logs run ACROSS the platform, so the raft reads as built rather than cast
-        val n = (w / (h * 1.05f)).toInt().coerceIn(3, 14)
+        val n = countOf(plat, 1.05f, 3, 14)
         val lw = w / n
         for (i in 0 until n) {
             val lx = left + i * lw
@@ -165,7 +178,7 @@ object PlatformArt {
         ink.strokeWidth = h * 0.09f
         ink.color = ColorX.withAlpha(pal.platAccent, a * 0.95f)
         path.reset()
-        val segs = (w / (h * 1.6f)).toInt().coerceIn(2, 9)
+        val segs = countOf(plat, 1.6f, 2, 9)
         var x = left + h * 0.4f
         val step = (w - h * 0.8f) / segs
         path.moveTo(x, top + h * 0.6f)
@@ -200,7 +213,7 @@ object PlatformArt {
     ) {
         // icicles first, so the shelf sits over their roots
         p.color = ColorX.withAlpha(ColorX.tint(body, 0.25f), a * 0.9f)
-        val spikes = (w / (h * 0.9f)).toInt().coerceIn(2, 12)
+        val spikes = countOf(plat, 0.9f, 2, 12)
         for (i in 0 until spikes) {
             val sx = left + h * 0.4f + i * ((w - h * 0.8f) / (spikes - 1).coerceAtLeast(1))
             val len = h * (0.3f + Hash.f(plat.seed + i, 83) * 0.75f)
@@ -218,7 +231,7 @@ object PlatformArt {
         path.reset()
         path.moveTo(left, top + h * 0.34f)
         var sx = left
-        val lobes = (w / (h * 1.4f)).toInt().coerceIn(2, 10)
+        val lobes = countOf(plat, 1.4f, 2, 10)
         val lw = w / lobes
         for (i in 0 until lobes) {
             path.quadTo(sx + lw * 0.5f, top - h * (0.02f + Hash.f(plat.seed + i, 89) * 0.16f), sx + lw, top + h * 0.2f)
@@ -257,7 +270,7 @@ object PlatformArt {
 
         slab(c, left, top, right, top + h, h * 0.1f, ColorX.shade(body, 0.55f), a)
         // broken into angular blocks rather than one smooth bar
-        val n = (w / (h * 1.3f)).toInt().coerceIn(2, 10)
+        val n = countOf(plat, 1.3f, 2, 10)
         val bw = w / n
         for (i in 0 until n) {
             val bx = left + i * bw
@@ -355,7 +368,7 @@ object PlatformArt {
         path.reset()
         path.moveTo(left + h * 0.1f, top + h * 0.24f)
         var mx = left + h * 0.1f
-        val bumps = (w / (h * 0.8f)).toInt().coerceIn(3, 16)
+        val bumps = countOf(plat, 0.8f, 3, 16)
         val bw = (w - h * 0.5f) / bumps
         for (i in 0 until bumps) {
             path.quadTo(mx + bw * 0.5f, top - h * (0.02f + Hash.f(plat.seed + i, 113) * 0.14f), mx + bw, top + h * 0.16f)
@@ -387,7 +400,7 @@ object PlatformArt {
     ) {
         slab(c, left, top, right, top + h, h * 0.12f, ColorX.shade(body, 0.6f), a)
         // the squares, each with its own bevel - the one unmistakable chocolate cue
-        val n = (w / (h * 0.95f)).toInt().coerceIn(2, 12)
+        val n = countOf(plat, 0.95f, 2, 12)
         val sw = w / n
         for (i in 0 until n) {
             val sx = left + i * sw
@@ -407,7 +420,7 @@ object PlatformArt {
         path.moveTo(left, top + h * 0.02f)
         path.lineTo(right, top + h * 0.02f)
         var dx = right
-        val drips = (w / (h * 1.2f)).toInt().coerceIn(2, 9)
+        val drips = countOf(plat, 1.2f, 2, 9)
         val dw = w / drips
         for (i in 0 until drips) {
             path.quadTo(dx - dw * 0.5f, top + h * (0.18f + Hash.f(plat.seed + i, 127) * 0.32f), dx - dw, top + h * 0.1f)
@@ -482,7 +495,7 @@ object PlatformArt {
     ) {
         // cloud underneath, so it floats instead of hanging
         p.color = ColorX.withAlpha(0xFFFFFFFF.toInt(), a * 0.5f)
-        val puffs = (w / (h * 1.1f)).toInt().coerceIn(2, 10)
+        val puffs = countOf(plat, 1.1f, 2, 10)
         for (i in 0 until puffs) {
             val px = left + h * 0.3f + i * ((w - h * 0.6f) / (puffs - 1).coerceAtLeast(1))
             c.drawCircle(px, top + h * 0.92f, h * (0.3f + Hash.f(plat.seed + i, 131) * 0.22f), p)
