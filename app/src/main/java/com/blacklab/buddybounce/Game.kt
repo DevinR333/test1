@@ -344,6 +344,7 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         bankedCoinsThisRun = 0
         continuedStamp = 0L
         lastRank = -1; lastNewBest = false
+        lapsPaidThisRun = 0
         chosenPowerup = null
         pendingPowerup = null
         lastCountdownTick = -1
@@ -624,6 +625,15 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
      * time, and each press spends another one from the shelf.
      */
     var secondLifeActive = false
+
+    /**
+     * The highest lap this RUN has already been paid for, so one round pays once.
+     *
+     * Per run, not per save: the purse is a reward for making the climb, and making it again
+     * next run earns it again. Reset by [startRun] and deliberately NOT by a Second Life, which
+     * reopens the same run rather than starting a new one.
+     */
+    private var lapsPaidThisRun = 0
 
     /** Reveal cards for the unlocks that do not come out of the prize machine. */
     val unlockPopup = UnlockPopup(this)
@@ -1130,9 +1140,22 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         // Height coins are the quiet half of the economy - they accrue with the climb and you
         // never see them until the run ends. Flashing the increment over the counter is the
         // whole point: you find out WHEN you earned them, and how many.
+        flashCoins(gained, 0.35f)
+    }
+
+    /**
+     * The "+N" over the coin counter, and the chink that goes with it.
+     *
+     * Everything paid mid-run that was not picked up off a platform comes through here, so a
+     * height threshold and a lap purse read as the same kind of event - a receipt for something
+     * you just earned - and two of them landing together add up rather than cutting each other
+     * off.
+     */
+    private fun flashCoins(gained: Int, volume: Float) {
+        if (gained <= 0) return
         coinFlash = if (coinFlashT > 0f) coinFlash + gained else gained
         coinFlashT = COIN_FLASH_TIME
-        audio.play(Audio.COIN, 0.35f, 1.3f)
+        audio.play(Audio.COIN, volume, 1.3f)
     }
 
     override fun onSilverCoin(x: Float, y: Float) {
@@ -1227,7 +1250,23 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         // inside one update, and a card queued while the run is live cannot be shown yet. A
         // number on disk survives all of that, and [settleLapSkins] pays it out from three
         // places - here, the end of the run, and the next launch.
-        save.highestLap = Palettes.lapOf(biome)
+        val lap = Palettes.lapOf(biome)
+
+        // The purse for going round again, paid on the band that first carries the new numeral -
+        // the same moment its name comes up on screen.
+        //
+        // Counted in laps rather than triggered on one, because a rocket can carry him across
+        // two boundaries inside a single update and two rounds is two purses. It pays into the
+        // RUN's coins, so it lands on the HUD counter straight away and banks with everything
+        // else when the run ends.
+        if (lap > lapsPaidThisRun) {
+            val purse = (lap - lapsPaidThisRun) * Tuning.LAP_COINS
+            lapsPaidThisRun = lap
+            world.grantLapCoins(purse)
+            flashCoins(purse, 0.8f)
+        }
+
+        save.highestLap = lap
         settleLapSkins()
     }
 

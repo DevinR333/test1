@@ -224,6 +224,13 @@ object Tuning {
     const val POWERUP_OVERFLOW_REFUND = 2
     /** Points per coin awarded at the end of a run. */
     const val SCORE_PER_BONUS_COIN = 300
+
+    /**
+     * Paid once for every time round the band cycle - the climb from "Backyard" to "Backyard II"
+     * and every round after that. A flat purse, not scaled by the coin doubler: it is a prize
+     * for getting there, and the same prize whichever round it is.
+     */
+    const val LAP_COINS = 100
     /** In Heaven the ground currency is the ONLY currency, so it is placed more often. */
     const val HALO_SPACING_SCALE = 0.34f
 

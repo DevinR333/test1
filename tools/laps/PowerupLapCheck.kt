@@ -6,6 +6,7 @@ import com.blacklab.buddybounce.data.Powerups
 import com.blacklab.buddybounce.data.Save
 import com.blacklab.buddybounce.game.Flight
 import com.blacklab.buddybounce.game.Tuning
+import com.blacklab.buddybounce.game.World
 import com.blacklab.buddybounce.render.Palettes
 import com.blacklab.buddybounce.render.Scenes
 
@@ -23,7 +24,11 @@ import com.blacklab.buddybounce.render.Scenes
  * steers here, and ninety screens of no input is its own way to die. The power-up under test is
  * live the whole way up regardless, which is what is being checked - that whatever else is going
  * on, reaching the round still pays.
+ *
+ * Every case checks the LAP PURSE as well as the skins: past the third round is two rounds gone
+ * by, so exactly two purses should have been paid, whatever carried him there.
  */
+private val TWO_LAPS = 2 * Tuning.LAP_COINS
 private const val DT = 1f / 60f
 
 private var failures = 0
@@ -120,6 +125,8 @@ fun main() {
         r.fallToDeath()
         check("  $label: climbed past round three", up)
         check("  $label: both skins, and still there next launch", r.bothOwned && r.bothOwnedAfterReload)
+        check("  $label: two lap purses (${r.game.world.lapCoins} coins)",
+            r.game.world.lapCoins == TWO_LAPS)
     }
 
     println("\n--- the flights that only turn up mid-level ---")
@@ -133,7 +140,8 @@ fun main() {
             r.game.update(DT)
             f++
         }
-        check("  on a $name the whole way: both skins", r.bothOwned && r.bothOwnedAfterReload)
+        check("  on a $name the whole way: both skins and two purses",
+            r.bothOwned && r.bothOwnedAfterReload && r.game.world.lapCoins == TWO_LAPS)
     }
 
     println("\n--- a Second Life spent on the way up, twice, on the infinite back door ---")
@@ -157,6 +165,8 @@ fun main() {
     check("  climbed past round three after two continues", sl.climbTo(lapTwoScreens()))
     sl.fallToDeath()
     check("  both skins, and still there next launch", sl.bothOwned && sl.bothOwnedAfterReload)
+    check("  two purses across the continues (${sl.game.world.lapCoins} coins)",
+        sl.game.world.lapCoins == TWO_LAPS)
 
     println("\n--- every world, climbed to its own third round ---")
     for (scene in Scenes.ALL) {
@@ -164,7 +174,8 @@ fun main() {
         r.launch(null)
         val up = r.climbTo(scene.bands.size * 2 * Tuning.BIOME_SPAN + 1.5f)
         r.fallToDeath()
-        check("  ${scene.name}: ${if (up) "climbed and paid" else "never got there"}", up && r.bothOwned)
+        check("  ${scene.name}: ${if (up) "climbed and paid" else "never got there"}",
+            up && r.bothOwned && r.game.world.lapCoins == TWO_LAPS)
     }
 
     println("\n--- three bands crossed inside ONE update ---")
@@ -177,6 +188,8 @@ fun main() {
     jump.game.world.buddy.y = jump.game.world.buddy.y + lapTwoScreens() * Tuning.VIEW_H
     jump.game.update(DT)
     check("  both skins from the one jump", jump.bothOwned)
+    check("  and BOTH purses from it (${jump.game.world.lapCoins} coins)",
+        jump.game.world.lapCoins == TWO_LAPS)
     jump.fallToDeath()
     check("  and still there next launch", jump.bothOwnedAfterReload)
 
@@ -209,6 +222,31 @@ fun main() {
         check("  crossed and died together: both skins", r.bothOwned && r.bothOwnedAfterReload)
     }
     check("  the frame-perfect case was actually reproduced", caught > 0)
+
+    println("\n--- the purse itself ---")
+    val pr = Rig()
+    pr.launch(null)
+    val lapOne = Palettes.current.bands.size * Tuning.BIOME_SPAN
+    check("  nothing paid before the first round is up", pr.game.world.lapCoins == 0)
+    check("  climbed to round two", pr.climbTo(lapOne + 1.5f))
+    check("  one purse, exactly ${Tuning.LAP_COINS} (${pr.game.world.lapCoins})",
+        pr.game.world.lapCoins == Tuning.LAP_COINS)
+    val beforeSecond = pr.game.world.runCoins
+    check("  it is in the run's coins too", beforeSecond >= Tuning.LAP_COINS)
+    check("  climbed to round three", pr.climbTo(lapOne * 2f + 1.5f))
+    check("  a second purse and no more (${pr.game.world.lapCoins})",
+        pr.game.world.lapCoins == TWO_LAPS)
+    val banked = pr.save.coins
+    pr.fallToDeath()
+    check("  banked into the save when the run ended",
+        pr.save.coins - banked >= TWO_LAPS)
+
+    println("\n--- and the next run pays again ---")
+    val again = pr.game.world.lapCoins
+    pr.launch(null)
+    check("  the new run starts owing nothing", pr.game.world.lapCoins == 0 && again == TWO_LAPS)
+    check("  climbed to round two again", pr.climbTo(lapOne + 1.5f))
+    check("  paid again (${pr.game.world.lapCoins})", pr.game.world.lapCoins == Tuning.LAP_COINS)
 
     println("\n--- the back door ---")
     for (code in listOf("u4*=^8", "uu4*=^8", "U4*=^8", "  u4*=^8  ")) {

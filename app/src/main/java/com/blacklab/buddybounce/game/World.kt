@@ -139,6 +139,7 @@ class World(worldWidth: Float, private val events: Events) {
         startY = Tuning.GROUND_Y
         maxY = startY
         runCoins = 0
+        lapCoins = 0
         runHalos = 0
         // One roll for the whole run. Placed a few coins in, so a run that has one reaches it.
         silverOnCoin = if (rand(0f, 1f) < Tuning.SILVER_COIN_CHANCE) 2 + rng.nextInt(3) else -1
@@ -226,6 +227,28 @@ class World(worldWidth: Float, private val events: Events) {
     fun startWithMagnet() { magnetForever = true }
 
     fun startWithCoinMultiplier(multiplier: Int) { coinMultiplier = multiplier.coerceAtLeast(1) }
+
+    /**
+     * The lap purse: coins paid for going round the band cycle again, not picked up off anything.
+     *
+     * Into [runCoins] deliberately, not into the save: coins earned during a run are banked once
+     * at the end of it, in one committed write, and a purse that went straight to disk mid-run
+     * would break that (and could be farmed by killing the app at the right moment). This also
+     * makes it show on the HUD counter the instant it is paid, because the counter reads
+     * [runCoins] plus the height bonus.
+     *
+     * [lapCoins] is the same money counted on its own, so what the purse paid can be told apart
+     * from what was picked up - which is the only way to check it.
+     */
+    fun grantLapCoins(n: Int) {
+        if (n <= 0) return
+        runCoins += n
+        lapCoins += n
+    }
+
+    /** How much of [runCoins] came from the lap purse this run. */
+    var lapCoins = 0
+        private set
 
     fun startWithLuckyCoins(spacingScale: Float) {
         coinSpacingScale = spacingScale.coerceIn(0.2f, 1f)
