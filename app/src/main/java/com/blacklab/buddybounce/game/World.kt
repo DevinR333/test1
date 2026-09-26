@@ -442,7 +442,10 @@ class World(worldWidth: Float, private val events: Events) {
 
         if (b.y > maxY) maxY = b.y
 
-        if (!b.dying && b.y + Tuning.BUDDY_H < camY) {
+        // Touching the bottom edge is the end of it - his FEET, not his whole body clearing the
+        // frame. There is nothing below that line to land on any more (see collidePlatforms),
+        // so anything past it is a fall he has already lost.
+        if (!b.dying && b.y < camY) {
             if (safetyNets > 0) {
                 safetyNets--
                 rescue()
@@ -469,6 +472,22 @@ class World(worldWidth: Float, private val events: Events) {
      * 23.8% of revived runs inside four seconds; standing him on something loses 10%, and that
      * remainder is a dog nobody is steering. See tools/revive/ReviveCheck.kt.
      */
+    /**
+     * The lowest platform at or above [minY] that is still there after you touch it.
+     *
+     * Crumbles and fragiles are left out on purpose: somewhere to be put back on has to hold.
+     */
+    private fun lowestStandable(minY: Float): Platform? {
+        var best: Platform? = null
+        for (p in platforms.items) {
+            if (!p.alive || p.isGround || p.state != 0) continue
+            if (p.kind == PlatKind.CRUMBLE || p.kind == PlatKind.FRAGILE) continue
+            if (p.y < minY) continue
+            if (best == null || p.y < best.y) best = p
+        }
+        return best
+    }
+
     private fun standOnFreshLedge(invuln: Float, atY: Float): Platform {
         val b = buddy
         val p = platforms.obtain()
@@ -494,6 +513,15 @@ class World(worldWidth: Float, private val events: Events) {
         var bestY = -Float.MAX_VALUE
         for (p in platforms.items) {
             if (!p.alive || p.state != 0) continue
+            // NOTHING BELOW THE BOTTOM OF THE SCREEN CATCHES HIM.
+            //
+            // Platforms live on for a while after they scroll off, so the ones just under the
+            // edge were still solid - you could fall out of the frame, land on something you
+            // could not see, and come back up. That is the one place in the game where what
+            // happens is not on screen, and it is the difference between a fall you can read
+            // and a fall you cannot. The line the platforms stop at and the line he dies at are
+            // the same line, so the rule is simply: below the bottom edge there is nothing.
+            if (p.y < camY) continue
             // Buddy must have been ABOVE this platform's surface where that surface was at the
             // start of the frame, and be at or below where it is now. Testing his old position
             // against the platform's new one let a rising HOVER platform sweep up through him
@@ -836,14 +864,44 @@ class World(worldWidth: Float, private val events: Events) {
         b.alive = true
         b.deathT = 0f
         b.vx = 0f
-        // Back on a ledge of his own, not hanging in the air where he died - see
-        // [standOnFreshLedge]. A Second Life that drops him into the same gap he just fell
-        // through is not a second life. Where he was, if he was still in the view; lifted back
-        // into it if he had already fallen out of the bottom.
-        standOnFreshLedge(
-            2.5f,
-            b.y.coerceIn(camY + Tuning.VIEW_H * 0.14f, camY + Tuning.VIEW_H * 0.82f)
-        )
+        // Back INTO the world, not onto an island in it.
+        //
+        // A fresh ledge of his own is enough to stop him falling straight back through the gap
+        // he died in, but only for one bounce: the camera follows him up off it, the ledge drops
+        // below the bottom of the screen, and the bottom of the screen is the floor. So the
+        // first choice is a platform that is already there - the lowest one still comfortably
+        // inside the view - because landing on that puts him back among all the others. The
+        // fresh ledge is the fallback for when there is nothing left down here to stand on.
+        val lowest = lowestStandable(camY + Tuning.VIEW_H * 0.12f)
+        if (lowest != null) {
+            b.x = lowest.x
+            b.y = lowest.y
+            b.vy = Tuning.JUMP_V * 1.25f
+            b.invulnT = 2.5f
+            b.onBounce(1.25f)
+        } else {
+            // Nothing down here at all, so build him a way out: the ledge he lands on and two
+            // more above it, a jump apart. One on its own is an island, and an island under a
+            // floor you cannot fall through is a continue spent on a single bounce.
+            val base = standOnFreshLedge(
+                2.5f,
+                b.y.coerceIn(camY + Tuning.VIEW_H * 0.14f, camY + Tuning.VIEW_H * 0.55f)
+            )
+            for (i in 1..2) {
+                val step = platforms.obtain()
+                step.kind = PlatKind.SOLID
+                step.w = 280f * metrics.platScale
+                step.x = clamp(
+                    base.x + (if (i % 2 == 0) 1f else -1f) * 230f,
+                    Tuning.PLAT_EDGE_MARGIN + step.w * 0.5f,
+                    worldW - Tuning.PLAT_EDGE_MARGIN - step.w * 0.5f
+                )
+                step.y = base.y + i * Tuning.VIEW_H * 0.17f
+                step.baseY = step.y
+                step.prevY = step.y
+                step.seed = rng.nextInt(1024)
+            }
+        }
         finished = false
         deathSettled = false
     }

@@ -37,6 +37,9 @@ class Audio(private val ctx: Context, private val save: Save) {
         const val COUNT = 15
 
         private const val RATE = 22050
+
+        /** Offset into the sample table for the muffled copies. */
+        private const val SUBMERGED = COUNT
         private val NAMES = arrayOf(
             "bounce", "spring", "tramp", "coin", "bone", "powerup", "break", "stomp",
             "hurt", "death", "tap", "gacha_spin", "gacha_reveal", "fanfare", "jet"
@@ -53,8 +56,16 @@ class Audio(private val ctx: Context, private val save: Save) {
         )
         .build()
 
-    private val ids = IntArray(COUNT)
-    private val loaded = BooleanArray(COUNT)
+    // Two of everything: the sound as it is, and the same sound heard through water. The
+    // muffled copy lives at [SUBMERGED] + i.
+    private val ids = IntArray(COUNT * 2)
+    private val loaded = BooleanArray(COUNT * 2)
+
+    /**
+     * True while Buddy is below the surface, which is Deep Blue's four water bands and nothing
+     * else - the Open Sky above them is air, and sounds like it. Set by the game each frame.
+     */
+    @Volatile var submerged = false
     @Volatile private var ready = false
     private var jetStream = 0
 
@@ -69,7 +80,7 @@ class Audio(private val ctx: Context, private val save: Save) {
         }, "sfx-bake").start()
         pool.setOnLoadCompleteListener { _, sampleId, status ->
             if (status == 0) {
-                for (i in 0 until COUNT) if (ids[i] == sampleId) loaded[i] = true
+                for (i in ids.indices) if (ids[i] == sampleId) loaded[i] = true
             }
         }
     }
@@ -79,23 +90,39 @@ class Audio(private val ctx: Context, private val save: Save) {
         if (!dir.exists()) dir.mkdirs()
         for (i in 0 until COUNT) {
             val f = File(dir, NAMES[i] + ".wav")
-            if (!f.exists() || f.length() < 64L) writeWav(f, render(i))
+            var dry: FloatArray? = null
+            if (!f.exists() || f.length() < 64L) {
+                dry = render(i)
+                writeWav(f, dry)
+            }
             ids[i] = pool.load(f.absolutePath, 1)
+
+            val wet = File(dir, NAMES[i] + "_sub.wav")
+            if (!wet.exists() || wet.length() < 64L) writeWav(wet, muffle(dry ?: render(i)))
+            ids[SUBMERGED + i] = pool.load(wet.absolutePath, 1)
         }
         ready = true
     }
 
     fun play(sound: Int, volume: Float = 1f, rate: Float = 1f) {
         if (!save.soundOn || !ready) return
-        if (sound < 0 || sound >= COUNT || !loaded[sound]) return
+        if (sound < 0 || sound >= COUNT) return
+        val i = voiceOf(sound)
+        if (!loaded[i]) return
         val v = (volume * save.sfxVolume).coerceIn(0f, 1f)
-        pool.play(ids[sound], v, v, 1, 0, rate.coerceIn(0.5f, 2f))
+        pool.play(ids[i], v, v, 1, 0, rate.coerceIn(0.5f, 2f))
     }
 
+    /** The dry sound, or the one heard through water, whichever the player is in. */
+    private fun voiceOf(sound: Int): Int =
+        if (submerged && loaded[SUBMERGED + sound]) SUBMERGED + sound else sound
+
     fun startJet(rate: Float) {
-        if (!save.soundOn || !ready || !loaded[JET] || jetStream != 0) return
+        if (!save.soundOn || !ready || jetStream != 0) return
+        val i = voiceOf(JET)
+        if (!loaded[i]) return
         val jv = (0.55f * save.sfxVolume).coerceIn(0f, 1f)
-        jetStream = pool.play(ids[JET], jv, jv, 1, -1, rate.coerceIn(0.5f, 2f))
+        jetStream = pool.play(ids[i], jv, jv, 1, -1, rate.coerceIn(0.5f, 2f))
     }
 
     fun stopJet() {
@@ -254,6 +281,45 @@ class Audio(private val ctx: Context, private val save: Save) {
     }
 
     private fun attack(t: Float): Float = if (t < 0.004f) t / 0.004f else 1f
+
+    /**
+     * The same sound heard from under water.
+     *
+     * Water carries low frequencies and swallows high ones, so the top of every sound goes: two
+     * passes of a one-pole low-pass, which rolls off twice as steeply as one and is still only
+     * a multiply and an add per sample. On top of that a short feedback delay for the smear you
+     * get in a big body of water, and a little off the level, because everything is quieter
+     * down there.
+     *
+     * Done to the SAMPLES rather than at playback: SoundPool can change a sound's rate and its
+     * volume and nothing else, and dropping the rate would make everything deeper AND slower,
+     * which is a slow-motion effect rather than a muffled one.
+     */
+    private fun muffle(src: FloatArray): FloatArray {
+        val out = FloatArray(src.size)
+        // one-pole coefficient for a corner around 700 Hz at this sample rate
+        val cutoff = 700f
+        val k = 1f - exp(-2f * PI.toFloat() * cutoff / RATE)
+        var a = 0f
+        var b = 0f
+        for (i in src.indices) {
+            a += k * (src[i] - a)
+            b += k * (a - b)
+            out[i] = b
+        }
+        // a short tail, so it sounds like a room made of water rather than a blanket
+        val delay = (RATE * 0.028f).toInt()
+        if (delay in 1 until out.size) {
+            for (i in delay until out.size) out[i] += out[i - delay] * 0.28f
+        }
+        var peak = 0f
+        for (v in out) { val m = if (v < 0f) -v else v; if (m > peak) peak = m }
+        // Quieter than dry, and never louder than it started - the tail can push a peak past 1.
+        val target = 0.72f
+        val g = if (peak > 0.0001f) (target / peak).coerceAtMost(1.6f) else 1f
+        for (i in out.indices) out[i] *= g
+        return out
+    }
 
     private fun writeWav(file: File, samples: FloatArray) = Wav.write(file, samples, RATE)
 

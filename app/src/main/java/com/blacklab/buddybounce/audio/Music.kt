@@ -202,22 +202,62 @@ class Music(private val ctx: Context, private val save: Save) {
         return t.finish()
     }
 
-    /** Deep Blue: slow, wide, and a long way under. */
+    /**
+     * Deep Blue: a steel band down in the reef.
+     *
+     * It used to be a slow pad with a bell over the top - wide, dark and, played for any length
+     * of time, dreary. Being underwater is not the same as being gloomy, and this is a world
+     * full of colour. So: calypso. Bright major key, nearly twice the tempo, a loping bass that
+     * skips the downbeat of the second half of every bar, off-beat hats, and the melody on the
+     * struck voice in octaves, which is as close to a steel pan as these voices get.
+     *
+     * The syncopation is the whole character. Almost nothing lands squarely on a beat except
+     * the bass note at the top of the bar - everything else arrives just after one, which is
+     * what makes it walk rather than plod.
+     */
     private fun ocean(): FloatArray {
-        val t = Track(bpm = 74f, bars = 8, beatsPerBar = 4)
-        val root = 50                                     // D
-        val chords = intArrayOf(0, 0, -4, -2)
+        val t = Track(bpm = 116f, bars = 8, beatsPerBar = 4)
+        val root = 50                                     // D major
+        // I - IV - I - V, round twice: the plainest happy loop there is, and the right one.
+        val chords = intArrayOf(0, 5, 0, 7)
+        // the pan melody, two bars long, answered by a variation in the next two
+        val tuneA = floatArrayOf(0.5f, 1.5f, 2.0f, 3.0f, 3.5f)
+        val stepA = intArrayOf(12, 16, 14, 12, 9)
+        val tuneB = floatArrayOf(0.5f, 1.0f, 2.5f, 3.5f)
+        val stepB = intArrayOf(14, 16, 19, 16)
+
         for (bar in 0 until t.bars) {
             val ch = root + chords[bar % 4]
-            t.note(bar, 0f, 4f, ch - 12, Voice.PAD, 0.3f)
-            t.note(bar, 0f, 4f, ch - 5, Voice.PAD, 0.18f)
-            t.note(bar, 0f, 4f, ch + 3, Voice.PAD, 0.14f)
-            // slow bell figure, sparse, on the off-beats
-            if (bar % 2 == 0) {
-                t.note(bar, 1.5f, 1.5f, ch + 12, Voice.BELL, 0.15f)
-                t.note(bar, 3f, 1f, ch + 15, Voice.BELL, 0.12f)
-            } else {
-                t.note(bar, 2.5f, 1.5f, ch + 10, Voice.BELL, 0.13f)
+
+            // bass: one on the downbeat, one pushed off the "and" of two - the calypso lope
+            t.note(bar, 0f, 0.9f, ch - 12, Voice.SOFT, 0.34f)
+            t.note(bar, 1.5f, 0.6f, ch - 12, Voice.SOFT, 0.24f)
+            t.note(bar, 2.5f, 0.9f, ch - 5, Voice.SOFT, 0.28f)
+
+            // guitar-ish chops on every off-beat, short and woody
+            for (b in 0 until 4) {
+                t.note(bar, b + 0.5f, 0.28f, ch + 4, Voice.PLUCK, 0.13f)
+                t.note(bar, b + 0.5f, 0.28f, ch + 7, Voice.PLUCK, 0.11f)
+            }
+
+            // the pan, in octaves
+            val beats = if ((bar / 2) % 2 == 0) tuneA else tuneB
+            val steps = if ((bar / 2) % 2 == 0) stepA else stepB
+            for (i in beats.indices) {
+                val n = ch + steps[i]
+                t.note(bar, beats[i], 0.55f, n, Voice.BELL, 0.17f)
+                t.note(bar, beats[i], 0.55f, n + 12, Voice.BELL, 0.07f)
+            }
+
+            // percussion: shaker running through, hats off the beat, and a tom answer
+            for (i in 0 until 8) t.perc(bar, i * 0.5f, Perc.SHAKER, 0.09f)
+            for (b in 0 until 4) t.perc(bar, b + 0.5f, Perc.HAT, 0.12f)
+            t.perc(bar, 0f, Perc.KICK, 0.30f)
+            t.perc(bar, 2.5f, Perc.KICK, 0.24f)
+            t.perc(bar, 1f, Perc.TOM, 0.13f)
+            if (bar % 2 == 1) {
+                t.perc(bar, 3.25f, Perc.TOM, 0.15f)
+                t.perc(bar, 3.75f, Perc.TOM, 0.11f)
             }
         }
         return t.finish()

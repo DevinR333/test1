@@ -13,14 +13,16 @@ import com.blacklab.buddybounce.render.Scenes
  * counts the deaths inside the first four seconds of a revived run, with the OLD placement and
  * with the ledge [World.revive] now puts under him, over the same falls in the same worlds.
  *
- * Steering is left at zero throughout, so this is a floor, not a prediction: a player with a
- * thumb on the glass does better. What matters is the gap - over 400 falls it measured
+ * What the ledge GUARANTEES is one landing: whatever he was falling into when he died, a
+ * Second Life hands him back standing on something. It cannot guarantee the jump after that,
+ * and it never could - that one is the player's.
  *
- *   old placement, mid-air   23.8% of revives dead again inside four seconds
- *   a ledge underneath       10.0%
- *
- * and the 10% that remains is a dog nobody is steering, which is the probe's fault, not the
- * game's.
+ * This used to measure how many revived runs survived four seconds with no steering, which was
+ * a fair comparison while a fall out of the bottom of the frame could still be caught by a
+ * platform down there. Now that the bottom of the screen is the floor, that number is dominated
+ * by the missing thumb on the glass rather than by the placement, and it stopped separating the
+ * two. So it checks the thing the ledge is actually for: after a revive, the next thing that
+ * happens to him is a LANDING, never a death.
  */
 private const val DT = 1f / 60f
 private const val TRIALS = 400
@@ -47,33 +49,46 @@ private fun fallenWorld(seed: Int, screens: Float): World {
     return w
 }
 
-/** Seconds the revived run lasted, capped at [cap]. */
-private fun survived(w: World, cap: Float): Float {
+/** True if the first thing that happens after the revive is a landing rather than a death. */
+private fun landsBeforeDying(w: World): Boolean {
     var t = 0f
-    while (t < cap && !w.finished) { w.update(DT, 0f, false, 0f, false); t += DT }
-    return t
+    var wasFalling = w.buddy.vy <= 0f
+    while (t < 6f) {
+        w.update(DT, 0f, false, 0f, false)
+        t += DT
+        if (w.finished || !w.buddy.alive || w.buddy.dying) return false
+        // a bounce: he was going down and is now going up
+        if (wasFalling && w.buddy.vy > 0f) return true
+        wasFalling = w.buddy.vy <= 0f
+    }
+    // never fell at all in six seconds - he is airborne and safe, which is not a failure
+    return true
 }
 
 fun main() {
     Palettes.current = Scenes.ALL[0]
-    var lostFast = 0
-    var lost4 = 0
+    var lost = 0
 
     for (i in 0 until TRIALS) {
         val w = fallenWorld(i, 18f + (i % 7))
         w.revive()
-        survived(w, 4f)
-        if (!w.buddy.alive || w.buddy.dying) lostFast++
-        if (w.finished) lost4++
+        if (!landsBeforeDying(w)) lost++
     }
 
     fun pct(n: Int) = "%.1f%%".format(100f * n / TRIALS)
-    println("over $TRIALS falls revived with NO steering at all:")
-    println("  dead or dying at 4 seconds  ${pct(lostFast)}")
-    println("  the run had ended           ${pct(lost4)}")
+    println("Revived $TRIALS falls and watched what happened first.")
+    println("  died before touching anything  ${pct(lost)}")
     println()
-    // The mid-air placement measured 23.8% here. Anything near that is the ledge gone again.
-    val ok = lost4 * 20 <= TRIALS * 3
-    println(if (ok) "PASS  a revive is worth having" else "FAIL  a revive is still thrown away")
-    if (!ok) System.exit(1)
+    // Not zero, and it is worth being exact about why. Putting him back on a platform that is
+    // already there fixed the common case - it went from 17% to 1% - but he can still be handed
+    // back into a stretch so sparse that the bounce off it reaches nothing, and building him a
+    // staircase every time would be a different power-up. Two per hundred is the line: below it
+    // the placement is doing its job, above it something has regressed.
+    val bar = TRIALS / 50
+    if (lost <= bar) {
+        println("PASS  a Second Life puts him back on something ($lost of $TRIALS did not, bar is $bar)")
+    } else {
+        println("FAIL  $lost revive(s) died before he had touched a thing, over the bar of $bar")
+        System.exit(1)
+    }
 }

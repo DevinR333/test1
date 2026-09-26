@@ -562,6 +562,9 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         // the card itself is not drawn during PLAY - so running this mid-climb spent the reveal
         // on nobody. Held in the queue instead, it comes up on the death screen.
         if (screen != Screen.PLAY) unlockPopup.update(dt)
+        // Everything sounds different from under the water, and only from under it: Deep Blue's
+        // Open Sky is air. Off the band he is actually in, so it follows him up out of the sea.
+        audio.submerged = screen == Screen.PLAY && Palettes.get(world.biome).underwater
         ui.beginFrame(dt)
 
         when (screen) {

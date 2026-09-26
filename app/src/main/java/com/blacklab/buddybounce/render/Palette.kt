@@ -170,7 +170,12 @@ class BiomePalette(
      * to look at something wrong. -1 means the scene's own fauna, which is what nearly every
      * band wants.
      */
-    val fauna: Int = -1
+    val fauna: Int = -1,
+    /**
+     * Is this band below the surface? Only Deep Blue's water is, and the Open Sky above it is
+     * not. The sound effects are played through a low-pass while it is true - see Audio.
+     */
+    val underwater: Boolean = false
 ) {
     // What the backdrop actually paints its silhouettes with. See ColorX.readable: the raw
     // shape colours are often a shade off this band's own sky, which makes the scenery
@@ -304,28 +309,28 @@ object Scenes {
                 0xFF04203A.toInt(), 0xFF0A3A5C.toInt(), 0xFF14567F.toInt(),
                 0xFF2E8BA8.toInt(), 0xFF1E6F8C.toInt(), 0xFF123F55.toInt(),
                 0xFFD9C79A.toInt(), 0xFFA89263.toInt(), 0xFF6E6142.toInt(), 0xFFFF9E6B.toInt(),
-                0xFF9FE8FF.toInt(), cloudAlpha = 0.25f
+                0xFF9FE8FF.toInt(), cloudAlpha = 0.25f, underwater = true
             ),
             BiomePalette(
                 "Kelp Forest", BandStyle.KELP,
                 0xFF0A3A5C.toInt(), 0xFF12608A.toInt(), 0xFF2A87A8.toInt(),
                 0xFF2E7F52.toInt(), 0xFF1E6B44.toInt(), 0xFF14452F.toInt(),
                 0xFF7FBF8F.toInt(), 0xFF4E8C64.toInt(), 0xFF33603F.toInt(), 0xFFB7F0C0.toInt(),
-                0xFFBFFFD8.toInt(), cloudAlpha = 0.3f
+                0xFFBFFFD8.toInt(), cloudAlpha = 0.3f, underwater = true
             ),
             BiomePalette(
                 "Coral Reef", BandStyle.REEF,
                 0xFF12608A.toInt(), 0xFF2A9BC4.toInt(), 0xFF7FD4E8.toInt(),
                 0xFFFF8FA8.toInt(), 0xFFFFB05C.toInt(), 0xFF6FD6C0.toInt(),
                 0xFFFFD9B0.toInt(), 0xFFE8A36B.toInt(), 0xFFA8663F.toInt(), 0xFFFF7FA8.toInt(),
-                0xFFFFF0D0.toInt(), cloudAlpha = 0.4f
+                0xFFFFF0D0.toInt(), cloudAlpha = 0.4f, underwater = true
             ),
             BiomePalette(
                 "Sunlit Shallows", BandStyle.SHALLOWS,
                 0xFF2A9BC4.toInt(), 0xFF7FD4E8.toInt(), 0xFFDFF6FF.toInt(),
                 0xFFEAFBFF.toInt(), 0xFFC4EEFA.toInt(), 0xFF9FDCEF.toInt(),
                 0xFFFFF4E0.toInt(), 0xFFE0D2B8.toInt(), 0xFFAFA189.toInt(), 0xFF6FD6C0.toInt(),
-                0xFFFFFFFF.toInt(), cloudAlpha = 0.9f
+                0xFFFFFFFF.toInt(), cloudAlpha = 0.9f, underwater = true
             ),
             BiomePalette(
                 // Out of the water at last, so the fish stay below - see BiomePalette.fauna.
