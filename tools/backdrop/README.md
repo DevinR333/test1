@@ -1,6 +1,6 @@
 # Backdrop tools
 
-Three probes for the parallax backdrop. The first two are pass/fail; the third is the one
+Probes for the parallax backdrop. The first two are pass/fail; the third is the one
 that actually found the bugs, because it lets you LOOK at what the game draws.
 
 All of them drive the real `Backdrop` and the real `Palettes` - nothing here re-implements
@@ -40,10 +40,24 @@ with their geometry instead of painting), not the plain ones:
 
 Then rasterise the SVGs with any browser to look at them.
 
-A caution learned the hard way: the probe is only as honest as its stubs. `RectF.set` was a
-no-op for a long time, so every `drawRect`/`drawRoundRect`/`drawOval` and every blitted
-bitmap recorded as a zero-size box at the origin and simply vanished - roughly half the
-backdrop. If a band looks empty in the dump, suspect the stub before the art.
+A caution learned the hard way, three times over: the probe is only as honest as its stubs.
+
+- `RectF.set` was a no-op for a long time, so every `drawRect`/`drawRoundRect`/`drawOval` and
+  every blitted bitmap recorded as a zero-size box at the origin and simply vanished - roughly
+  half the backdrop.
+- `Canvas.rotate` was a no-op, so the recording canvas tracked only a translate and a scale.
+  Everything that turns - the ear, the tail, the collar, every tuft - was drawn square, and two
+  shapes rotated to different angles about the same pivot recorded at exactly the same place.
+  A broken picture and a fixed one came out of the dump identical. It now carries a full affine
+  matrix, hands each op its geometry in LOCAL coordinates, and puts the matrix alongside it, so
+  the emitter can wrap the shape in a `transform` instead of flattening it to its bounding box.
+  Stroke widths and gradient coordinates are local for the same reason.
+- `drawArc` threw the start and sweep away and emitted the whole ellipse. A strap drawn as two
+  half-arcs - the far half behind the neck, the near half in front of it - came out as a closed
+  ring lying on top of the dog, which made a real layering bug and its fix look the same.
+
+If a band looks empty in the dump, or a change makes no difference to it, suspect the stub
+before the art.
 
 ## SeamCheck.kt - the hard horizontal rules
 
@@ -142,3 +156,16 @@ Two things this breaks if you forget them:
 - Anything that closes on a straight line - a crest wider than the frame, a rect for a road or
   for the sea - was previously hidden because it sat off-screen. Ranks bring it into the frame.
   Every one of those is now a path with a wave in it.
+
+## tools/buddy/BuddyShot.kt - what Buddy actually looks like
+
+The same idea pointed at the dog: every outfit across four poses, drawn by the real `BuddyArt`
+against the recording canvas and written out as one SVG sheet. It is what showed that the lap
+skins' extra heads were a shifted copy of the first head rather than heads of their own, and
+that the collar was drawn on an ellipse twice the width of the neck it was meant to go round.
+
+    kotlinc -cp <recording-stubs> -d out $(find app/src/main/java -name '*.kt') \
+        tools/backdrop/BackdropDump.kt tools/buddy/BuddyShot.kt
+    java -cp out:<recording-stubs> BuddyShotKt buddy.svg [outfit ids...]
+
+It shares `opsToSvg` with `BackdropDump.kt`, so both files go to the compiler together.

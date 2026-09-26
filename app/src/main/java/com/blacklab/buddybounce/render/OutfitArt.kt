@@ -283,16 +283,43 @@ object OutfitArt {
      * arc pair - the far half dark and thin, the near half full and lit - is what makes it wrap
      * instead of sit. The tag then hangs from the near side under gravity.
      */
-    private const val COLLAR_RX = 44f     // half-way round the neck
-    private const val COLLAR_RY = 15f     // how open the ellipse is - we see it nearly edge-on
-    private const val COLLAR_BAND = 13f   // the webbing's width
+    /**
+     * The neck, for everything that goes round it.
+     *
+     * Anything tied round a neck has to be the size of THAT NECK. The collar and the bandana
+     * were both drawn on an ellipse 88 units across when the neck at this height is barely 40,
+     * so the near half of each band ran off the throat and out onto the shoulder - where there
+     * is no neck to disappear behind, and so a red strap curled round the back of him in plain
+     * view. Splitting the band into a far arc and a near arc, which is what was done before,
+     * cannot fix that: the halves were the right halves, they were simply much too big.
+     *
+     * Measured off the neck wedge in BuddyArt.drawHead: at y=-92 the neck runs from about x=16
+     * to x=57, and it leans up towards the skull at (54,-124), so a band lies across it at 29
+     * degrees. One place for all of it, so the next thing that wraps him cannot drift.
+     */
+    private const val NECK_CX = 36f
+    private const val NECK_CY = -92f
+    private const val NECK_TILT = 29f
+    private const val NECK_RX = 23f       // half-way round, a shade proud of the fur
+    private const val NECK_RY = 10f       // how open the ellipse is - we see it nearly edge-on
+
+    private const val COLLAR_BAND = 12f   // the webbing's width
 
     /** Puts the canvas on the throat, square to the neck's diagonal. Caller restores. */
-    private fun collarSpace(c: Canvas) {
+    private fun neckSpace(c: Canvas) {
         c.save()
-        c.translate(30f, -92f)
-        c.rotate(24f)
+        c.translate(NECK_CX, NECK_CY)
+        c.rotate(NECK_TILT)
     }
+
+    private const val COLLAR_RX = NECK_RX
+    private const val COLLAR_RY = NECK_RY
+
+    // Cloth is bulkier than webbing, so the bandana stands a little further off the fur.
+    private const val BANDANA_RX = NECK_RX + 4f
+    private const val BANDANA_RY = NECK_RY + 3f
+
+    private fun collarSpace(c: Canvas) = neckSpace(c)
 
     /**
      * The half of the strap that goes round the BACK of the neck.
@@ -394,10 +421,8 @@ object OutfitArt {
 
     /** The neck-side half of the bandana's wrap. See [collarBack] for why this is separate. */
     private fun bandanaBack(c: Canvas) {
-        c.save()
-        c.translate(30f, -92f)
-        c.rotate(24f)
-        r.set(-42f, -14f, 42f, 14f)
+        neckSpace(c)
+        r.set(-BANDANA_RX, -BANDANA_RY, BANDANA_RX, BANDANA_RY)
         p.reset(); p.isAntiAlias = true
         p.style = Paint.Style.STROKE
         p.strokeCap = Paint.Cap.BUTT
@@ -458,11 +483,9 @@ object OutfitArt {
         c.drawCircle(46f, -66f, 2.8f, p)
 
         // --- the wrap round the neck --------------------------------------------------------
-        c.save()
-        c.translate(30f, -92f)
-        c.rotate(24f)
-        val rx = 42f
-        val ry = 14f
+        neckSpace(c)
+        val rx = BANDANA_RX
+        val ry = BANDANA_RY
         r.set(-rx, -ry, rx, ry)
         p.style = Paint.Style.STROKE
         p.strokeCap = Paint.Cap.BUTT
@@ -482,9 +505,13 @@ object OutfitArt {
         p.style = Paint.Style.FILL
         c.restore()
 
-        // --- the knot, off to the back, with two tails --------------------------------------
-        val kx = -2f
-        val ky = -96f
+        // --- the knot, at the nape where the ends meet, with two short tails ----------------
+        //
+        // It used to sit at x=-2 with tails reaching back to x=-27, which is not the nape at
+        // all - it is the middle of his back, a hand's width clear of any neck. Tied where the
+        // wrap actually closes, it reads as a knot instead of a red rag caught on his shoulder.
+        val kx = 17f
+        val ky = -105f
         path.reset()
         path.moveTo(kx - 11f, ky - 8f)
         path.cubicTo(kx + 2f, ky - 13f, kx + 2f, ky + 11f, kx - 11f, ky + 7f)
@@ -501,14 +528,14 @@ object OutfitArt {
         p.color = cloth
         path.reset()                                   // upper tail
         path.moveTo(kx - 9f, ky - 6f)
-        path.lineTo(kx - 27f, ky - 17f)
-        path.lineTo(kx - 22f, ky - 5f)
+        path.lineTo(kx - 20f, ky - 13f)
+        path.lineTo(kx - 16f, ky - 3f)
         path.close()
         c.drawPath(path, p)
         path.reset()                                   // lower tail
         path.moveTo(kx - 9f, ky + 4f)
-        path.lineTo(kx - 26f, ky + 9f)
-        path.lineTo(kx - 20f, ky - 1f)
+        path.lineTo(kx - 19f, ky + 6f)
+        path.lineTo(kx - 15f, ky - 1f)
         path.close()
         c.drawPath(path, p)
     }

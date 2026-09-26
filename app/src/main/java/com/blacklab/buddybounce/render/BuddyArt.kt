@@ -47,6 +47,12 @@ object BuddyGeom {
     const val NECK_X = 30f
     const val NECK_Y = -110f
 
+    // Where the necks leave the shoulders. The lap skins' extra heads are SWUNG about this
+    // point rather than nudged sideways from the first one, so they fan out of one chest on
+    // necks of their own instead of hiding behind each other.
+    const val NECK_PIVOT_X = -40f
+    const val NECK_PIVOT_Y = -124f
+
     // limbs
     const val FRONT_LEG_X = 30f
     const val BACK_LEG_X = -44f
@@ -159,6 +165,11 @@ class BuddyArt(private val art: Art) {
     private val path2 = Path()
     private val rect = RectF()
 
+    // Head swings, in degrees about the shoulder pivot - see [headFan].
+    private val ONE_HEAD = floatArrayOf(0f)
+    private val TWO_HEAD_FAN = floatArrayOf(-20f, 16f)
+    private val CERBERUS_FAN = floatArrayOf(-26f, 0f, 22f)
+
     /**
      * The coat being drawn this frame. Set once at the top of [draw] from the outfit, then read
      * by every shape below - the render thread is the only caller, so a field is safe and saves
@@ -247,30 +258,17 @@ class BuddyArt(private val art: Art) {
             drawLegs(c, pose, stretch, tuck, back = false)
             OutfitArt.drawBody(c, outfit, pose, rim)
 
-            // The extra heads, furthest back first so the one he steers with stays in front.
-            // They are the same head on the same neck, set back along the shoulders and a
-            // little smaller, which is all it takes to read as one dog with several of them
-            // rather than as several dogs.
-            val heads = when (outfit) {
-                Outfits.TWO_HEAD_ID -> 2
-                Outfits.CERBERUS_ID -> 3
-                else -> 1
-            }
-            for (h in heads - 1 downTo 1) {
+            // One head, or the lap skins' fan of them. Raised head first, because it is the
+            // one furthest back - each later head is lower and further forward, so it belongs
+            // in front of the one before it.
+            for (swing in headFan(outfit)) {
                 c.save()
-                // each one further back, dipped a touch, and turned very slightly out
-                c.translate(-30f * h, 6f * h)
-                val sc = 1f - 0.08f * h
-                c.scale(sc, sc, BuddyGeom.HEAD_CX, BuddyGeom.HEAD_CY)
+                c.rotate(swing, BuddyGeom.NECK_PIVOT_X, BuddyGeom.NECK_PIVOT_Y)
                 drawHead(c, pose, rim)
                 drawEar(c, pose)
                 OutfitArt.drawHead(c, outfit, pose, rim)
                 c.restore()
             }
-
-            drawHead(c, pose, rim)
-            drawEar(c, pose)
-            OutfitArt.drawHead(c, outfit, pose, rim)
         }
         if (ghostLayer >= 0) c.restoreToCount(ghostLayer)
 
@@ -498,6 +496,26 @@ class BuddyArt(private val art: Art) {
     // -------------------------------------------------------------------------------------
     // head
     // -------------------------------------------------------------------------------------
+
+    /**
+     * How far each of this outfit's heads is swung off the shoulders, in degrees, back to front.
+     *
+     * The lap skins used to draw their extra heads as the same head nudged thirty units back and
+     * six down, which at gameplay size is not a second head at all - it is one head with a
+     * smudge behind it. Swinging them about [BuddyGeom.NECK_PIVOT_X] instead moves the whole
+     * head AND its neck wedge along an arc out of the chest, so each one arrives at its own
+     * height with its own muzzle in clear air and its own neck fanning out below it. Nothing is
+     * scaled down: three heads the same size read as a three-headed dog, where a big one and two
+     * small ones read as a mistake.
+     *
+     * Ordered raised-first because a raised head is also the one furthest back - the swing
+     * carries the lowered ones forward - so this doubles as the painting order.
+     */
+    private fun headFan(outfit: String): FloatArray = when (outfit) {
+        Outfits.TWO_HEAD_ID -> TWO_HEAD_FAN
+        Outfits.CERBERUS_ID -> CERBERUS_FAN
+        else -> ONE_HEAD
+    }
 
     private fun drawHead(c: Canvas, pose: Pose, rim: Int) {
         val hx = BuddyGeom.HEAD_CX

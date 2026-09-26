@@ -44,20 +44,21 @@ internal fun gradDef(sh: android.graphics.Shader, alpha: Float, defs: StringBuil
     return id
 }
 
-internal fun panel(
-    backdrop: Backdrop, biome: Int, camY: Float, ox: Float, blend: Float = 0f
-): String {
-    Rec.clear()
-    backdrop.draw(android.graphics.Canvas(), W, camY, 12.5f, biome, blend)
-    val defs = StringBuilder()
+/**
+ * Turns everything currently in [Rec.ops] into SVG, appending any gradients it needs to [defs].
+ * Shared with the other probes that draw the real art and want to look at it.
+ */
+internal fun opsToSvg(defs: StringBuilder, w: Float, h: Float): String {
     val sb = StringBuilder()
-    sb.append("<g transform=\"translate(%.0f,0)\">".format(ox))
-    val defsAt = sb.length
-    sb.append("<clipPath id=\"c$biome-${camY.toInt()}\"><rect width=\"$W\" height=\"$VIEW\"/></clipPath>")
-    sb.append("<g clip-path=\"url(#c$biome-${camY.toInt()})\">")
     for (op in Rec.ops) {
+        // Geometry is recorded in LOCAL coordinates with the canvas transform alongside it, so
+        // a rotated shape stays rotated instead of collapsing onto its bounding box. The
+        // gradients and stroke widths are local for the same reason, which is why they go
+        // inside the wrapper rather than being pre-multiplied.
+        val open = if (op.tf != null) "<g transform=\"${op.tf}\">" else ""
+        val close = if (op.tf != null) "</g>" else ""
         if (op.kind == "color") {
-            sb.append("<rect width=\"$W\" height=\"$VIEW\" fill=\"${hex(op.color)}\"/>")
+            sb.append("<rect width=\"$w\" height=\"$h\" fill=\"${hex(op.color)}\"/>")
             continue
         }
         val svg = op.svg ?: continue
@@ -73,14 +74,14 @@ internal fun panel(
                 .append("<stop offset=\"0.62\" stop-color=\"${hex(op.color)}\" stop-opacity=\"%.3f\"/>".format(a * 0.5f))
                 .append("<stop offset=\"1\" stop-color=\"${hex(op.color)}\" stop-opacity=\"0\"/>")
                 .append("</radialGradient>")
-            sb.append("<g fill=\"url(#$id)\" stroke=\"none\">").append(svg).append("</g>")
+            sb.append(open).append("<g fill=\"url(#$id)\" stroke=\"none\">").append(svg).append("</g>").append(close)
             continue
         }
         val sh = op.shader
         if (sh != null && sh.colors.isNotEmpty()) {
             // a shaded fill: paint it with the real gradient rather than the leftover flat colour
             val id = gradDef(sh, op.shaderAlpha, defs)
-            sb.append("<g fill=\"url(#$id)\" stroke=\"none\">").append(svg).append("</g>")
+            sb.append(open).append("<g fill=\"url(#$id)\" stroke=\"none\">").append(svg).append("</g>").append(close)
             continue
         }
         val a = alphaOf(op.color)
@@ -92,8 +93,23 @@ internal fun panel(
             "fill=\"${hex(op.color)}\" fill-opacity=\"%.3f\" stroke=\"none\""
         }
         val attrs = if (op.stroke) style.format(op.strokeWidth, a) else style.format(a)
-        sb.append("<g $attrs>").append(svg).append("</g>")
+        sb.append(open).append("<g $attrs>").append(svg).append("</g>").append(close)
     }
+    return sb.toString()
+}
+
+internal fun panel(
+    backdrop: Backdrop, biome: Int, camY: Float, ox: Float, blend: Float = 0f
+): String {
+    Rec.clear()
+    backdrop.draw(android.graphics.Canvas(), W, camY, 12.5f, biome, blend)
+    val defs = StringBuilder()
+    val sb = StringBuilder()
+    sb.append("<g transform=\"translate(%.0f,0)\">".format(ox))
+    val defsAt = sb.length
+    sb.append("<clipPath id=\"c$biome-${camY.toInt()}\"><rect width=\"$W\" height=\"$VIEW\"/></clipPath>")
+    sb.append("<g clip-path=\"url(#c$biome-${camY.toInt()})\">")
+    sb.append(opsToSvg(defs, W, VIEW))
     sb.append("</g>")
     sb.append("<rect width=\"$W\" height=\"$VIEW\" fill=\"none\" stroke=\"#000\" stroke-width=\"4\"/>")
     sb.append("</g>")
