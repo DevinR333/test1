@@ -122,8 +122,10 @@ fun main(args: Array<String>) {
     outDir.mkdirs()
     val art = Art(1f)
     val backdrop = Backdrop(art)
-    // three heights inside each band, so the repeat seam is visible too
-    val steps = floatArrayOf(0.35f, 1.6f, 3.1f)
+    // Three heights inside each band, so the repeat seam is visible too. One is enough when the
+    // sheet is for looking at the worlds rather than hunting seams - pass the count as args[1].
+    val heights = if (args.size > 1) args[1].toInt().coerceIn(1, 3) else 3
+    val steps = floatArrayOf(0.35f, 1.6f, 3.1f).copyOfRange(0, heights)
 
     for (scene in Scenes.ALL) {
         Palettes.current = scene

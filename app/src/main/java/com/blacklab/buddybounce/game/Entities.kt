@@ -208,25 +208,18 @@ class Enemy : Poolable {
      */
     var aboveT = 0f
 
-    val halfW: Float
-        get() = when (kind) {
-            EnemyKind.BEE -> 52f
-            EnemyKind.CROW -> 64f
-            EnemyKind.STORM -> 86f
-            else -> 92f
-        }
+    /**
+     * Which world's creature is wearing this role, so the box can be the size of the thing that
+     * is actually drawn. Set when the enemy is spawned; see [EnemyBox].
+     */
+    var fauna = 0
 
-    val halfH: Float
-        get() = when (kind) {
-            EnemyKind.BEE -> 44f
-            EnemyKind.CROW -> 46f
-            EnemyKind.STORM -> 62f
-            else -> 92f
-        }
+    val halfW: Float get() = EnemyBox.halfW(fauna, kind)
+    val halfH: Float get() = EnemyBox.halfH(fauna, kind)
 
     override fun reset() {
         aboveT = 0f
-        x = 0f; y = 0f; kind = EnemyKind.BEE; t = 0f; vx = 0f
+        x = 0f; y = 0f; kind = EnemyKind.BEE; t = 0f; vx = 0f; fauna = 0
         baseX = 0f; baseY = 0f; amp = 0f; phase = 0f; facing = 1f
         dying = false; dieT = 0f; seed = 0
     }

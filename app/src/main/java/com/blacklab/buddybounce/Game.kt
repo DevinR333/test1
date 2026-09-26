@@ -258,6 +258,8 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         // Heaven changes the economy, not just the wallpaper: halos on the ground, and height
         // pays nothing at all.
         world.haloMode = save.selectedScene == Scenes.HEAVEN_ID
+        // Each world's creatures are their own size, and the box has to follow the picture.
+        world.fauna = Palettes.current.fauna
         // The soundtrack belongs to the world, so it changes the moment the world does.
         music.setWorld(save.selectedScene)
     }

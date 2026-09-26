@@ -106,6 +106,13 @@ class World(worldWidth: Float, private val events: Events) {
      * Halos have to be earned by actually collecting them, which is what makes a thousand of
      * them mean something.
      */
+    /**
+     * Which world's creatures these enemies are, so each one's hit box can be the size of the
+     * thing actually drawn - see [EnemyBox]. Set by Game.applyScene alongside [haloMode]; the
+     * simulation does not read the renderer itself.
+     */
+    var fauna = 0
+
     var haloMode = false
     /** Last value of [heightBonusCoins] we told anyone about, so we can report the increments. */
     private var reportedBonusCoins = 0
@@ -700,14 +707,23 @@ class World(worldWidth: Float, private val events: Events) {
             //
             // Asking about the feet, and asking on the frame they cross, is the same question
             // at the moment it can still be answered.
-            // Falling onto one is a stomp, and the bar for "onto" is deliberately low: his feet
-            // anywhere above the bottom quarter of it. A bee swings 300 units across while it
-            // bobs, so it can come up under a slow drop that started perfectly clean, and being
-            // killed by an enemy that flew into you is the same unfairness from the other side.
+            // ...and his feet have to GET THERE. Coming from above was the whole test, which
+            // meant falling anywhere above an enemy - a whole screen above it - killed it,
+            // because "above" is refreshed every frame he is above and nothing then asked how
+            // far. Landing on thin air and watching something die under you is as bad as the
+            // unfairness this came from.
+            //
+            // Swept, not sampled: falling fast he clears a whole creature between one frame and
+            // the next, so the question is whether the path his feet took this frame passed
+            // through the band the creature occupies, not where they happened to end up.
+            val belly = minOf(e.y, eWasY) - e.halfH
+            val footHi = maxOf(buddyPrevFoot, b.y)
+            val footLo = minOf(buddyPrevFoot, b.y)
+            val reached = footHi >= belly && footLo <= crown + 2f
             // Rising into one, or drifting into one level with you, still kills you - which is
             // where an enemy's threat belongs.
-            if (b.vy < 0f &&
-                (wasAbove || buddyPrevFoot >= crown - 2f || b.y > e.y - e.halfH * 0.3f)
+            if (b.vy < 0f && reached &&
+                (wasAbove || buddyPrevFoot >= crown - 2f)
             ) {
                 killEnemy(e, scoreFor(e.kind))
                 b.vy = Tuning.ENEMY_STOMP_V
@@ -990,6 +1006,7 @@ class World(worldWidth: Float, private val events: Events) {
         val kind = kinds[rng.nextInt(kinds.size)]
         val e = enemies.obtain()
         e.kind = kind
+        e.fauna = fauna
         e.seed = rng.nextInt(1024)
         e.phase = rand(0f, 6.283f)
         e.baseY = y

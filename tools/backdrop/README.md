@@ -169,3 +169,8 @@ that the collar was drawn on an ellipse twice the width of the neck it was meant
     java -cp out:<recording-stubs> BuddyShotKt buddy.svg [outfit ids...]
 
 It shares `opsToSvg` with `BackdropDump.kt`, so both files go to the compiler together.
+
+## Seeing every world's sections
+
+`BackdropDumpKt <dir> 1` writes one sheet per world with a single height per band, which is the
+view to look at the worlds with; the default three heights is for hunting seams.
