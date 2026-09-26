@@ -411,6 +411,10 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
     //   uu4*=^7  the developer skin. The ONLY way to get it - it is not in the prize
     //            pool, and the wardrobe does not admit it exists until this is entered.
     //
+    //   u4*=^8   both lap Buddies - Two-Headed and Cerberus - without climbing to the second
+    //            and third rounds for them. Also spelt uu4*=^8. This one IS a testing aid:
+    //            the climb is the real door and it still works.
+    //
     //   u7d%4~   every power-up, always, and spending one costs nothing. Second Life
     //            included, so a run can be continued as many times as you like.
     // -------------------------------------------------------------------------------------
@@ -422,8 +426,13 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
             t.equals(FREE_SPINS_CODE, ignoreCase = true) ||
             t.equals(HALO_PRIME_CODE, ignoreCase = true) ||
             t.equals(DEV_SKIN_CODE, ignoreCase = true) ||
+            isLapSkinsCode(t) ||
             t.equals(INFINITE_POWERUPS_CODE, ignoreCase = true)
     }
+
+    /** Spelt with one u or two - the developer skin's code has two, so both are taken. */
+    private fun isLapSkinsCode(t: String): Boolean =
+        t.equals(LAP_SKINS_CODE, ignoreCase = true) || t.equals(LAP_SKINS_CODE_ALT, ignoreCase = true)
 
     fun applyUnlockCode(raw: String) {
         val t = raw.trim()
@@ -447,6 +456,16 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
             t.equals(DEV_SKIN_CODE, ignoreCase = true) -> {
                 save.unlock(Outfits.DEV_ID)
                 unlockPopup.queue(UnlockPopup.Kind.OUTFIT, Outfits.DEV_ID, "APPROVED")
+            }
+            isLapSkinsCode(t) -> {
+                // Both, and the laps are written down as well as the skins handed over, so the
+                // save says the same thing afterwards as one that climbed there - and neither
+                // card is queued a second time on the next launch.
+                save.highestLap = 2
+                save.unlock(Outfits.TWO_HEAD_ID)
+                save.unlock(Outfits.CERBERUS_ID)
+                unlockPopup.queue(UnlockPopup.Kind.OUTFIT, Outfits.TWO_HEAD_ID, "ROUND TWO")
+                unlockPopup.queue(UnlockPopup.Kind.OUTFIT, Outfits.CERBERUS_ID, "ROUND THREE")
             }
             t.equals(HALO_PRIME_CODE, ignoreCase = true) -> {
                 // Halos only drop in Heaven, so the code is useless unless Heaven is open. This
@@ -1397,6 +1416,10 @@ class Game(val save: Save, val audio: Audio, val music: Music, val host: Host) :
         const val HALO_PRIME_CODE = "u7d%4+"
         /** The developer skin. Not a testing aid - the only way to get it at all. */
         const val DEV_SKIN_CODE = "uu4*=^7"
+        /** Both lap Buddies, for testing them without climbing ninety screens twice. */
+        const val LAP_SKINS_CODE = "u4*=^8"
+        /** The same code with the developer skin's doubled u, because that one is easy to carry over. */
+        const val LAP_SKINS_CODE_ALT = "uu4*=^8"
         /** Every power-up, always, and spending one costs nothing. */
         const val INFINITE_POWERUPS_CODE = "u7d%4~"
         /** How far a menu stick must be pushed to count as one step. */
