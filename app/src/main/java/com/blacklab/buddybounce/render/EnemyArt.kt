@@ -84,6 +84,14 @@ class EnemyArt(private val art: Art) {
                 EnemyKind.STORM -> gargoyle(c, t, phase, a)
                 else -> graveRift(c, t, a)
             }
+            Fauna.SEABIRD -> when (kind) {
+                EnemyKind.BEE -> seagull(c, t, phase, facing, a)
+                EnemyKind.CROW -> pelican(c, t, phase, facing, a)
+                // A squall off the sea is the same weather as anywhere else, and the cloud
+                // already reads as one - no reason to draw a second one.
+                EnemyKind.STORM -> storm(c, t, a)
+                else -> waterspout(c, t, a)
+            }
             Fauna.HEAVEN -> when (kind) {
                 EnemyKind.BEE -> cherub(c, t, phase, facing, a)
                 EnemyKind.CROW -> seraph(c, t, phase, facing, a)
@@ -1155,6 +1163,145 @@ class EnemyArt(private val art: Art) {
             fill(0xFFF2C14E.toInt(), fa)
             c.drawCircle(x + 1.5f * k, y, 3.6f * k, p)
         }
+    }
+
+
+    // =====================================================================================
+    // Open Sky - the one band that is above the water rather than in it
+    // =====================================================================================
+
+    /** A gull: white, black wingtips, a yellow beak, and a proper lazy flap. */
+    private fun seagull(c: Canvas, t: Float, phase: Float, facing: Float, a: Float) {
+        val flap = sin(t * 9f + phase)
+        c.scale(if (facing >= 0f) 1f else -1f, 1f)
+
+        // far wing first, so the body sits between the two of them. OPAQUE, like everything
+        // else here: a wing painted at nine tenths lets the body show through it, and a bird
+        // you can see through is not a bird, it is a smudge.
+        fill(0xFFBFCEDC.toInt(), a)
+        path.reset()
+        path.moveTo(-6f, -4f)
+        path.quadTo(-30f, -18f - flap * 26f, -58f, -30f - flap * 34f)
+        path.quadTo(-32f, 2f, -6f, 6f)
+        path.close()
+        c.drawPath(path, p)
+
+        fill(0xFFF6FAFD.toInt(), a)                          // body
+        r.set(-40f, -16f, 30f, 20f)
+        c.drawOval(r, p)
+        c.drawCircle(26f, -10f, 20f, p)                      // head
+
+        // near wing, over the body, with the black tip every gull has
+        fill(0xFFFFFFFF.toInt(), a)
+        path.reset()
+        path.moveTo(-4f, -2f)
+        path.quadTo(-26f, -26f - flap * 30f, -54f, -22f - flap * 40f)
+        path.quadTo(-28f, 8f, -4f, 10f)
+        path.close()
+        c.drawPath(path, p)
+        fill(0xFF2A2E36.toInt(), a * 0.92f)
+        path.reset()
+        path.moveTo(-40f, -18f - flap * 34f)
+        path.quadTo(-52f, -24f - flap * 38f, -54f, -22f - flap * 40f)
+        path.quadTo(-44f, -10f - flap * 26f, -36f, -12f - flap * 28f)
+        path.close()
+        c.drawPath(path, p)
+
+        fill(0xFFF2B33C.toInt(), a)                          // beak
+        path.reset()
+        path.moveTo(42f, -12f); path.lineTo(70f, -6f); path.lineTo(42f, 0f); path.close()
+        c.drawPath(path, p)
+        fill(0xFFE2E8EE.toInt(), a)                          // tail
+        path.reset()
+        path.moveTo(-34f, 4f); path.lineTo(-62f, 16f); path.lineTo(-32f, 18f); path.close()
+        c.drawPath(path, p)
+        eyes(c, 30f, 30f, -14f, 7f, a)
+    }
+
+    /**
+     * A pelican: the big one. Same silhouette trick as the gull, but heavier, slower and with
+     * the pouch under the beak that makes it unmistakable at a glance.
+     */
+    private fun pelican(c: Canvas, t: Float, phase: Float, facing: Float, a: Float) {
+        val flap = sin(t * 5.5f + phase)
+        c.scale(if (facing >= 0f) 1f else -1f, 1f)
+
+        fill(0xFFA9B9C9.toInt(), a)                          // far wing, opaque
+        path.reset()
+        path.moveTo(-8f, -2f)
+        path.quadTo(-40f, -14f - flap * 24f, -76f, -22f - flap * 30f)
+        path.quadTo(-42f, 8f, -8f, 12f)
+        path.close()
+        c.drawPath(path, p)
+
+        fill(0xFFEDF2F7.toInt(), a)                          // body
+        r.set(-54f, -20f, 34f, 30f)
+        c.drawOval(r, p)
+        c.drawCircle(32f, -16f, 24f, p)                      // head
+
+        fill(0xFFF7B95C.toInt(), a)                          // beak, long and flat
+        path.reset()
+        path.moveTo(46f, -22f); path.lineTo(96f, -10f); path.lineTo(46f, -2f); path.close()
+        c.drawPath(path, p)
+        fill(0xFFE59A3C.toInt(), a)                          // the pouch, slung under it
+        path.reset()
+        path.moveTo(46f, -4f)
+        path.quadTo(70f, 22f, 90f, -8f)
+        path.quadTo(70f, 2f, 46f, -4f)
+        path.close()
+        c.drawPath(path, p)
+
+        // Near wing. White on a white body needs an edge, or it disappears into the bird and
+        // the only thing left is the grey streak, which is what makes it look see-through.
+        path.reset()
+        path.moveTo(-6f, 0f)
+        path.quadTo(-36f, -24f - flap * 30f, -70f, -14f - flap * 38f)
+        path.quadTo(-38f, 14f, -6f, 16f)
+        path.close()
+        stroke(0xFF8A99A8.toInt(), a, 4f)
+        c.drawPath(path, p)
+        fill(0xFFFFFFFF.toInt(), a)
+        c.drawPath(path, p)
+        fill(0xFF7D8C9C.toInt(), a)                          // shaded trailing edge, opaque
+        path.reset()
+        path.moveTo(-58f, -14f - flap * 32f)
+        path.quadTo(-70f, -14f - flap * 38f, -66f, -6f - flap * 30f)
+        path.quadTo(-44f, 2f - flap * 18f, -30f, 4f - flap * 12f)
+        path.close()
+        c.drawPath(path, p)
+        eyes(c, 36f, 36f, -22f, 7f, a)
+    }
+
+    /**
+     * A waterspout: the sea pulled up into the sky in a turning column.
+     *
+     * The rift role is a standing hazard rather than something that flies about, and a spout is
+     * exactly that - and it is the only one of these four that could not happen anywhere but
+     * over water.
+     */
+    private fun waterspout(c: Canvas, t: Float, a: Float) {
+        // the column, narrow at the sea and flaring into the cloud above
+        for (i in 0 until 5) {
+            val k = i / 4f
+            val y = 96f - k * 200f
+            val halfW = 14f + k * k * 52f
+            val sway = sin(t * 2.2f + k * 3.1f) * (10f + k * 22f)
+            fill(0xFFBFE6F7.toInt(), a * (0.30f + k * 0.34f))
+            r.set(sway - halfW, y - 30f, sway + halfW, y + 30f)
+            c.drawOval(r, p)
+        }
+        // spray where it meets the water
+        fill(0xFFE8F6FF.toInt(), a * 0.75f)
+        for (i in 0 until 7) {
+            val ang = t * 2.6f + i * 0.9f
+            c.drawCircle(cos(ang) * 46f, 96f + sin(ang * 1.7f) * 10f, 7f + (i % 3) * 3f, p)
+        }
+        // and the cloud it hangs from
+        fill(0xFF9FB6C6.toInt(), a * 0.9f)
+        r.set(-72f, -128f, 72f, -66f)
+        c.drawOval(r, p)
+        r.set(-40f, -146f, 44f, -84f)
+        c.drawOval(r, p)
     }
 
     // =====================================================================================

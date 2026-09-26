@@ -37,7 +37,7 @@ private val KIND_NAME = mapOf(
 /** A world dressed as one of the ten, with one enemy of [kind] in it, ready to be dropped on. */
 private fun rig(probe: Probe, fauna: Int, kind: Int, offX: Int, phase: Int, dropAbove: Float): World {
     val w = World(900f, probe)
-    w.fauna = fauna
+    w.bandFauna = IntArray(1) { fauna }
     w.reset()
     val e = w.enemies.obtain()
     e.kind = kind

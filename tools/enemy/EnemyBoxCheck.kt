@@ -83,17 +83,23 @@ fun main() {
     // Rows are indexed by FAUNA, which is not the order the scenes are listed in - Heaven's
     // fauna is 5 while it is the last scene in the menu. Writing the table in scene order put
     // Heaven's boxes on Hollow Hill and Hollow Hill's on Heaven.
+    // By FAUNA, not by scene: a band can borrow another world's creatures, and one fauna
+    // (the seabirds over Deep Blue's Open Sky) is no scene's default at all.
     val rows = arrayOfNulls<String>(EnemyBox.ROWS)
     val names = arrayOfNulls<String>(EnemyBox.ROWS)
-    for (scene in Scenes.ALL) {
+    for (fauna in 0 until EnemyBox.ROWS) {
+        val scene = Scenes.ALL.firstOrNull { it.fauna == fauna } ?: Scenes.ALL[0]
+        val sceneName = Scenes.ALL.flatMap { sc -> sc.bands.map { sc to it } }
+            .firstOrNull { it.second.fauna == fauna }?.let { "${it.first.name}/${it.second.name}" }
+            ?: scene.name
         Palettes.current = scene
         val row = StringBuilder()
         for (kind in listOf(EnemyKind.BEE, EnemyKind.CROW, EnemyKind.STORM, EnemyKind.RIFT)) {
             e.kind = kind
-            e.fauna = scene.fauna
-            val m = measure(art, kind, scene.fauna)
+            e.fauna = fauna
+            val m = measure(art, kind, fauna)
             if (!m.valid) {
-                println("%-15s %-6s   NOTHING DRAWN".format(scene.name, KIND_NAME[kind]))
+                println("%-15s %-6s   NOTHING DRAWN".format(sceneName, KIND_NAME[kind]))
                 failures++
                 continue
             }
@@ -113,10 +119,10 @@ fun main() {
                 else -> "ok"
             }
             println("%-15s %-6s %9.0f %9.0f %9.0f %9.0f  %s".format(
-                scene.name, KIND_NAME[kind], e.halfW, m.halfW, e.halfH, m.halfH, note))
+                sceneName, KIND_NAME[kind], e.halfW, m.halfW, e.halfH, m.halfH, note))
         }
-        rows[scene.fauna] = row.toString().trimEnd(' ', ',')
-        names[scene.fauna] = scene.name
+        rows[fauna] = row.toString().trimEnd(' ', ',')
+        names[fauna] = sceneName
     }
     val table = StringBuilder()
     for (i in 0 until EnemyBox.ROWS) {
@@ -133,5 +139,6 @@ fun main() {
         println("FAIL  paste that into game/EnemyBox.kt")
         System.exit(1)
     }
-    println("ALL GOOD - every enemy's box is inside the creature drawn in it, in all ${Scenes.ALL.size} worlds")
+    println("ALL GOOD - every enemy's box is inside the creature drawn in it, " +
+        "across all ${EnemyBox.ROWS} sets of creatures")
 }

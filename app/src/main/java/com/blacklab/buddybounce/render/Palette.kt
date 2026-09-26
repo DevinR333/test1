@@ -160,7 +160,17 @@ class BiomePalette(
     val starAlpha: Float = 0f,
     val cloudAlpha: Float = 0.8f,
     val haze: Int = skyLow,
-    val sunColor: Int = rim
+    val sunColor: Int = rim,
+    /**
+     * Which world's CREATURES belong in this band, when they are not the scene's own.
+     *
+     * A world dresses the four enemy roles once, for the whole climb, which is right until a
+     * band leaves the element the world is made of. Deep Blue's Open Sky is above the water, so
+     * a pufferfish swimming through it is simply wrong - and nine screens of it is a long time
+     * to look at something wrong. -1 means the scene's own fauna, which is what nearly every
+     * band wants.
+     */
+    val fauna: Int = -1
 ) {
     // What the backdrop actually paints its silhouettes with. See ColorX.readable: the raw
     // shape colours are often a shade off this band's own sky, which makes the scenery
@@ -195,6 +205,16 @@ object Fauna {
     const val JUNGLE = 7
     const val CANDY = 8
     const val HAUNT = 9
+
+    /**
+     * Above the water rather than in it. Not a world of its own - no scene is made of it - but
+     * the creatures Deep Blue's Open Sky needs, because a pufferfish nine screens above the sea
+     * is simply wrong. See [BiomePalette.fauna].
+     */
+    const val SEABIRD = 10
+
+    /** How many there are, including the ones no scene uses as its default. */
+    const val COUNT = 11
 }
 
 /**
@@ -209,7 +229,19 @@ class Scene(
     val cardTint: Int,
     val fauna: Int,
     val bands: List<BiomePalette>
-)
+) {
+    /**
+     * Which world's creatures belong in [band] - this scene's own, unless the band asks for
+     * somebody else's. See [BiomePalette.fauna].
+     */
+    fun faunaFor(band: Int): Int {
+        if (bands.isEmpty()) return fauna
+        var i = band % bands.size
+        if (i < 0) i += bands.size
+        val own = bands[i].fauna
+        return if (own >= 0) own else fauna
+    }
+}
 
 object Scenes {
 
@@ -296,11 +328,12 @@ object Scenes {
                 0xFFFFFFFF.toInt(), cloudAlpha = 0.9f
             ),
             BiomePalette(
+                // Out of the water at last, so the fish stay below - see BiomePalette.fauna.
                 "Open Sky", BandStyle.SEASKY,
                 0xFF4FA6DC.toInt(), 0xFF9FDDF7.toInt(), 0xFFEAF7FF.toInt(),
                 0xFFFFFFFF.toInt(), 0xFFEAF6FE.toInt(), 0xFFCFE6F6.toInt(),
                 0xFFF4FAFF.toInt(), 0xFFCFE2F2.toInt(), 0xFFA7C2DC.toInt(), 0xFF8FD3F4.toInt(),
-                0xFFFFFFFF.toInt(), cloudAlpha = 1f
+                0xFFFFFFFF.toInt(), cloudAlpha = 1f, fauna = Fauna.SEABIRD
             )
         )
     )

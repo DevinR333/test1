@@ -107,11 +107,22 @@ class World(worldWidth: Float, private val events: Events) {
      * them mean something.
      */
     /**
-     * Which world's creatures these enemies are, so each one's hit box can be the size of the
-     * thing actually drawn - see [EnemyBox]. Set by Game.applyScene alongside [haloMode]; the
-     * simulation does not read the renderer itself.
+     * Which world's creatures these enemies are, band by band, so each one's hit box can be the
+     * size of the thing actually drawn - see [EnemyBox].
+     *
+     * Per BAND, not per world: a band that leaves the element its world is made of needs other
+     * creatures, and Deep Blue's Open Sky is above the water. Set by Game.applyScene alongside
+     * [haloMode]; the simulation does not read the renderer itself.
      */
-    var fauna = 0
+    var bandFauna = IntArray(1)
+
+    /** The creatures that belong at [band], falling back to the first entry. */
+    fun faunaAt(band: Int): Int {
+        if (bandFauna.isEmpty()) return 0
+        var i = band % bandFauna.size
+        if (i < 0) i += bandFauna.size
+        return bandFauna[i]
+    }
 
     var haloMode = false
     /** Last value of [heightBonusCoins] we told anyone about, so we can report the increments. */
@@ -333,6 +344,16 @@ class World(worldWidth: Float, private val events: Events) {
         cull()
         buddy.updateAnim(dt, metrics.maxVx)
         if (lowGravityTime > 0f) lowGravityTime -= dt
+
+        // Enemies still above the view get one more look, because rows keep being laid under
+        // them and the one that turns out to matter can arrive long after they did. Only above
+        // the view: an enemy the player can see must never jump sideways, and an enemy below
+        // them is not in the way of anything.
+        routeSweep -= dt
+        if (routeSweep <= 0f) {
+            routeSweep = 0.25f
+            unblockEnemies(camY + Tuning.VIEW_H * 1.35f, Tuning.VIEW_H * 0.3f, aboveOnly = true)
+        }
 
         // Height coins accrue continuously with the score; tell the HUD about each step up so
         // the player can see WHEN they earned them rather than only at the end of the run.
@@ -904,9 +925,13 @@ class World(worldWidth: Float, private val events: Events) {
             // you use it is the same trap as a crumble that is the only platform in its row.
             val stretch = (gap - Tuning.gapMin(s)) /
                 (Tuning.gapMax(s) - Tuning.gapMin(s)).coerceAtLeast(1f)
-            if (stretch < 0.8f) spawnEnemy(genY - gap * 0.45f, s, p)
+            if (stretch < 0.8f) spawnEnemy(genY - gap * 0.45f, s, p, gap)
             else enemyCredit += 1f
         }
+
+        // Whatever this row just laid down, make sure nothing already in the air has become the
+        // only way past it. Every row, not only the ones that spawn something - see below.
+        unblockEnemies(genY, gap)
     }
 
     private fun spawnPlatform(y: Float, width: Float, s: Float): Platform {
@@ -1018,7 +1043,74 @@ class World(worldWidth: Float, private val events: Events) {
         c.t = rand(0f, 3f)
     }
 
-    private fun spawnEnemy(y: Float, s: Float, near: Platform) {
+    /**
+     * Would an enemy at [x] still leave something dependable to land on at this height?
+     *
+     * The route up has to exist without taking a hit. An enemy is already kept off the platform
+     * its own row just placed, but that platform can be a crumble - and if the solid one beside
+     * it is the one the enemy is sitting over, the only way on is through the enemy. Getting hit
+     * is a price the player chooses, never the price of carrying on.
+     *
+     * Dependable means it is still there after you touch it: a crumble or a fragile does not
+     * count as a way up, whatever else is going on. If there is nothing dependable in reach at
+     * all, the enemy is not what is blocking the way and moving it would not help.
+     */
+    private fun leavesAWayUp(x: Float, halfW: Float, y: Float, gap: Float): Boolean {
+        val window = maxOf(gap * 1.1f, ROUTE_WINDOW)
+        var dependable = 0
+        var clear = 0
+        for (p in platforms.items) {
+            if (!p.alive || p.isGround || p.state != 0) continue
+            if (p.kind == PlatKind.CRUMBLE || p.kind == PlatKind.FRAGILE) continue
+            if (abs(p.y - y) > window) continue
+            dependable++
+            // Landing room is the platform's own width less what the enemy reaches over, plus
+            // half a dog either side - a strip you can only just squeeze onto is not a route.
+            val reach = halfW + p.w * 0.5f + Tuning.BUDDY_HURT_HALF_W * 0.5f
+            if (abs(wrapDelta(x, p.x, wrapW)) > reach) clear++
+        }
+        return dependable == 0 || clear > 0
+    }
+
+    /**
+     * Moves any enemy that has ended up as the only way past the row just generated.
+     *
+     * Checking at spawn time is not enough on its own. An enemy is placed between two rows, and
+     * the row ABOVE it does not exist yet - so the platform that turns out to be the only
+     * dependable one at that height can be laid down under it afterwards. Rows are generated
+     * one at a time and never removed, so the fix is to re-check the neighbourhood each time a
+     * row appears: by then everything that height has to offer is there.
+     *
+     * An enemy that cannot be put anywhere clear is simply dropped. There is always another
+     * row, and a quiet screen is better than a screen you can only leave by taking a hit.
+     */
+    private fun unblockEnemies(rowY: Float, gap: Float, aboveOnly: Boolean = false) {
+        for (e in enemies.items) {
+            if (!e.alive || e.dying) continue
+            if (aboveOnly && e.baseY < camY + Tuning.VIEW_H) continue
+            // Two rows' worth, not one: a row laid a long way above an enemy can still be
+            // the platform that height depends on, and an enemy only gets re-checked while a
+            // row is landing near it.
+            if (!aboveOnly && abs(e.baseY - rowY) > ROUTE_WINDOW + gap) continue
+            val deny = EnemyBox.halfW(e.fauna, e.kind) + e.amp
+            if (leavesAWayUp(e.baseX, deny, e.baseY, gap)) continue
+            var moved = false
+            for (attempt in 0 until 8) {
+                val nx = rand(
+                    Tuning.PLAT_EDGE_MARGIN + 80f,
+                    (worldW - Tuning.PLAT_EDGE_MARGIN - 80f).coerceAtLeast(Tuning.PLAT_EDGE_MARGIN + 80f)
+                )
+                if (!leavesAWayUp(nx, deny, e.baseY, gap)) continue
+                e.baseX = nx
+                e.x = nx
+                moved = true
+                break
+            }
+            if (!moved) e.alive = false
+        }
+    }
+
+    private fun spawnEnemy(y: Float, s: Float, near: Platform, gap: Float) {
         val kinds = ArrayList<Int>(4)
         if (s > 4f) kinds.add(EnemyKind.BEE)
         if (s > 11f) kinds.add(EnemyKind.CROW)
@@ -1027,6 +1119,32 @@ class World(worldWidth: Float, private val events: Events) {
         if (kinds.isEmpty()) return
 
         val kind = kinds[rng.nextInt(kinds.size)]
+        // The band it is BORN in, so it keeps its own look and its own box for its whole life -
+        // including if the player falls back down past it into the band below.
+        val fauna = faunaAt(Tuning.biomeIndex(s))
+
+        // Somewhere that is not on top of the only way up. A handful of tries, and if none of
+        // them leaves a route the row simply goes without an enemy - there is always another
+        // row, and a run that can only continue by taking a hit is worse than a quiet screen.
+        // A bee sweeps, so the strip it denies you is its whole swing, not the spot it starts
+        // in. A crow crosses everything but is gone a moment later; a storm and a rift do not
+        // move at all. The envelope is what the check has to use.
+        val amp = if (kind == EnemyKind.BEE) rand(140f, 330f) * metrics.platScale else 0f
+        val vx = if (kind == EnemyKind.CROW) {
+            (if (rng.nextBoolean()) 1f else -1f) * rand(220f, 400f) * metrics.platScale
+        } else {
+            0f
+        }
+
+        var ex = 0f
+        var placed = false
+        val halfW = EnemyBox.halfW(fauna, kind) + amp
+        for (attempt in 0 until 6) {
+            ex = pickX(160f, avoid = near.x, avoidSpan = near.w * 0.5f + 300f)
+            if (leavesAWayUp(ex, halfW, y, gap)) { placed = true; break }
+        }
+        if (!placed) return
+
         val e = enemies.obtain()
         e.kind = kind
         e.fauna = fauna
@@ -1034,18 +1152,24 @@ class World(worldWidth: Float, private val events: Events) {
         e.phase = rand(0f, 6.283f)
         e.baseY = y
         e.y = y
-        val x = pickX(160f, avoid = near.x, avoidSpan = near.w * 0.5f + 300f)
-        e.baseX = x
-        e.x = x
-        when (kind) {
-            EnemyKind.BEE -> e.amp = rand(140f, 330f) * metrics.platScale
-            EnemyKind.CROW -> e.vx = (if (rng.nextBoolean()) 1f else -1f) * rand(220f, 400f) * metrics.platScale
-            EnemyKind.STORM -> e.amp = 0f
-            EnemyKind.RIFT -> e.amp = 0f
-        }
+        e.baseX = ex
+        e.x = ex
+        e.amp = amp
+        e.vx = vx
     }
 
     /** Picks a platform centre, nudged away from [avoid] when asked. */
+    /**
+     * How far up and down an enemy is considered to be standing in the way.
+     *
+     * A little over one jump: platforms further off than this are a different decision, and
+     * being denied one of them is not being denied the route.
+     */
+    private val ROUTE_WINDOW = 420f
+
+    /** Counts down to the next sweep of the enemies above the view. See [unblockEnemies]. */
+    private var routeSweep = 0f
+
     private fun pickX(width: Float, avoid: Float, avoidSpan: Float): Float {
         val lo = Tuning.PLAT_EDGE_MARGIN + width * 0.5f
         val hi = worldW - Tuning.PLAT_EDGE_MARGIN - width * 0.5f

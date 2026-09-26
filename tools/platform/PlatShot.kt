@@ -42,7 +42,7 @@ fun main(args: Array<String>) {
     val enemyArt = EnemyArt(art)
     val squashes = floatArrayOf(0f, 0.5f, 1f)
 
-    val rows = Scenes.ALL.size + 1
+    val rows = Scenes.ALL.size + 4
     val totalW = CELL_W * squashes.size
     val totalH = CELL_H * rows
     val sb = StringBuilder()
@@ -73,19 +73,25 @@ fun main(args: Array<String>) {
         }
     }
 
-    // the hive and its swarm, at three points of the circuit
+    // the seabirds over Deep Blue's Open Sky, and the hive with its swarm
     Palettes.current = Scenes.ALL[0]
-    for ((cI, t) in floatArrayOf(0f, 0.6f, 1.2f).withIndex()) {
-        Rec.clear()
-        val c = android.graphics.Canvas()
-        c.translate(CELL_W * 0.5f, CELL_H * 0.5f)
-        // Overgrown's rift role is the hive and its swarm
-        enemyArt.draw(c, com.blacklab.buddybounce.game.EnemyKind.RIFT,
-            com.blacklab.buddybounce.render.Fauna.JUNGLE, t, 0f, 1f, 1f)
-        val defs = StringBuilder()
-        val body = opsToSvg(defs, CELL_W, CELL_H)
-        sb.append(cell(body, CELL_W * cI, CELL_H * Scenes.ALL.size,
-            "hive swarm  t=${"%.1f".format(t)}", defs.toString()))
+    val showcase = listOf(
+        Triple("gull", com.blacklab.buddybounce.game.EnemyKind.BEE, com.blacklab.buddybounce.render.Fauna.SEABIRD),
+        Triple("pelican", com.blacklab.buddybounce.game.EnemyKind.CROW, com.blacklab.buddybounce.render.Fauna.SEABIRD),
+        Triple("waterspout", com.blacklab.buddybounce.game.EnemyKind.RIFT, com.blacklab.buddybounce.render.Fauna.SEABIRD),
+        Triple("hive swarm", com.blacklab.buddybounce.game.EnemyKind.RIFT, com.blacklab.buddybounce.render.Fauna.JUNGLE)
+    )
+    for ((rr, item) in showcase.withIndex()) {
+        for ((cI, t) in floatArrayOf(0.15f, 0.6f, 1.2f).withIndex()) {
+            Rec.clear()
+            val c = android.graphics.Canvas()
+            c.translate(CELL_W * 0.5f, CELL_H * 0.5f)
+            enemyArt.draw(c, item.second, item.third, t, 0f, 1f, 1f)
+            val defs = StringBuilder()
+            val body = opsToSvg(defs, CELL_W, CELL_H)
+            sb.append(cell(body, CELL_W * cI, CELL_H * (Scenes.ALL.size + rr),
+                "${item.first}  t=${"%.2f".format(t)}", defs.toString()))
+        }
     }
 
     sb.append("</svg>")

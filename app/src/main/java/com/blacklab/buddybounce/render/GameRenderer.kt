@@ -713,8 +713,10 @@ class GameRenderer(private val art: Art) {
             c.rotate(e.dieT * 400f)
             c.scale(1f + e.dieT, 1f - e.dieT * 0.4f)
         }
-        // The role is fixed by the simulation; the creature wearing it belongs to the scene.
-        enemyArt.draw(c, e.kind, Palettes.current.fauna, time, e.phase, e.facing, fade)
+        // The role is fixed by the simulation; the creature wearing it was chosen when it was
+        // spawned, from the BAND it was born in - so what is drawn and what the hit box was
+        // measured for are always the same animal.
+        enemyArt.draw(c, e.kind, e.fauna, time, e.phase, e.facing, fade)
         c.restore()
     }
 

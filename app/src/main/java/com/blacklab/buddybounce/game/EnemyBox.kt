@@ -38,7 +38,8 @@ object EnemyBox {
         60f, 37f, 88f, 39f, 53f, 74f, 98f, 98f,      // Dust Run        (fauna 6)
         71f, 36f, 82f, 60f, 57f, 63f, 91f, 63f,      // Overgrown       (fauna 7)
         42f, 40f, 53f, 46f, 71f, 71f, 98f, 98f,      // Sugar Rush      (fauna 8)
-        34f, 26f, 61f, 39f, 60f, 70f, 98f, 98f       // Hollow Hill     (fauna 9)
+        34f, 26f, 61f, 39f, 60f, 70f, 98f, 98f,      // Hollow Hill     (fauna 9)
+        60f, 54f, 82f, 46f, 68f, 78f, 83f, 124f      // Open Sky        (fauna 10)
     )
 
     /**
@@ -46,7 +47,7 @@ object EnemyBox {
      * does not depend on the renderer, and the scene's fauna is handed to [World] the same way
      * halo mode is.
      */
-    const val ROWS = 10
+    const val ROWS = 11
 
     private fun at(fauna: Int, kind: Int, odd: Int): Float {
         val f = if (fauna in 0 until ROWS) fauna else 0
